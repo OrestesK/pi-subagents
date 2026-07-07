@@ -347,7 +347,7 @@ describe("acceptance gates", () => {
 			});
 
 			assert.equal(acceptance.level, "reviewed");
-			assert.equal(acceptance.review && acceptance.review !== false ? acceptance.review.required : undefined, false);
+			assert.equal(acceptance.review !== false ? acceptance.review?.required : undefined, false);
 			const ledger = await evaluateAcceptance({ acceptance, output: report({ criteriaSatisfied: [
 				{ id: "criterion-1", status: "satisfied", evidence: "implemented" },
 				{ id: "criterion-2", status: "satisfied", evidence: "evidence returned" },

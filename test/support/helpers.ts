@@ -20,7 +20,9 @@ export function createTempDir(prefix = "pi-subagent-test-"): string {
 export function removeTempDir(dir: string): void {
 	try {
 		fs.rmSync(dir, { recursive: true, force: true });
-	} catch {}
+	} catch {
+		// Best-effort cleanup for temporary test directories.
+	}
 }
 
 export function createEventBus() {
@@ -59,6 +61,7 @@ interface AgentConfig {
 	output?: string | false;
 	reads?: string[] | false;
 	progress?: boolean;
+	defaultProgress?: boolean;
 	mcpDirectTools?: string[];
 	maxSubagentDepth?: number;
 	completionGuard?: boolean;

@@ -10,15 +10,16 @@ import {
 	fauxAssistantMessage,
 	fauxText,
 	fauxToolCall,
-	registerFauxProvider,
+	fauxProvider,
 	type ToolCall,
 } from "@earendil-works/pi-ai";
 import {
 	type AgentSession,
 	type AgentSessionEvent,
-	type ModelRegistry,
+	AuthStorage,
 	createAgentSession,
 	DefaultResourceLoader,
+	ModelRegistry,
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
@@ -98,17 +99,17 @@ function toAssistantMessage(reply: FauxReply): AssistantMessage {
 	return fauxAssistantMessage(content, { stopReason: hasToolCall ? "toolUse" : "stop" });
 }
 
-function createModelRegistry(model: { provider: string; id: string }) {
-	return {
-		find: (provider: string, id: string) => provider === model.provider && id === model.id ? model : undefined,
-		getAll: () => [model],
-		getAvailable: () => [model],
-		hasConfiguredAuth: () => true,
-		isUsingOAuth: () => false,
-		getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "faux", headers: {} }),
-		registerProvider: () => {},
-		unregisterProvider: () => {},
-	};
+function createModelRegistry(faux: ReturnType<typeof fauxProvider>): ModelRegistry {
+	const registry = ModelRegistry.inMemory(AuthStorage.inMemory());
+	registry.registerProvider(faux.provider.id, {
+		name: faux.provider.name,
+		baseUrl: "http://localhost:0",
+		api: faux.api as never,
+		apiKey: "faux",
+		streamSimple: faux.provider.streamSimple as never,
+		models: faux.models as never,
+	});
+	return registry;
 }
 
 function installChildPiShim(childText: string): () => void {
@@ -175,7 +176,7 @@ export async function runRealSubagentSession(options: RealSessionRunOptions): Pr
 	]);
 	const uninstallChildPi = installChildPiShim(options.childText);
 	let session: AgentSession | undefined;
-	let faux: ReturnType<typeof registerFauxProvider> | undefined;
+	let faux: ReturnType<typeof fauxProvider> | undefined;
 	let disposed = false;
 
 	const dispose = async () => {
@@ -183,16 +184,21 @@ export async function runRealSubagentSession(options: RealSessionRunOptions): Pr
 		disposed = true;
 		try {
 			await session?.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
-		} catch {}
+		} catch {
+			// Best-effort session shutdown in E2E cleanup.
+		}
 		try {
 			session?.dispose();
-		} catch {}
-		faux?.unregister();
+		} catch {
+			// Best-effort session dispose in E2E cleanup.
+		}
 		uninstallChildPi();
 		restoreEnv(envSnapshot);
 		try {
 			process.chdir(previousCwd);
-		} catch {}
+		} catch {
+			// Best-effort cwd restore in E2E cleanup.
+		}
 		rmSync(cwd, { recursive: true, force: true });
 		rmSync(home, { recursive: true, force: true });
 	};
@@ -211,11 +217,12 @@ export async function runRealSubagentSession(options: RealSessionRunOptions): Pr
 		delete process.env.PI_SUBAGENT_PI_BINARY;
 		delete process.env.PI_SUBAGENTS_PI_CODING_AGENT_PACKAGE_ROOT;
 
-		faux = registerFauxProvider({
+		faux = fauxProvider({
 			provider: "faux-e2e-parent",
 			models: [{ id: "parent", contextWindow: 200_000 }],
 		});
-		const model = faux.getModel();
+		const modelRegistry = createModelRegistry(faux);
+		const model = modelRegistry.find(faux.provider.id, "parent") ?? faux.getModel();
 		const respond = options.respond;
 		const responseFactory: FauxResponseStep = async (context, _streamOptions, state) => toAssistantMessage(await respond(context, state));
 		faux.setResponses(Array.from({ length: 8 }, () => responseFactory));
@@ -241,7 +248,7 @@ export async function runRealSubagentSession(options: RealSessionRunOptions): Pr
 			cwd,
 			agentDir: home,
 			model,
-			modelRegistry: createModelRegistry(model) as unknown as ModelRegistry,
+			modelRegistry,
 			resourceLoader: loader,
 			sessionManager: SessionManager.create(cwd, path.join(home, "sessions")),
 			settingsManager,

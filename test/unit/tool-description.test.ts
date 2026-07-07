@@ -36,7 +36,7 @@ describe("registered subagent tool description", () => {
 		}
 		assert.match(description, /use \{ action: "list" \} to inspect configured agents\/chains/i);
 		assert.match(description, /executable\/non-disabled/i);
-		assert.match(description, /proactive skill subagent suggestions/i);
+		assert.doesNotMatch(description, /proactive skill subagent suggestions/i);
 		assert.doesNotMatch(description, /disabled builtins/i);
 		assert.match(description, /output\?,reads\?,progress\?/i);
 		assert.match(description, /timeoutMs/i);
@@ -193,7 +193,7 @@ describe("registered subagent tool description", () => {
 		const output = execFileSync(
 			process.execPath,
 			[
-				"--experimental-transform-types",
+				"--experimental-strip-types",
 				"--import",
 				"./test/support/register-loader.mjs",
 				"--input-type=module",

@@ -187,7 +187,7 @@ describe("parallel agent execution", { skip: !piAvailable ? "pi packages not ava
 
 			assert.equal(result.isError, undefined);
 			assert.equal(result.details?.mode, "parallel");
-			assert.match(result.content[0]?.text ?? "", new RegExp(`${action} alias finished`));
+			assert.ok((result.content[0]?.text ?? "").includes(`${action} alias finished`));
 		}
 	});
 
@@ -341,7 +341,7 @@ describe("parallel agent execution", { skip: !piAvailable ? "pi packages not ava
 		);
 
 		const args = readLastCallArgs();
-		const taskArg = args.at(-1) ?? "";
+		const taskArg = args[args.length - 1] ?? "";
 		assert.ok(taskArg.startsWith(`Task: [Read from: ${path.join(tempDir, "a.md")}, ${path.join(tempDir, "b.md")}]
 
 Inspect
@@ -369,10 +369,10 @@ Inspect
 		);
 		const runId = result.details?.runId;
 		assert.ok(runId, "expected run id in details");
-		const expectedProgressPath = path.join(tempDir, ".pi-subagents", "artifacts", "progress", runId, "progress.md");
+		const expectedProgressPath = path.join(tempDir, runId, "progress", "progress.md");
 
 		const args = readLastCallArgs();
-		const taskArg = args.at(-1) ?? "";
+		const taskArg = args[args.length - 1] ?? "";
 		assert.ok(taskArg.includes(`Update progress at: ${expectedProgressPath}`), taskArg);
 		assert.equal(fs.existsSync(expectedProgressPath), true);
 		assert.equal(fs.existsSync(path.join(tempDir, "progress.md")), false);
@@ -390,7 +390,8 @@ Inspect
 			makeMinimalCtx(tempDir),
 		);
 
-		const taskArg = readLastCallArgs().at(-1) ?? "";
+		const lastCallArgs = readLastCallArgs();
+		const taskArg = lastCallArgs[lastCallArgs.length - 1] ?? "";
 		assert.doesNotMatch(taskArg, /progress\.md/);
 		assert.equal(fs.existsSync(path.join(tempDir, "progress.md")), false);
 	});

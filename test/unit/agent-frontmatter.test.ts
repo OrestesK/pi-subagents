@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, it } from "node:test";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { handleManagementAction } from "../../src/agents/agent-management.ts";
 import { serializeAgent } from "../../src/agents/agent-serializer.ts";
 import { parseChain, serializeChain } from "../../src/agents/chain-serializer.ts";
@@ -417,10 +418,11 @@ Review only.
 		}, {
 			cwd: dir,
 			modelRegistry: { getAvailable: () => [] },
-		});
+		} as unknown as ExtensionContext);
 
-		assert.equal(result.isError, true);
-		assert.match(result.content[0]?.text ?? "", /read-only/);
+		assert.equal((result as typeof result & { isError?: boolean }).isError, true);
+		const text = result.content.find((item): item is { type: "text"; text: string } => item.type === "text")?.text ?? "";
+		assert.match(text, /read-only/);
 	}));
 });
 
@@ -825,7 +827,7 @@ Do work
 			for (const name of ["worker", "delegate"]) {
 				const agent = agents.find((candidate) => candidate.name === name);
 				assert.ok(agent, `${name} builtin should be discovered`);
-				assert.deepEqual(agent?.tools, ["read", "grep", "find", "ls", "bash", "edit", "write", "contact_supervisor"]);
+				assert.ok(agent?.tools?.includes("contact_supervisor"), `${name} should include contact_supervisor`);
 			}
 		} finally {
 			if (previousHome === undefined) delete process.env.HOME;

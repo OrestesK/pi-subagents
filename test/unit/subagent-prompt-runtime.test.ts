@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { writeSteerRequestToDir } from "../../src/runs/background/control-channel.ts";
 import {
 	SUBAGENT_CHILD_AGENT_ENV,
@@ -26,6 +26,12 @@ import registerSubagentPromptRuntime, {
 	stripProjectContext,
 	stripSubagentOrchestrationSkill,
 } from "../../src/runs/shared/subagent-prompt-runtime.ts";
+
+type RuntimePi = Parameters<typeof registerSubagentPromptRuntime>[0];
+
+function runtimePi(pi: object): RuntimePi {
+	return pi as unknown as RuntimePi;
+}
 
 const envSnapshot = {
 	PI_SUBAGENT_INHERIT_PROJECT_CONTEXT: process.env.PI_SUBAGENT_INHERIT_PROJECT_CONTEXT,
@@ -62,6 +68,27 @@ const PROMPT_WITH_EXPLICIT_SKILL = [
 ].join("");
 
 const CONFIGURED_SKILLS_SECTION = "\n\nThe following configured skills are available to this subagent.\nUse the read tool to load a skill's file when the task matches its description.\nWhen a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.\n\n<available_skills>\n  <skill>\n    <name>configured-skill</name>\n    <description>explicit agent skill</description>\n    <location>/tmp/configured-skill/SKILL.md</location>\n  </skill>\n</available_skills>";
+
+function clearRuntimeEnv(): void {
+	delete process.env.PI_SUBAGENT_INHERIT_PROJECT_CONTEXT;
+	delete process.env.PI_SUBAGENT_INHERIT_SKILLS;
+	delete process.env.PI_SUBAGENT_INTERCOM_SESSION_NAME;
+	delete process.env.PI_SUBAGENT_FANOUT_CHILD;
+	delete process.env[SUBAGENT_STEER_INBOX_ENV];
+	delete process.env[STRUCTURED_OUTPUT_CAPTURE_ENV];
+	delete process.env[STRUCTURED_OUTPUT_SCHEMA_ENV];
+	delete process.env[TOOL_BUDGET_ENV];
+	delete process.env[SUBAGENT_ORCHESTRATOR_TARGET_ENV];
+	delete process.env[SUBAGENT_ORCHESTRATOR_SESSION_ID_ENV];
+	delete process.env[SUBAGENT_SUPERVISOR_CHANNEL_DIR_ENV];
+	delete process.env[SUBAGENT_RUN_ID_ENV];
+	delete process.env[SUBAGENT_CHILD_AGENT_ENV];
+	delete process.env[SUBAGENT_CHILD_INDEX_ENV];
+}
+
+beforeEach(() => {
+	clearRuntimeEnv();
+});
 
 afterEach(() => {
 	if (envSnapshot.PI_SUBAGENT_INHERIT_PROJECT_CONTEXT === undefined) delete process.env.PI_SUBAGENT_INHERIT_PROJECT_CONTEXT;
@@ -109,14 +136,14 @@ describe("subagent prompt runtime", () => {
 		const sent: string[] = [];
 		process.env[TOOL_BUDGET_ENV] = JSON.stringify({ soft: 2, hard: 2, block: ["read"] });
 
-		registerSubagentPromptRuntime({
+		registerSubagentPromptRuntime(runtimePi({
 			on(event: string, handler: (payload: { toolName?: string }) => unknown) {
 				handlers.set(event, handler);
 			},
 			sendUserMessage(content: string) {
 				sent.push(content);
 			},
-		} as { on(event: string, handler: (payload: { toolName?: string }) => unknown): void; sendUserMessage(content: string): void });
+		}));
 
 		const toolCall = handlers.get("tool_call");
 		assert.ok(toolCall, "tool_call handler should be registered");
@@ -139,14 +166,14 @@ describe("subagent prompt runtime", () => {
 			const handlers = new Map<string, (payload?: unknown) => unknown>();
 			const sent: Array<{ content: string; options: { deliverAs: string } }> = [];
 
-			registerSubagentPromptRuntime({
+			registerSubagentPromptRuntime(runtimePi({
 				on(event: string, handler: (payload?: unknown) => unknown) {
 					handlers.set(event, handler);
 				},
 				sendUserMessage(content: string, options: { deliverAs: string }) {
 					sent.push({ content, options });
 				},
-			} as { on(event: string, handler: (payload?: unknown) => unknown): void; sendUserMessage(content: string, options: { deliverAs: string }): void });
+			}));
 
 			writeSteerRequestToDir(inbox, { type: "steer", id: "steer-1", ts: 1, message: "Focus on tests." });
 			handlers.get("message_start")?.({});
@@ -172,12 +199,12 @@ describe("subagent prompt runtime", () => {
 			process.env[STRUCTURED_OUTPUT_CAPTURE_ENV] = outputPath;
 			let execute: ((_id: string, params: { value: unknown }) => Promise<{ terminate?: boolean }>) | undefined;
 
-			registerSubagentPromptRuntime({
+			registerSubagentPromptRuntime(runtimePi({
 				registerTool(tool: { name: string; execute: (_id: string, params: { value: unknown }) => Promise<{ terminate?: boolean }> }) {
 					if (tool.name === "structured_output") execute = tool.execute;
 				},
 				on() {},
-			} as { registerTool(tool: { name: string; execute: (_id: string, params: { value: unknown }) => Promise<{ terminate?: boolean }> }): void; on(): void });
+			}));
 
 			assert.ok(execute, "structured_output tool should be registered");
 			const result = await execute("tool-1", { value: { ok: true } });
@@ -363,7 +390,7 @@ describe("subagent prompt runtime", () => {
 		const handlers = new Map<string, (payload?: unknown) => unknown>();
 		const registered: string[] = [];
 
-		registerSubagentPromptRuntime({
+		registerSubagentPromptRuntime(runtimePi({
 			on(event: string, handler: (payload?: unknown) => unknown) {
 				handlers.set(event, handler);
 			},
@@ -371,7 +398,7 @@ describe("subagent prompt runtime", () => {
 			registerTool(tool: { name: string }) {
 				registered.push(tool.name);
 			},
-		} as { on(event: string, handler: (payload?: unknown) => unknown): void; getAllTools(): Array<{ name: string }>; registerTool(tool: { name: string }): void });
+		}));
 
 		assert.deepEqual(registered, []);
 		handlers.get("session_start")?.({});
@@ -384,7 +411,7 @@ describe("subagent prompt runtime", () => {
 		const handlers = new Map<string, (payload?: unknown) => unknown>();
 		const registered: string[] = [];
 
-		registerSubagentPromptRuntime({
+		registerSubagentPromptRuntime(runtimePi({
 			on(event: string, handler: (payload?: unknown) => unknown) {
 				handlers.set(event, handler);
 			},
@@ -392,7 +419,7 @@ describe("subagent prompt runtime", () => {
 			registerTool(tool: { name: string }) {
 				registered.push(tool.name);
 			},
-		} as { on(event: string, handler: (payload?: unknown) => unknown): void; getAllTools(): Array<{ name: string }>; registerTool(tool: { name: string }): void });
+		}));
 
 		handlers.get("session_start")?.({});
 		await handlers.get("before_agent_start")?.({ systemPrompt: BASE_PROMPT });
@@ -405,7 +432,7 @@ describe("subagent prompt runtime", () => {
 		const handlers = new Map<string, (payload?: unknown) => unknown>();
 		const registered: string[] = [];
 
-		registerSubagentPromptRuntime({
+		registerSubagentPromptRuntime(runtimePi({
 			on(event: string, handler: (payload?: unknown) => unknown) {
 				handlers.set(event, handler);
 			},
@@ -413,7 +440,7 @@ describe("subagent prompt runtime", () => {
 			registerTool(tool: { name: string }) {
 				registered.push(tool.name);
 			},
-		} as { on(event: string, handler: (payload?: unknown) => unknown): void; getAllTools(): Array<{ name: string }>; registerTool(tool: { name: string }): void });
+		}));
 
 		handlers.get("session_start")?.({});
 		assert.deepEqual(registered, ["contact_supervisor"]);
@@ -427,14 +454,14 @@ describe("subagent prompt runtime", () => {
 		let beforeAgentStart: ((event: { systemPrompt: string }) => Promise<{ systemPrompt: string } | undefined>) | undefined;
 		process.env[SUBAGENT_INTERCOM_SESSION_NAME_ENV] = "subagent-worker-78f659a3";
 
-		registerSubagentPromptRuntime({
+		registerSubagentPromptRuntime(runtimePi({
 			on(event: string, handler: (payload: { systemPrompt: string }) => Promise<{ systemPrompt: string } | undefined>) {
 				if (event === "before_agent_start") beforeAgentStart = handler;
 			},
 			setSessionName(name: string) {
 				sessionName = name;
 			},
-		} as { on(event: string, handler: (payload: { systemPrompt: string }) => Promise<{ systemPrompt: string } | undefined>): void; setSessionName(name: string): void });
+		}));
 
 		await beforeAgentStart?.({ systemPrompt: BASE_PROMPT });
 
@@ -443,11 +470,11 @@ describe("subagent prompt runtime", () => {
 
 	it("rewrites the final child-visible prompt through before_agent_start", async () => {
 		let beforeAgentStart: ((event: { systemPrompt: string }) => Promise<{ systemPrompt: string } | undefined>) | undefined;
-		registerSubagentPromptRuntime({
+		registerSubagentPromptRuntime(runtimePi({
 			on(event: string, handler: (payload: { systemPrompt: string }) => Promise<{ systemPrompt: string } | undefined>) {
 				if (event === "before_agent_start") beforeAgentStart = handler;
 			},
-		} as { on(event: string, handler: (payload: { systemPrompt: string }) => Promise<{ systemPrompt: string } | undefined>): void });
+		}));
 
 		assert.ok(beforeAgentStart, "expected before_agent_start handler");
 		process.env.PI_SUBAGENT_INHERIT_PROJECT_CONTEXT = "0";
@@ -462,11 +489,11 @@ describe("subagent prompt runtime", () => {
 
 	it("uses the fanout boundary through before_agent_start when fanout env is set", async () => {
 		let beforeAgentStart: ((event: { systemPrompt: string }) => Promise<{ systemPrompt: string } | undefined>) | undefined;
-		registerSubagentPromptRuntime({
+		registerSubagentPromptRuntime(runtimePi({
 			on(event: string, handler: (payload: { systemPrompt: string }) => Promise<{ systemPrompt: string } | undefined>) {
 				if (event === "before_agent_start") beforeAgentStart = handler;
 			},
-		} as { on(event: string, handler: (payload: { systemPrompt: string }) => Promise<{ systemPrompt: string } | undefined>): void });
+		}));
 
 		process.env.PI_SUBAGENT_INHERIT_PROJECT_CONTEXT = "1";
 		process.env.PI_SUBAGENT_INHERIT_SKILLS = "1";
@@ -479,11 +506,11 @@ describe("subagent prompt runtime", () => {
 
 	it("filters parent-only artifacts from polluted fork context while preserving ordinary history", () => {
 		let contextHandler: ((event: { messages: unknown[] }) => { messages: unknown[] } | undefined) | undefined;
-		registerSubagentPromptRuntime({
+		registerSubagentPromptRuntime(runtimePi({
 			on(event: string, handler: (payload: { messages: unknown[] }) => { messages: unknown[] } | undefined) {
 				if (event === "context") contextHandler = handler;
 			},
-		} as { on(event: string, handler: (payload: { messages: unknown[] }) => { messages: unknown[] } | undefined): void });
+		}));
 
 		const priorParentTurn = { role: "user", content: "Earlier we said planner → worker → reviewers → worker." };
 		const currentTask = { role: "user", content: "Now implement only the assigned fix." };
@@ -500,11 +527,11 @@ describe("subagent prompt runtime", () => {
 
 	it("does not rewrite child context when no parent-only artifacts are present", () => {
 		let contextHandler: ((event: { messages: unknown[] }) => { messages: unknown[] } | undefined) | undefined;
-		registerSubagentPromptRuntime({
+		registerSubagentPromptRuntime(runtimePi({
 			on(event: string, handler: (payload: { messages: unknown[] }) => { messages: unknown[] } | undefined) {
 				if (event === "context") contextHandler = handler;
 			},
-		} as { on(event: string, handler: (payload: { messages: unknown[] }) => { messages: unknown[] } | undefined): void });
+		}));
 
 		const messages = [
 			{ role: "user", content: "Task" },

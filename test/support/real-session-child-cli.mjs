@@ -5,12 +5,14 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
 	fauxAssistantMessage,
+	fauxProvider,
 	fauxText,
-	registerFauxProvider,
 } from "@earendil-works/pi-ai";
 import {
+	AuthStorage,
 	createAgentSession,
 	DefaultResourceLoader,
+	ModelRegistry,
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
@@ -85,17 +87,17 @@ function parseArgs(argv) {
 	return parsed;
 }
 
-function createModelRegistry(model) {
-	return {
-		find: (provider, id) => provider === model.provider && id === model.id ? model : undefined,
-		getAll: () => [model],
-		getAvailable: () => [model],
-		hasConfiguredAuth: () => true,
-		isUsingOAuth: () => false,
-		getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "faux", headers: {} }),
-		registerProvider: () => {},
-		unregisterProvider: () => {},
-	};
+function createModelRegistry(faux) {
+	const registry = ModelRegistry.inMemory(AuthStorage.inMemory());
+	registry.registerProvider(faux.provider.id, {
+		name: faux.provider.name,
+		baseUrl: "http://localhost:0",
+		api: faux.api,
+		apiKey: "faux",
+		streamSimple: faux.provider.streamSimple,
+		models: faux.models,
+	});
+	return registry;
 }
 
 function createSessionManager(parsed, cwd) {
@@ -118,11 +120,12 @@ async function main() {
 		: mkdtempSync(path.join(os.tmpdir(), "pi-e2e-agent-dir-"));
 	const agentDir = process.env.PI_CODING_AGENT_DIR ?? ownedAgentDir;
 
-	const faux = registerFauxProvider({
+	const faux = fauxProvider({
 		provider: "faux-e2e-child",
 		models: [{ id: "child", contextWindow: 200_000 }],
 	});
-	const model = faux.getModel();
+	const modelRegistry = createModelRegistry(faux);
+	const model = modelRegistry.find(faux.provider.id, "child") ?? faux.getModel();
 	faux.setResponses([
 		() => fauxAssistantMessage(fauxText(responseText), { stopReason: "stop" }),
 	]);
@@ -150,7 +153,7 @@ async function main() {
 			cwd,
 			agentDir,
 			model,
-			modelRegistry: createModelRegistry(model),
+			modelRegistry,
 			resourceLoader: loader,
 			sessionManager: createSessionManager(parsed, cwd),
 			settingsManager,
@@ -173,7 +176,6 @@ async function main() {
 		await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
 		session.dispose();
 	} finally {
-		faux.unregister();
 		if (ownedAgentDir) rmSync(ownedAgentDir, { recursive: true, force: true });
 	}
 }

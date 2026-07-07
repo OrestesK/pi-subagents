@@ -20,8 +20,9 @@ function readText(result: { content: Array<{ type: string; text?: string }> }): 
 	const first = result.content[0];
 	assert.ok(first);
 	assert.equal(first.type, "text");
-	assert.equal(typeof first.text, "string");
-	return first.text;
+	const text = first.text;
+	if (typeof text !== "string") throw new TypeError("Expected text tool result");
+	return text;
 }
 
 describe("builtin agent disabling", () => {
@@ -174,13 +175,14 @@ describe("builtin agent disabling", () => {
 
 		const text = readText(handleList(
 			{},
-			{ cwd: tempProject, modelRegistry: { getAvailable: () => [] } },
+			{ cwd: tempProject, modelRegistry: { getAvailable: () => [] } } as never,
 		));
 
-		assert.match(text, /Executable agents:\n- helper \(project\): Helper/);
+		assert.match(text, /Agents \(effective; default context: fresh\):/);
+		assert.match(text, /^- helper — Use when this custom agent fits: Helper$/m);
 		assert.doesNotMatch(text, /Disabled builtins:/);
 		for (const name of disabledBuiltinNames) {
-			assert.doesNotMatch(text, new RegExp(`^- ${name} \\(builtin`, "m"));
+			assert.doesNotMatch(text, new RegExp(`^- ${name}\\b`, "m"));
 		}
 	});
 
