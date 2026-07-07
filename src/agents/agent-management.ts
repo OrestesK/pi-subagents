@@ -12,6 +12,7 @@ import {
 	defaultInheritProjectContext,
 	defaultInheritSkills,
 	defaultSystemPromptMode,
+	discoverAgents,
 	discoverAgentsAll,
 	buildRuntimeName,
 	frontmatterNameForConfig,
@@ -23,13 +24,11 @@ import {
 import { serializeAgent } from "./agent-serializer.ts";
 import { serializeChain, serializeJsonChain } from "./chain-serializer.ts";
 import { discoverAvailableSkills } from "./skills.ts";
-import {
-	buildProactiveSkillSubagentRecommendationLines,
-} from "./proactive-skills.ts";
 import { parseFrontmatter } from "./frontmatter.ts";
 import { toModelInfo } from "../shared/model-info.ts";
 import { resolveSubagentModelOverride, type ParentModel } from "../runs/shared/model-fallback.ts";
 import { validateToolBudgetConfig } from "../runs/shared/tool-budget.ts";
+import { BUILTIN_WORKFLOW_IDS } from "../runs/shared/workflows.ts";
 import type { Details, ExtensionConfig, ToolBudgetConfig } from "../shared/types.ts";
 import { getProjectConfigDir } from "../shared/utils.ts";
 
@@ -46,7 +45,7 @@ interface ManagementParams {
 }
 
 function result(text: string, isError = false): AgentToolResult<Details> {
-	return { content: [{ type: "text", text }], isError, details: { mode: "management", results: [] } };
+	return { content: [{ type: "text", text }], isError, details: { mode: "management", results: [] } } as AgentToolResult<Details>;
 }
 
 function parseCsv(value: string): string[] {
@@ -98,6 +97,31 @@ function parsePackageConfig(value: unknown): { packageName?: string; error?: str
 
 function allAgents(d: { builtin: AgentConfig[]; package: AgentConfig[]; user: AgentConfig[]; project: AgentConfig[] }): AgentConfig[] {
 	return [...d.builtin, ...d.package, ...d.user, ...d.project];
+}
+
+const AGENT_LIST_GUIDANCE: Record<string, string> = {
+	"context-builder": "Use for building focused implementation context and handoff packets.",
+	delegate: "Use for lightweight focused tasks that do not need a specialist contract.",
+	oracle: "Use for high-context consistency checks against inherited session state.",
+	planner: "Use for implementation plans after requirements are clear.",
+	researcher: "Use for external/current evidence research and source-backed decisions.",
+	reviewer: "Use for read-only review, quality gates, and adversarial findings.",
+	"run-monitor": "Use for read-only monitoring of long-running tmux/log/status runs.",
+	scout: "Use for fast read-only codebase recon and evidence gathering.",
+	worker: "Use for straightforward, bounded, approved implementation.",
+};
+
+function listAgentGuidance(agent: AgentConfig): string {
+	const guidance = AGENT_LIST_GUIDANCE[agent.name];
+	if (guidance) return guidance;
+	return agent.source === "builtin"
+		? `Use when this builtin agent fits: ${agent.description}`
+		: `Use when this custom agent fits: ${agent.description}`;
+}
+
+function formatListAgent(agent: AgentConfig): string {
+	const context = agent.defaultContext === "fork" ? " (fork)" : "";
+	return `- ${agent.name}${context} — ${listAgentGuidance(agent)}`;
 }
 
 function availableNames(cwd: string, kind: "agent" | "chain"): string[] {
@@ -154,7 +178,10 @@ function isMutableSource(source: AgentSource): source is ManagementScope {
 function unknownChainAgents(cwd: string, steps: ChainStepConfig[]): string[] {
 	const d = discoverAgentsAll(cwd);
 	const known = new Set(allAgents(d).map((a) => a.name));
-	return [...new Set(steps.map((s) => s.agent).filter((a) => !known.has(a)))].sort((a, b) => a.localeCompare(b));
+	const unknown = steps
+		.map((s) => s.agent)
+		.filter((agent): agent is string => typeof agent === "string" && agent.length > 0 && !known.has(agent));
+	return [...new Set(unknown)].sort((a, b) => a.localeCompare(b));
 }
 
 function chainStepWarnings(ctx: ManagementContext, steps: ChainStepConfig[]): string[] {
@@ -459,7 +486,7 @@ function resolveTarget<T extends { source: AgentSource; filePath: string }>(
 	matches: T[],
 	cwd: string,
 	scopeHint?: string,
-): T | AgentToolResult<Details> {
+): (T & { source: ManagementScope }) | AgentToolResult<Details> {
 	const mutable = matches.filter((m): m is T & { source: ManagementScope } => isMutableSource(m.source));
 	if (mutable.length === 0) {
 		if (matches.length > 0) {
@@ -579,26 +606,42 @@ function formatChainDetail(chain: ChainConfig): string {
 
 export function handleList(params: ManagementParams, ctx: ManagementContext): AgentToolResult<Details> {
 	const scope = normalizeListScope(params.agentScope) ?? "both";
+	const discovery = discoverAgents(ctx.cwd, scope);
+	const agents = [...discovery.agents].sort((a, b) => a.name.localeCompare(b.name));
 	const d = discoverAgentsAll(ctx.cwd);
-	const scopedAgents = allAgents(d).filter((a) => scope === "both" || a.source === "builtin" || a.source === "package" || a.source === scope).sort((a, b) => a.name.localeCompare(b.name));
-	const agents = scopedAgents.filter((a) => !a.disabled);
 	const chains = d.chains.filter((c) => scope === "both" || c.source === "package" || c.source === scope).sort((a, b) => a.name.localeCompare(b.name));
 	const diagnostics = d.chainDiagnostics.filter((entry) => scope === "both" || entry.source === scope);
-	const proactiveSuggestions = buildProactiveSkillSubagentRecommendationLines({
-		agents,
-		chains,
-		config: ctx.config?.proactiveSkillSubagents,
-		discoverAvailableSkills: () => discoverAvailableSkills(ctx.cwd),
-	});
+	const chainLocations = [d.userChainDir, d.projectChainDir].filter((dir): dir is string => Boolean(dir));
 	const lines = [
-		"Executable agents:",
-		...(agents.length
-			? agents.map((a) => `- ${a.name} (${a.source}${a.defaultContext ? `, context: ${a.defaultContext}` : ""}): ${a.description}`)
-			: ["- (none)"]),
+		"Agents (effective; default context: fresh):",
+		...(agents.length ? agents.map(formatListAgent) : ["- (none)"]),
 		"",
-		"Chains:",
-		...(chains.length ? chains.map((c) => `- ${c.name} (${c.source}): ${c.description}`) : ["- (none)"]),
-		...(proactiveSuggestions.length ? ["", ...proactiveSuggestions] : []),
+		"Context:",
+		"- fresh = independent child session, not the parent conversation history.",
+		"- fork = inherits the parent conversation context from the current session.",
+		"",
+		"Tool access:",
+		"- Tools are agent-specific, not inherited from the parent.",
+		"- Advisory agents are for read-only inspection and recommendations; use worker for writes.",
+		"- Use a configured non-advisory agent when MCP, direct MCP, or custom-extension tools are explicitly required.",
+		"",
+		"Builtin workflows (deprecated compatibility; prefer prompt shortcuts or explicit tasks/chain):",
+		...BUILTIN_WORKFLOW_IDS.map((id) => `- builtin.${id}`),
+		"",
+		"Route selection:",
+		"- Recon/planning: scout or context-builder -> planner.",
+		"- Review/quality gate: reviewer fanout; parent synthesizes the verdict.",
+		"- Straightforward approved implementation: worker, then reviewer/quality-gate.",
+		"",
+		"Execution:",
+		"- SINGLE: { agent, task? }",
+		"- PARALLEL: { tasks: [...] }",
+		"- CHAIN: { chain: [...] }",
+		"- WORKFLOW: deprecated compatibility alias { workflow: \"builtin.*\", task }; prefer explicit tasks/chain or prompt shortcuts.",
+		"- Details/provenance/tools: use { action: \"get\", agent: \"name\" }.",
+		"",
+		"Saved chains (.chain.md):",
+		...(chains.length ? chains.map((c) => `- ${c.name} (${c.source}): ${c.description}`) : [`- none found in ${chainLocations.join(" or ") || "configured chain directories"}.`]),
 		...(diagnostics.length ? ["", "Chain diagnostics:", ...diagnostics.map((entry) => `- ${entry.filePath}: ${entry.error}`)] : []),
 	];
 	return result(lines.join("\n"));

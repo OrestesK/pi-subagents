@@ -105,9 +105,7 @@ export function readStatus(asyncDir: string): AsyncStatus | null {
 		stat = fs.statSync(statusPath);
 	} catch (error) {
 		if (isNotFoundError(error)) return null;
-		throw new Error(`Failed to inspect async status file '${statusPath}': ${getErrorMessage(error)}`, {
-			cause: error instanceof Error ? error : undefined,
-		});
+		throw new Error(`Failed to inspect async status file '${statusPath}': ${getErrorMessage(error)}`);
 	}
 
 	const cached = statusCache.get(statusPath);
@@ -120,18 +118,14 @@ export function readStatus(asyncDir: string): AsyncStatus | null {
 		content = fs.readFileSync(statusPath, "utf-8");
 	} catch (error) {
 		if (isNotFoundError(error)) return null;
-		throw new Error(`Failed to read async status file '${statusPath}': ${getErrorMessage(error)}`, {
-			cause: error instanceof Error ? error : undefined,
-		});
+		throw new Error(`Failed to read async status file '${statusPath}': ${getErrorMessage(error)}`);
 	}
 
 	let status: AsyncStatus;
 	try {
 		status = JSON.parse(content) as AsyncStatus;
 	} catch (error) {
-		throw new Error(`Failed to parse async status file '${statusPath}': ${getErrorMessage(error)}`, {
-			cause: error instanceof Error ? error : undefined,
-		});
+		throw new Error(`Failed to parse async status file '${statusPath}': ${getErrorMessage(error)}`);
 	}
 
 	statusCache.set(statusPath, { mtime: stat.mtimeMs, status });

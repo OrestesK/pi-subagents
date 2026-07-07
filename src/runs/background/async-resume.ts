@@ -155,17 +155,13 @@ function readResultFile(resultPath: string): AsyncResultFile {
 	try {
 		raw = fs.readFileSync(resultPath, "utf-8");
 	} catch (error) {
-		throw new Error(`Failed to read async result file '${resultPath}': ${getErrorMessage(error)}`, {
-			cause: error instanceof Error ? error : undefined,
-		});
+		throw new Error(`Failed to read async result file '${resultPath}': ${getErrorMessage(error)}`);
 	}
 	try {
 		return validateResultFile(JSON.parse(raw), resultPath);
 	} catch (error) {
 		if (error instanceof SyntaxError) {
-			throw new Error(`Failed to parse async result file '${resultPath}': ${getErrorMessage(error)}`, {
-				cause: error,
-			});
+			throw new Error(`Failed to parse async result file '${resultPath}': ${getErrorMessage(error)}`);
 		}
 		throw error;
 	}

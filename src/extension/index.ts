@@ -35,7 +35,6 @@ import { registerSlashSubagentBridge } from "../slash/slash-bridge.ts";
 import { createNativeSupervisorChannel } from "../intercom/native-supervisor-channel.ts";
 import { registerSubagentRpcBridge } from "./rpc.ts";
 import { clearSlashSnapshots, getSlashRenderableSnapshot, resolveSlashMessageDetails, restoreSlashFinalSnapshots, type SlashMessageDetails } from "../slash/slash-live-state.ts";
-import { inspectSubagentStatus } from "../runs/background/run-status.ts";
 import { resolveWaitToolConfig, waitForSubagents } from "../runs/background/wait.ts";
 import registerSubagentNotify, { type SubagentNotifyDetails } from "../runs/background/notify.ts";
 import { SUBAGENT_CHILD_ENV, SUBAGENT_PARENT_SESSION_ENV } from "../runs/shared/pi-args.ts";
@@ -127,13 +126,16 @@ function subagentResultIsRunning(result: { details?: Details }): boolean {
 function ensureSubagentResultAnimation(context: { state: Record<string, unknown>; invalidate?: () => void }): void {
 	const state = context.state as { subagentResultAnimationTimer?: ReturnType<typeof setInterval>; frame?: number };
 	if (state.subagentResultAnimationTimer) return;
-	if (typeof context.invalidate !== "function") return;
+	const invalidate = context.invalidate;
+	if (typeof invalidate !== "function") return;
 	if (state.frame === undefined) state.frame = 0;
 	state.subagentResultAnimationTimer = setInterval(() => {
 		state.frame = ((state.frame ?? 0) + 1) % 10;
 		try {
-			context.invalidate();
-		} catch {}
+			invalidate();
+		} catch (error) {
+			void error;
+		}
 	}, 80);
 }
 
@@ -210,15 +212,18 @@ function parseSubagentNotifyContent(content: string): SubagentNotifyDetails | un
 }
 
 class SubagentControlNoticeComponent implements Component {
-	constructor(
-		private readonly details: SubagentControlMessageDetails,
-		private readonly theme: ExtensionContext["ui"]["theme"],
-	) {}
+	private readonly details: SubagentControlMessageDetails;
+	private readonly theme: ExtensionContext["ui"]["theme"];
+
+	constructor(details: SubagentControlMessageDetails, theme: ExtensionContext["ui"]["theme"]) {
+		this.details = details;
+		this.theme = theme;
+	}
 
 	invalidate(): void {}
 
 	render(width: number): string[] {
-		const eventLabel = this.details.event.type.replaceAll("_", " ");
+		const eventLabel = this.details.event.type.split("_").join(" ");
 		if (width < 3) return [truncateToWidth(`Subagent ${eventLabel}`, width)];
 		const bodyWidth = Math.max(1, width - 2);
 		const borderChar = "─";
@@ -459,7 +464,7 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 		parameters: SubagentParams,
 
 		execute(id, params, signal, onUpdate, ctx) {
-			return executeSubagentCollapsed(id, params, signal, onUpdate, ctx);
+			return executeSubagentCollapsed(id, params as SubagentParamsLike, signal ?? new AbortController().signal, onUpdate, ctx);
 		},
 
 		renderCall(args, theme) {
@@ -568,7 +573,7 @@ wait also returns when a run needs attention (a child that went idle or blocked 
 		state.lastUiContext = ctx;
 		if (state.asyncJobs.size > 0) {
 			renderWidget(ctx, Array.from(state.asyncJobs.values()));
-			ctx.ui.requestRender?.();
+			(ctx.ui as typeof ctx.ui & { requestRender?: () => void }).requestRender?.();
 			ensurePoller();
 		}
 	});

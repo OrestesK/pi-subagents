@@ -91,16 +91,12 @@ function readStatusFile(asyncDir: string): AsyncStatus | null {
 		content = fs.readFileSync(statusPath, "utf-8");
 	} catch (error) {
 		if (isNotFoundError(error)) return null;
-		throw new Error(`Failed to read async status file '${statusPath}': ${getErrorMessage(error)}`, {
-			cause: error instanceof Error ? error : undefined,
-		});
+		throw new Error(`Failed to read async status file '${statusPath}': ${getErrorMessage(error)}`);
 	}
 	try {
 		return JSON.parse(content) as AsyncStatus;
 	} catch (error) {
-		throw new Error(`Failed to parse async status file '${statusPath}': ${getErrorMessage(error)}`, {
-			cause: error instanceof Error ? error : undefined,
-		});
+		throw new Error(`Failed to parse async status file '${statusPath}': ${getErrorMessage(error)}`);
 	}
 }
 
@@ -136,9 +132,7 @@ function readResultRepairData(resultPath: string): ResultRepairData | undefined 
 		return { state, ...(results ? { results } : {}) };
 	} catch (error) {
 		if (isNotFoundError(error)) return undefined;
-		throw new Error(`Failed to read async result file '${resultPath}': ${getErrorMessage(error)}`, {
-			cause: error instanceof Error ? error : undefined,
-		});
+		throw new Error(`Failed to read async result file '${resultPath}': ${getErrorMessage(error)}`);
 	}
 }
 

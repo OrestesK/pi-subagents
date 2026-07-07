@@ -105,7 +105,7 @@ function resolveInstructionTemplate(instructionFile: string, settingsDir: string
 }
 
 function buildIntercomBridgeInstruction(orchestratorTarget: string, template: string): string {
-	const instruction = template.replaceAll("{orchestratorTarget}", orchestratorTarget).trim();
+	const instruction = template.split("{orchestratorTarget}").join(orchestratorTarget).trim();
 	if (instruction.startsWith(INTERCOM_BRIDGE_MARKER)) return instruction;
 	return `${INTERCOM_BRIDGE_MARKER}\n${instruction}`;
 }

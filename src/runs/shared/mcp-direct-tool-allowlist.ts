@@ -283,7 +283,7 @@ function getToolPrefix(value: unknown): ToolPrefix {
 }
 
 function isImportKind(value: unknown): value is ImportKind {
-	return typeof value === "string" && Object.hasOwn(IMPORT_PATHS, value);
+	return typeof value === "string" && Object.prototype.hasOwnProperty.call(IMPORT_PATHS, value);
 }
 
 function getServerPrefix(serverName: string, mode: ToolPrefix): string {

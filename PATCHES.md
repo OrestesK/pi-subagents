@@ -1,0 +1,61 @@
+# Local git overlay
+
+This directory is a git checkout of `https://github.com/nicobailon/pi-subagents.git`, loaded by Pi from `/home/orestes/.config/pi/settings.json` as `packages/pi-subagents`.
+
+It is not an unpacked `npm:pi-subagents` copy. Treat local behavior as commits on top of upstream `origin/main`.
+
+## Local stack
+
+Use this command for current hashes:
+
+```sh
+(cd packages/pi-subagents && git log --oneline --reverse origin/main..HEAD)
+```
+
+As of 2026-07-08, the local stack contains these concerns:
+
+- `change: update subagent workflow docs` — updates README and `skills/pi-subagents/SKILL.md` for the local orchestration workflow, review gates, artifacts, async usage, and fan-in patterns.
+- `change: update bundled agent contracts` — updates bundled agent prompts/contracts for current tool boundaries, supervisor coordination, review expectations, and handoff style.
+- `change: update prompt workflows` — adds prompt workflow templates for adversarial debate, generate/filter, quality gates, quick adversarial checks, and research-decision flows.
+- `change: layer local runtime overlay` — carries runtime behavior not in upstream `origin/main`, including acceptance gates, capability checks, dynamic fanout helpers, workflow expansion, child event logging, path/output collision guards, parallel writer/straggler safeguards, async cleanup, model fallback, and compact agent labels.
+- `test: add local runtime coverage` — adds tests for the local overlay and adjusts support fixtures.
+
+## Notable local runtime behavior
+
+- `src/runs/shared/model-fallback.ts` treats WebSocket transport closures such as `WebSocket closed 1006 Connection ended` as retryable model failures when an agent has `fallbackModels` configured.
+- `src/shared/agent-labels.ts` compacts repeated async parallel child labels, for example `Async parallel: 19× delegate [id]` instead of a long repeated-agent list.
+- `steer` is the canonical parent-to-child guidance action. The old public `action: "message"` / `ack_supervisor_message` path is intentionally not preserved.
+- `subagent({ action: "list" })` is a local routing surface: it shows effective, deduped, non-disabled agents with concise route guidance, keeps chain diagnostics, and uses `get` for provenance/details.
+- Structured acceptance uses the unified `src/runs/shared/acceptance.ts` path. The stale local acceptance split/finalization modules and `maxFinalizationTurns` surface are intentionally removed unless a future feature explicitly revives same-session finalization.
+- Dynamic chain fanout uses `src/runs/shared/dynamic-fanout.ts`; the older `src/shared/chain-dynamic.ts` helper and its stale `.mjs` test are intentionally removed.
+- Top-level `workflow: "builtin.*"` remains accepted as a deprecated compatibility alias for now. First-party guidance should prefer prompt shortcuts or explicit `tasks`/`chain` shapes before eventual removal.
+
+## Setup
+
+For this checked-out package, install runtime dependencies without local dev-package shadows:
+
+```sh
+(cd packages/pi-subagents && npm install --omit=dev --ignore-scripts)
+```
+
+Use `--omit=dev` so local copies of `@earendil-works/pi-*` dev dependencies do not shadow the active Pi runtime packages.
+
+## Verification
+
+Configured package tests:
+
+```sh
+(cd packages/pi-subagents && npm run test:unit)
+(cd packages/pi-subagents && npm run test:integration)
+(cd packages/pi-subagents && npm run test:e2e)
+```
+
+`npm test` currently aliases `npm run test:unit`, and `test:unit` runs only `test/unit/*.test.ts`. Remaining `.mjs` preservation tests are not part of the configured package scripts; run targeted `.mjs` tests manually when changing behavior they cover until the scripts are updated.
+
+Useful read-only sync checks:
+
+```sh
+(cd packages/pi-subagents && git fetch origin --dry-run)
+(cd packages/pi-subagents && git status --short --branch --untracked-files=all)
+(cd packages/pi-subagents && git diff --stat origin/main..HEAD)
+```

@@ -4,13 +4,13 @@
 
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "../../agents/agents.ts";
 import { applyThinkingSuffix } from "../shared/pi-args.ts";
+import { formatChainStepLabel } from "../../shared/agent-labels.ts";
 import { injectOutputPathSystemPrompt, injectSingleOutputInstruction, normalizeSingleOutputOverride, resolveSingleOutputPath, validateFileOnlyOutputMode } from "../shared/single-output.ts";
 import { buildChainInstructions, isDynamicParallelStep, isParallelStep, resolveStepBehavior, suppressProgressForReadOnlyTask, writeInitialProgressFile, type ChainStep, type ResolvedStepBehavior, type SequentialStep, type StepOverrides } from "../../shared/settings.ts";
 import type { RunnerStep } from "../shared/parallel-utils.ts";
@@ -18,7 +18,7 @@ import { resolvePiPackageRoot } from "../shared/pi-spawn.ts";
 import { buildSkillInjection, normalizeSkillInput, resolveSkillsWithFallback } from "../../agents/skills.ts";
 import { buildAgentMemoryInjection } from "../../agents/agent-memory.ts";
 import { PI_CODING_AGENT_PACKAGE_ROOT_ENV, resolveChildCwd } from "../../shared/utils.ts";
-import { buildModelCandidates, resolveModelCandidate, resolveSubagentModelOverride, type AvailableModelInfo, type ParentModel } from "../shared/model-fallback.ts";
+import { buildModelCandidates, resolveSubagentModelOverride, type AvailableModelInfo, type ParentModel } from "../shared/model-fallback.ts";
 import type { ModelScopeConfig } from "../shared/model-scope.ts";
 import { resolveEffectiveThinking } from "../../shared/model-info.ts";
 import { resolveExpectedWorktreeAgentCwd } from "../shared/worktree.ts";
@@ -469,9 +469,9 @@ export function buildAsyncRunnerSteps(id: string, params: AsyncRunnerStepBuildPa
 			cwd: stepCwd,
 			model,
 			thinking: resolveEffectiveThinking(model, effectiveThinking),
-			modelCandidates: buildModelCandidates(primaryModel, a.fallbackModels, availableModels, ctx.currentModelProvider, { scope: ctx.modelScope }).map((candidate) =>
-				applyThinkingSuffix(candidate, effectiveThinking, thinkingOverride !== undefined),
-			),
+			modelCandidates: buildModelCandidates(primaryModel, a.fallbackModels, availableModels, ctx.currentModelProvider, { scope: ctx.modelScope })
+				.map((candidate) => applyThinkingSuffix(candidate, effectiveThinking, thinkingOverride !== undefined))
+				.filter((candidate): candidate is string => candidate !== undefined),
 			tools: a.tools,
 			extensions: a.extensions,
 			subagentOnlyExtensions: a.subagentOnlyExtensions,
@@ -501,7 +501,7 @@ export function buildAsyncRunnerSteps(id: string, params: AsyncRunnerStepBuildPa
 	};
 
 	let flatStepIndex = 0;
-	const nextFlatStep = (): { index: number; sessionFile?: string; thinkingOverride?: AgentConfig["thinking"] } => {
+	const nextFlatStep = (): { index: number; sessionFile?: string; thinkingOverride?: string } => {
 		const index = flatStepIndex;
 		const sessionFile = sessionFilesByFlatIndex?.[flatStepIndex];
 		const thinkingOverride = thinkingOverridesByFlatIndex?.[flatStepIndex];
@@ -833,9 +833,7 @@ export function executeAsyncChain(
 	}
 
 	const chainDesc = chain
-		.map((s) =>
-			isParallelStep(s) ? `[${s.parallel.map((t) => t.agent).join("+")}]` : isDynamicParallelStep(s) ? `expand:${s.parallel.agent}` : (s as SequentialStep).agent,
-		)
+		.map((s) => isDynamicParallelStep(s) ? `expand:${s.parallel.agent}` : formatChainStepLabel(s))
 		.join(" -> ");
 
 	return {
@@ -936,9 +934,9 @@ export function executeAsyncSingle(
 						cwd: runnerCwd,
 						model,
 						thinking: resolveEffectiveThinking(model, effectiveThinking),
-						modelCandidates: buildModelCandidates(primaryModel, agentConfig.fallbackModels, availableModels, ctx.currentModelProvider, { scope: ctx.modelScope }).map((candidate) =>
-							applyThinkingSuffix(candidate, effectiveThinking, params.thinkingOverride !== undefined),
-						),
+						modelCandidates: buildModelCandidates(primaryModel, agentConfig.fallbackModels, availableModels, ctx.currentModelProvider, { scope: ctx.modelScope })
+							.map((candidate) => applyThinkingSuffix(candidate, effectiveThinking, params.thinkingOverride !== undefined))
+							.filter((candidate): candidate is string => candidate !== undefined),
 						tools: agentConfig.tools,
 						extensions: agentConfig.extensions,
 						subagentOnlyExtensions: agentConfig.subagentOnlyExtensions,

@@ -234,6 +234,7 @@ async function runSingleAttempt(
 		...(options.turnBudget ? { turnBudget: initialTurnBudgetState(options.turnBudget) } : {}),
 		...(options.toolBudget ? { toolBudget: initialToolBudgetState(options.toolBudget) } : {}),
 	};
+	const resultMessages = result.messages ?? (result.messages = []);
 	const startTime = Date.now();
 	if (options.structuredOutput) {
 		try {
@@ -569,7 +570,7 @@ async function runSingleAttempt(
 		const fireUpdate = () => {
 			if (!options.onUpdate || processClosed) return;
 			progress.durationMs = Date.now() - startTime;
-			const output = (result.timedOut || result.turnBudgetExceeded) && result.finalOutput ? result.finalOutput : getFinalOutput(result.messages);
+			const output = (result.timedOut || result.turnBudgetExceeded) && result.finalOutput ? result.finalOutput : getFinalOutput(resultMessages);
 			emitUpdateSnapshot(output || "(running...)");
 		};
 
@@ -628,7 +629,7 @@ async function runSingleAttempt(
 			}
 
 			if (evt.type === "message_end" && evt.message) {
-				result.messages.push(evt.message);
+				resultMessages.push(evt.message);
 				if (evt.message.role === "assistant") {
 					result.usage.turns++;
 					progress.turnCount = result.usage.turns;
@@ -662,7 +663,7 @@ async function runSingleAttempt(
 			}
 
 			if (evt.type === "tool_result_end" && evt.message) {
-				result.messages.push(evt.message);
+				resultMessages.push(evt.message);
 				const resultText = extractTextFromContent(evt.message.content);
 				if (options.toolBudget && pendingToolResult && resultText.includes("Tool budget hard limit reached")) {
 					result.toolBudgetBlocked = true;
@@ -773,7 +774,7 @@ async function runSingleAttempt(
 					tokens: progress.tokens,
 					durationMs: progress.durationMs,
 				};
-				let fullOutput = stripAcceptanceReport(getFinalOutput(result.messages));
+				let fullOutput = stripAcceptanceReport(getFinalOutput(resultMessages));
 				fullOutput = fullOutput.trim() || result.error || result.finalOutput || "Detached child exited without final output.";
 				result.outputMode = options.outputMode ?? "inline";
 				if (options.outputPath && result.exitCode === 0) {
@@ -889,7 +890,7 @@ async function runSingleAttempt(
 		result.exitCode = 1;
 	}
 	if (result.exitCode === 0 && !result.error) {
-		const errInfo = detectSubagentError(result.messages);
+		const errInfo = detectSubagentError(resultMessages);
 		if (errInfo.hasError) {
 			result.exitCode = errInfo.exitCode ?? 1;
 			result.error = errInfo.details
@@ -898,7 +899,7 @@ async function runSingleAttempt(
 		}
 	}
 	if (result.exitCode === 0 && !result.error) {
-		const finalText = getFinalOutput(result.messages);
+		const finalText = getFinalOutput(resultMessages);
 		const missingStructuredOutput = options.structuredOutput
 			? !existsSync(options.structuredOutput.outputPath)
 			: false;
@@ -938,7 +939,7 @@ async function runSingleAttempt(
 		durationMs: progress.durationMs,
 	};
 
-	const acceptanceOutput = getFinalOutput(result.messages);
+	const acceptanceOutput = getFinalOutput(resultMessages);
 	let fullOutput = stripAcceptanceReport(acceptanceOutput);
 	if (result.timedOut) {
 		const timeoutMessage = formatTimeoutMessage(options.timeoutMs ?? 0);
@@ -955,7 +956,7 @@ async function runSingleAttempt(
 		? evaluateCompletionMutationGuard({
 			agent: agent.name,
 			task: shared.originalTask ?? task,
-			messages: result.messages,
+			messages: resultMessages,
 			tools: agent.tools,
 			mcpDirectTools: agent.mcpDirectTools,
 		})

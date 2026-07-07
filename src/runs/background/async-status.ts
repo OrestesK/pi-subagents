@@ -41,6 +41,7 @@ interface AsyncRunStepSummary {
 	turnBudget?: TurnBudgetState;
 	turnBudgetExceeded?: boolean;
 	wrapUpRequested?: boolean;
+	sessionFile?: string;
 	children?: NestedRunSummary[];
 }
 
@@ -111,9 +112,7 @@ function isAsyncRunDir(root: string, entry: string): boolean {
 		return fs.statSync(entryPath).isDirectory();
 	} catch (error) {
 		if (isNotFoundError(error)) return false;
-		throw new Error(`Failed to inspect async run path '${entryPath}': ${getErrorMessage(error)}`, {
-			cause: error instanceof Error ? error : undefined,
-		});
+		throw new Error(`Failed to inspect async run path '${entryPath}': ${getErrorMessage(error)}`);
 	}
 }
 
@@ -123,9 +122,7 @@ function outputFileMtime(outputFile: string | undefined): number | undefined {
 		return fs.statSync(outputFile).mtimeMs;
 	} catch (error) {
 		if (isNotFoundError(error)) return undefined;
-		throw new Error(`Failed to inspect async output file '${outputFile}': ${getErrorMessage(error)}`, {
-			cause: error instanceof Error ? error : undefined,
-		});
+		throw new Error(`Failed to inspect async output file '${outputFile}': ${getErrorMessage(error)}`);
 	}
 }
 
@@ -262,9 +259,7 @@ export function listAsyncRuns(asyncDirRoot: string, options: AsyncRunListOptions
 		entries = fs.readdirSync(asyncDirRoot).filter((entry) => isAsyncRunDir(asyncDirRoot, entry));
 	} catch (error) {
 		if (isNotFoundError(error)) return [];
-		throw new Error(`Failed to list async runs in '${asyncDirRoot}': ${getErrorMessage(error)}`, {
-			cause: error instanceof Error ? error : undefined,
-		});
+		throw new Error(`Failed to list async runs in '${asyncDirRoot}': ${getErrorMessage(error)}`);
 	}
 
 	const allowedStates = options.states ? new Set(options.states) : undefined;

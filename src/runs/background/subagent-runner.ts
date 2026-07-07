@@ -442,7 +442,7 @@ function runPiStreaming(
 				return;
 			}
 
-			appendChildEvent(event);
+			appendChildEvent(event as Record<string, unknown>);
 			transcriptWriter?.writeChildEvent(event);
 			onChildEvent?.(event);
 
@@ -793,6 +793,8 @@ async function runSingleStep(
 	model?: string;
 	attemptedModels?: string[];
 	modelAttempts?: ModelAttempt[];
+	totalCost?: CostSummary;
+	skipped?: boolean;
 	artifactPaths?: ArtifactPaths;
 	transcriptPath?: string;
 	transcriptError?: string;
@@ -976,7 +978,7 @@ async function runSingleStep(
 		else if (ctx.turnBudget) {
 			const assistantMessages = run.messages.filter((message) => message.role === "assistant");
 			const turnCount = assistantMessages.length;
-			const lastAssistantMessage = assistantMessages.at(-1);
+			const lastAssistantMessage = assistantMessages[assistantMessages.length - 1];
 			if (turnCount > 0 && turnCount < ctx.turnBudget.maxTurns) {
 				turnBudget = { ...ctx.turnBudget, outcome: "within-budget", turnCount };
 			} else if (turnCount >= ctx.turnBudget.maxTurns) {
@@ -2201,7 +2203,9 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 					...(thinkingOverride ? {
 						...(model ? { model } : {}),
 						...(thinking ? { thinking } : {}),
-						...(step.parallel.modelCandidates ? { modelCandidates: step.parallel.modelCandidates.map((candidate) => applyThinkingSuffix(candidate, thinkingOverride, true)) } : {}),
+						...(step.parallel.modelCandidates ? { modelCandidates: step.parallel.modelCandidates
+							.map((candidate) => applyThinkingSuffix(candidate, thinkingOverride, true))
+							.filter((candidate): candidate is string => candidate !== undefined) } : {}),
 					} : {}),
 					structuredOutput: undefined,
 					structuredOutputSchema: step.parallel.structuredOutputSchema ?? step.parallel.structuredOutput?.schema,
@@ -2398,6 +2402,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 				});
 			}
 			const collection = collectDynamicResults(step as Parameters<typeof collectDynamicResults>[0], materialized.items, parallelResults);
+			const acceptanceResults = parallelResults.map((result) => ({ ...result, exitCode: result.exitCode ?? (result.error ? 1 : 0) }));
 			const failures = parallelResults.filter((result) => result.exitCode !== 0 && result.exitCode !== -1);
 			if (failures.length === 0) {
 				try {
@@ -2414,7 +2419,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 							acceptance: step.effectiveAcceptance,
 							output: "",
 							report: aggregateAcceptanceReport({
-								results: parallelResults,
+								results: acceptanceResults,
 								notes: `Dynamic fanout collected ${collection.length} result(s) into ${step.collect.as}.`,
 							}),
 							cwd,

@@ -89,9 +89,7 @@ function readOptionalJsonFile(filePath: string, label: string): unknown {
 			: undefined;
 		if (code === "ENOENT") return null;
 		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`Failed to read ${label} '${filePath}': ${message}`, {
-			cause: error instanceof Error ? error : undefined,
-		});
+		throw new Error(`Failed to read ${label} '${filePath}': ${message}`);
 	}
 }
 

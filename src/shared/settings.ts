@@ -6,8 +6,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentConfig } from "../agents/agents.ts";
 import { normalizeSkillInput } from "../agents/skills.ts";
-import { CHAIN_RUNS_DIR, type AcceptanceInput, type JsonSchemaObject, type OutputMode, type ToolBudgetConfig } from "./types.ts";
+import { CHAIN_RUNS_DIR, type AcceptanceInput, type JsonSchemaObject, type OutputMode, type ProgressConfig, type ProgressReportMode, type ToolBudgetConfig } from "./types.ts";
 const CHAIN_DIR_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+const PROGRESS_FILE_NAME = "progress.md";
 const INITIAL_PROGRESS_CONTENT = "# Progress\n\n## Status\nIn Progress\n\n## Tasks\n\n## Files Changed\n\n## Notes\n";
 
 // =============================================================================
@@ -18,6 +19,7 @@ export interface ResolvedStepBehavior {
 	output: string | false;
 	outputMode: OutputMode;
 	reads: string[] | false;
+	readsFromDefault?: boolean;
 	progress: boolean;
 	skills: string[] | false;
 	model?: string;
@@ -90,7 +92,7 @@ export interface DynamicExpandSpec {
 	onEmpty?: "skip" | "fail";
 }
 
-export type DynamicParallelTemplate = Omit<ParallelTaskItem, "as" | "count">;
+export type DynamicParallelTemplate = Omit<ParallelTaskItem, "as" | "count"> & { as?: string; count?: number };
 
 export interface DynamicCollectSpec {
 	as: string;
@@ -101,6 +103,8 @@ export interface DynamicParallelStep {
 	expand: DynamicExpandSpec;
 	parallel: DynamicParallelTemplate;
 	collect: DynamicCollectSpec;
+	cwd?: string;
+	worktree?: boolean;
 	concurrency?: number;
 	failFast?: boolean;
 	phase?: string;
@@ -118,6 +122,8 @@ export interface ParallelStep {
 }
 
 /** Union type for chain steps */
+export type DynamicFanoutStep = DynamicParallelStep;
+
 export type ChainStep = SequentialStep | ParallelStep | DynamicParallelStep;
 
 // =============================================================================
@@ -131,6 +137,8 @@ export function isParallelStep(step: ChainStep): step is ParallelStep {
 export function isDynamicParallelStep(step: ChainStep): step is DynamicParallelStep {
 	return "expand" in step && "collect" in step && "parallel" in step && !Array.isArray((step as { parallel?: unknown }).parallel);
 }
+
+export const isDynamicFanoutStep = isDynamicParallelStep;
 
 /** Get all agent names in a step (single for sequential, multiple for parallel) */
 export function getStepAgents(step: ChainStep): string[] {
@@ -241,6 +249,7 @@ export function resolveStepBehavior(
 			: normalizeOutputOverride(agentConfig.output) ?? false;
 
 	// Reads: step override > frontmatter defaultReads > false (no reads)
+	const readsFromDefault = stepOverrides.reads === undefined;
 	const reads =
 		stepOverrides.reads !== undefined
 			? stepOverrides.reads
@@ -269,12 +278,12 @@ export function resolveStepBehavior(
 
 	const outputMode = stepOverrides.outputMode ?? "inline";
 	const model = stepOverrides.model ?? agentConfig.model;
-	return { output, outputMode, reads, progress, skills, model };
+	return { output, outputMode, reads, readsFromDefault, progress, skills, model };
 }
 
 export function resolveTaskTextForFileUpdatePolicy(task: string | undefined, originalTask?: string): string | undefined {
 	if (!task) return originalTask;
-	return originalTask ? task.replaceAll("{task}", originalTask) : task;
+	return originalTask ? task.split("{task}").join(originalTask) : task;
 }
 
 export function taskDisallowsFileUpdates(task: string | undefined): boolean {
@@ -302,13 +311,35 @@ function resolveChainPath(filePath: string, chainDir: string): string {
 	return path.isAbsolute(filePath) ? filePath : path.join(chainDir, filePath);
 }
 
+export function resolveProgressReportMode(config: ProgressConfig | undefined): ProgressReportMode {
+	return config?.reportMode === "supervisor" ? "supervisor" : "file";
+}
+
+export function progressFileDirForRun(runRoot: string): string {
+	return path.join(runRoot, "progress");
+}
+
+function isProgressRead(filePath: string): boolean {
+	return path.basename(filePath) === PROGRESS_FILE_NAME;
+}
+
+function progressReadsForMode(behavior: ResolvedStepBehavior, reportMode: ProgressReportMode): string[] | false {
+	if (!behavior.reads || reportMode === "file" || !behavior.readsFromDefault) return behavior.reads;
+	const filtered = behavior.reads.filter((filePath) => !isProgressRead(filePath));
+	return filtered.length > 0 ? filtered : false;
+}
+
+function buildSupervisorProgressInstruction(): string {
+	return 'Report concise progress with contact_supervisor({ reason: "progress_update", message: "UPDATE: <summary>" }) when meaningful progress, blockers, or unexpected discoveries change what the parent needs to know. Do not write progress files.';
+}
+
 /**
  * Build chain instructions from resolved behavior.
  * These are appended to the task to tell the agent what to read/write.
  */
 export function writeInitialProgressFile(progressDir: string): void {
 	fs.mkdirSync(progressDir, { recursive: true });
-	fs.writeFileSync(path.join(progressDir, "progress.md"), INITIAL_PROGRESS_CONTENT);
+	fs.writeFileSync(path.join(progressDir, PROGRESS_FILE_NAME), INITIAL_PROGRESS_CONTENT);
 }
 
 export function buildChainInstructions(
@@ -316,29 +347,36 @@ export function buildChainInstructions(
 	chainDir: string,
 	isFirstProgressAgent: boolean,
 	previousSummary?: string,
+	progressReportMode: ProgressReportMode = "file",
+	progressDir: string = chainDir,
 ): { prefix: string; suffix: string } {
 	const prefixParts: string[] = [];
 	const suffixParts: string[] = [];
 
 	// READS - prepend to override any hardcoded filenames in task text
-	if (behavior.reads && behavior.reads.length > 0) {
-		const files = behavior.reads.map((f) => resolveChainPath(f, chainDir));
+	const reads = progressReadsForMode(behavior, progressReportMode);
+	if (reads && reads.length > 0) {
+		const files = reads.map((f) => resolveChainPath(f, chainDir));
 		prefixParts.push(`[Read from: ${files.join(", ")}]`);
 	}
 
-	// OUTPUT - prepend so agent knows where to write
+	// OUTPUT - prepend so the save location stays visible even when task text is long
 	if (behavior.output) {
 		const outputPath = resolveChainPath(behavior.output, chainDir);
-		prefixParts.push(`[Write to: ${outputPath}]`);
+		prefixParts.push(`[Final response will be saved to: ${outputPath}]`);
 	}
 
 	// Progress instructions in suffix (less critical)
 	if (behavior.progress) {
-		const progressPath = path.join(chainDir, "progress.md");
-		if (isFirstProgressAgent) {
-			suffixParts.push(`Create and maintain progress at: ${progressPath}`);
+		if (progressReportMode === "supervisor") {
+			suffixParts.push(buildSupervisorProgressInstruction());
 		} else {
-			suffixParts.push(`Update progress at: ${progressPath}`);
+			const progressPath = path.join(progressDir, PROGRESS_FILE_NAME);
+			if (isFirstProgressAgent) {
+				suffixParts.push(`Create and maintain progress at: ${progressPath}`);
+			} else {
+				suffixParts.push(`Update progress at: ${progressPath}`);
+			}
 		}
 	}
 

@@ -43,7 +43,7 @@ export function createAsyncJobTracker(pi: Pick<ExtensionAPI, "events">, state: S
 	const resultsDir = options.resultsDir ?? RESULTS_DIR;
 	const rerenderWidget = (ctx: ExtensionContext, jobs = Array.from(state.asyncJobs.values())) => {
 		renderWidget(ctx, jobs);
-		ctx.ui.requestRender?.();
+		(ctx.ui as typeof ctx.ui & { requestRender?: () => void }).requestRender?.();
 	};
 	const restoredControlEventCursor = (asyncDir: string) => {
 		try {

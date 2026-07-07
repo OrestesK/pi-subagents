@@ -115,7 +115,7 @@ function readStoreData(filePath: string, cwd: string, sessionId: string): Schedu
 		parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`Failed to parse scheduled subagent store '${filePath}': ${message}`, { cause: error instanceof Error ? error : undefined });
+		throw new Error(`Failed to parse scheduled subagent store '${filePath}': ${message}`);
 	}
 	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
 		throw new Error(`Scheduled subagent store '${filePath}' must be a JSON object.`);
@@ -176,12 +176,12 @@ class ScheduledRunStore {
 
 function resolveMaxLatenessMs(config: ExtensionConfig): number {
 	const value = config.scheduledRuns?.maxLatenessMs;
-	return Number.isInteger(value) && value >= 0 ? value : DEFAULT_MAX_LATENESS_MS;
+	return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : DEFAULT_MAX_LATENESS_MS;
 }
 
 function resolveMaxPending(config: ExtensionConfig): number {
 	const value = config.scheduledRuns?.maxPending;
-	return Number.isInteger(value) && value >= 1 ? value : DEFAULT_MAX_PENDING;
+	return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : DEFAULT_MAX_PENDING;
 }
 
 function terminalState(state: ScheduledRunState): boolean {

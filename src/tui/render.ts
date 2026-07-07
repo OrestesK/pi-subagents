@@ -38,7 +38,12 @@ function getTermWidth(): number {
 	return process.stdout.columns || 120;
 }
 
-const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+interface GraphemeSegmenter {
+	segment(input: string): Iterable<{ segment: string }>;
+}
+
+const { Segmenter } = Intl as typeof Intl & { Segmenter: new (locale: string | undefined, options: { granularity: "grapheme" }) => GraphemeSegmenter };
+const segmenter = new Segmenter(undefined, { granularity: "grapheme" });
 
 /**
  * Truncate a line to maxWidth, preserving ANSI styling through the ellipsis.
@@ -287,7 +292,7 @@ function resultGlyph(result: Details["results"][number], output: string, theme: 
 	return theme.fg("success", "✓");
 }
 
-function compactCurrentActivity(progress: AgentProgress): string {
+function compactCurrentActivity(progress: Pick<AgentProgress, "currentTool" | "currentToolArgs" | "currentToolStartedAt" | "activityState" | "lastActivityAt" | "durationMs">): string {
 	const snapshotNow = snapshotNowForProgress(progress);
 	return formatCurrentToolLine(progress, getTermWidth() - 4, false, snapshotNow) ?? buildLiveStatusLine(progress, snapshotNow) ?? "thinking…";
 }
@@ -622,7 +627,7 @@ function buildMultiProgressLabel(details: Pick<Details, "mode" | "results" | "pr
 		const totalCount = details.totalSteps ?? details.results.length;
 		const statuses = new Array(totalCount).fill("pending") as Array<"pending" | "running" | "completed" | "failed" | "detached">;
 		for (const progress of details.progress ?? []) {
-			if (progress.index >= 0 && progress.index < totalCount) statuses[progress.index] = progress.status;
+			if (progress.index !== undefined && progress.index >= 0 && progress.index < totalCount) statuses[progress.index] = progress.status;
 		}
 		for (let i = 0; i < details.results.length; i++) {
 			const result = details.results[i]!;

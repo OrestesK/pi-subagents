@@ -60,7 +60,8 @@ function isUnsafeAnthropicThinkingBlock(message: BranchSessionEntry["message"], 
 	if (block.type === "redacted_thinking") return true;
 	if (block.type !== "thinking" || !isAnthropic) return false;
 	const signature = "thinkingSignature" in block ? block.thinkingSignature : "signature" in block ? block.signature : undefined;
-	return block.redacted === true || (typeof signature === "string" && signature.length > 0);
+	const redacted = "redacted" in block ? block.redacted : undefined;
+	return redacted === true || (typeof signature === "string" && signature.length > 0);
 }
 
 function createEntryId(entries: BranchSessionEntry[]): string {
@@ -105,7 +106,7 @@ function readSessionEntries(sessionFile: string): BranchSessionEntry[] {
 			return JSON.parse(line) as BranchSessionEntry;
 		} catch (error) {
 			const cause = error instanceof Error ? error : new Error(String(error));
-			throw new Error(`Unable to inspect forked session ${sessionFile}: invalid JSONL on line ${index + 1}: ${cause.message}`, { cause });
+			throw new Error(`Unable to inspect forked session ${sessionFile}: invalid JSONL on line ${index + 1}: ${cause.message}`);
 		}
 	});
 }
@@ -172,7 +173,7 @@ export function createForkContextResolver(
 			return resolution;
 		} catch (error) {
 			const cause = error instanceof Error ? error : new Error(String(error));
-			throw new Error(`Failed to create forked subagent session: ${cause.message}`, { cause });
+			throw new Error(`Failed to create forked subagent session: ${cause.message}`);
 		}
 	};
 

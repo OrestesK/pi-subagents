@@ -555,7 +555,7 @@ function readSettingsFileStrict(filePath: string): Record<string, unknown> {
 		raw = fs.readFileSync(filePath, "utf-8");
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`Failed to read settings file '${filePath}': ${message}`, { cause: error });
+		throw new Error(`Failed to read settings file '${filePath}': ${message}`);
 	}
 
 	let parsed: unknown;
@@ -563,7 +563,7 @@ function readSettingsFileStrict(filePath: string): Record<string, unknown> {
 		parsed = JSON.parse(raw);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`Failed to parse settings file '${filePath}': ${message}`, { cause: error });
+		throw new Error(`Failed to parse settings file '${filePath}': ${message}`);
 	}
 	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
 		throw new Error(`Settings file '${filePath}' must contain a JSON object.`);

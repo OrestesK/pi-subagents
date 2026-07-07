@@ -110,7 +110,7 @@ function readTextTail(filePath: string, maxLines: number): TextTailResult {
 		const content = buffer.subarray(0, bytesRead).toString("utf-8");
 		let lines = content.split(/\r?\n/);
 		if (start > 0 && lines.length > 0) lines = lines.slice(1);
-		if (lines.at(-1) === "") lines = lines.slice(0, -1);
+		if (lines[lines.length - 1] === "") lines = lines.slice(0, -1);
 		return { path: filePath, lines: lines.slice(-maxLines), truncated: start > 0 || lines.length > maxLines };
 	} catch (error) {
 		return { path: filePath, lines: [], truncated: false, error: getErrorMessage(error) };

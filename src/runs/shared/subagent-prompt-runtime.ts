@@ -253,7 +253,9 @@ function registerSteeringInbox(pi: ExtensionAPI): void {
 		disposed = true;
 		try {
 			watcher?.close();
-		} catch {}
+		} catch (error) {
+			void error;
+		}
 		if (interval) clearInterval(interval);
 	});
 }
@@ -314,13 +316,15 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 		});
 	}
 
-	onRuntimeEvent("context", (event: { messages: unknown[] }) => {
+	onRuntimeEvent("context", (event: unknown) => {
+		if (!event || typeof event !== "object" || !("messages" in event) || !Array.isArray(event.messages)) return undefined;
 		const messages = stripParentOnlySubagentMessages(event.messages);
 		if (messages === event.messages) return undefined;
 		return { messages };
 	});
 
-	onRuntimeEvent("before_agent_start", async (event: { systemPrompt: string }) => {
+	onRuntimeEvent("before_agent_start", async (event: unknown) => {
+		if (!event || typeof event !== "object" || !("systemPrompt" in event) || typeof event.systemPrompt !== "string") return undefined;
 		registerNativeSupervisorFallbackOnce();
 		const intercomSessionName = process.env[SUBAGENT_INTERCOM_SESSION_NAME_ENV]?.trim();
 		if (intercomSessionName && typeof pi.setSessionName === "function") {

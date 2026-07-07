@@ -113,7 +113,7 @@ function startNestedControlInboxListener(pi: ExtensionAPI, state: SubagentState)
 						}
 						pendingResults.delete(request.requestId);
 						seen.add(request.requestId);
-						try { fs.unlinkSync(request.filePath); } catch {}
+						try { fs.unlinkSync(request.filePath); } catch (error) { void error; }
 					} finally {
 						inFlight.delete(request.requestId);
 					}
@@ -163,7 +163,7 @@ export default function registerFanoutChildSubagentExtension(pi: ExtensionAPI): 
 		].join("\n"),
 		parameters: SubagentParams,
 		execute(id, params, signal, onUpdate, ctx) {
-			return executor.execute(id, params as SubagentParamsLike, signal, onUpdate, ctx);
+			return executor.execute(id, params as SubagentParamsLike, signal ?? new AbortController().signal, onUpdate, ctx);
 		},
 	};
 

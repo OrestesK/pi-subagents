@@ -7,6 +7,7 @@ import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import type { FSWatcher } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { AgentConfig } from "../agents/agents.ts";
 import type { ModelScopeConfig } from "../runs/shared/model-scope.ts";
 
 // ============================================================================
@@ -270,7 +271,7 @@ export interface SubagentResultIntercomPayload {
 // ============================================================================
 
 export interface AgentProgress {
-	index: number;
+	index?: number;
 	agent: string;
 	status: "pending" | "running" | "completed" | "failed" | "detached";
 	activityState?: ActivityState;
@@ -296,7 +297,7 @@ export interface ToolCallSummary {
 	expandedText: string;
 }
 
-interface ProgressSummary {
+interface ProgressSummary extends Partial<AgentProgress> {
 	toolCount: number;
 	tokens: number;
 	durationMs: number;
@@ -315,6 +316,7 @@ export interface ModelAttempt {
 }
 
 export type AcceptanceLevel = "auto" | "none" | "attested" | "checked" | "verified" | "reviewed";
+export type AcceptanceProvenanceLevel = Exclude<AcceptanceLevel, "auto">;
 
 export type AcceptanceEvidenceKind =
 	| "changed-files"
@@ -369,7 +371,7 @@ export interface ResolvedAcceptanceGate extends AcceptanceGate {
 }
 
 export interface ResolvedAcceptanceConfig {
-	level: Exclude<AcceptanceLevel, "auto">;
+	level: AcceptanceProvenanceLevel;
 	explicit: boolean;
 	inferredReason: string[];
 	criteria: ResolvedAcceptanceGate[];
@@ -449,6 +451,8 @@ export interface AcceptanceLedger {
 	criteria: ResolvedAcceptanceGate[];
 	childReport?: AcceptanceReport;
 	childReportParseError?: string;
+	initialChildReport?: AcceptanceReport;
+	initialChildReportParseError?: string;
 	runtimeChecks: AcceptanceRuntimeCheck[];
 	verifyRuns: AcceptanceVerifyResult[];
 	reviewResult?: AcceptanceReviewResult;
@@ -463,6 +467,7 @@ export interface SingleResult {
 	agent: string;
 	task: string;
 	exitCode: number;
+	skipped?: boolean;
 	detached?: boolean;
 	detachedReason?: string;
 	interrupted?: boolean;
@@ -476,6 +481,7 @@ export interface SingleResult {
 	usage: Usage;
 	model?: string;
 	attemptedModels?: string[];
+	totalCost?: CostSummary;
 	modelAttempts?: ModelAttempt[];
 	controlEvents?: ControlEvent[];
 	error?: string;
@@ -978,6 +984,12 @@ export interface IntercomBridgeConfig {
 	instructionFile?: string;
 }
 
+export type ProgressReportMode = "file" | "supervisor";
+
+export interface ProgressConfig {
+	reportMode?: ProgressReportMode;
+}
+
 interface TopLevelParallelConfig {
 	maxTasks?: number;
 	concurrency?: number;
@@ -1021,6 +1033,7 @@ export interface ExtensionConfig {
 	turnBudget?: TurnBudgetConfig;
 	toolBudget?: ToolBudgetConfig;
 	parallel?: TopLevelParallelConfig;
+	progress?: ProgressConfig;
 	chain?: ExtensionChainConfig;
 	worktreeSetupHook?: string;
 	worktreeSetupHookTimeoutMs?: number;
@@ -1064,7 +1077,7 @@ export function resolveTempScopeId(options?: {
 	homedir?: (() => string) | undefined;
 }): string {
 	const env = options?.env ?? process.env;
-	const getuid = options && Object.hasOwn(options, "getuid")
+	const getuid = options && Object.prototype.hasOwnProperty.call(options, "getuid")
 		? options.getuid
 		: process.getuid?.bind(process);
 	if (typeof getuid === "function") {
@@ -1076,7 +1089,7 @@ export function resolveTempScopeId(options?: {
 		if (value) return `user-${sanitizeTempScopeSegment(value)}`;
 	}
 
-	const userInfo = options && Object.hasOwn(options, "userInfo")
+	const userInfo = options && Object.prototype.hasOwnProperty.call(options, "userInfo")
 		? options.userInfo
 		: os.userInfo;
 	try {
@@ -1089,7 +1102,7 @@ export function resolveTempScopeId(options?: {
 	const homedir = env.USERPROFILE ?? env.HOME;
 	if (homedir) return `home-${sanitizeTempScopeSegment(homedir)}`;
 
-	const resolveHomedir = options && Object.hasOwn(options, "homedir")
+	const resolveHomedir = options && Object.prototype.hasOwnProperty.call(options, "homedir")
 		? options.homedir
 		: os.homedir;
 	try {

@@ -36,6 +36,7 @@ import {
 	SLASH_SUBAGENT_RESPONSE_EVENT,
 	SLASH_SUBAGENT_STARTED_EVENT,
 	SLASH_SUBAGENT_UPDATE_EVENT,
+	type AcceptanceInput,
 	type Details,
 	type JsonSchemaObject,
 	type SingleResult,
@@ -361,7 +362,7 @@ const mapSavedChainSteps = (chain: ChainConfig, worktree = false): ChainStep[] =
 				const outputSchema = loadSavedOutputSchema(chain, task.agent, rawOutputSchema);
 				return { ...rest, ...(outputSchema ? { outputSchema } : {}) };
 			});
-			return { ...step, parallel, ...(worktree ? { worktree: true } : {}) };
+			return { ...step, parallel, ...(worktree ? { worktree: true } : {}) } as ChainStep;
 		}
 		if (isDynamicParallelStep(step)) {
 			const { outputSchema: rawOutputSchema, ...parallelRest } = step.parallel as typeof step.parallel & { outputSchema?: unknown };
@@ -371,7 +372,7 @@ const mapSavedChainSteps = (chain: ChainConfig, worktree = false): ChainStep[] =
 				...step,
 				parallel: { ...parallelRest, ...(outputSchema ? { outputSchema } : {}) },
 				collect: { ...step.collect, ...(collectSchema ? { outputSchema: collectSchema } : {}) },
-			};
+			} as ChainStep;
 		}
 		const outputSchema = loadSavedOutputSchema(chain, step.agent, (step as { outputSchema?: unknown }).outputSchema);
 		return {
@@ -381,14 +382,14 @@ const mapSavedChainSteps = (chain: ChainConfig, worktree = false): ChainStep[] =
 			...(step.label ? { label: step.label } : {}),
 			...(step.as ? { as: step.as } : {}),
 			...(outputSchema ? { outputSchema } : {}),
-			...((step as { acceptance?: unknown }).acceptance !== undefined ? { acceptance: (step as { acceptance?: unknown }).acceptance } : {}),
+			...((step as { acceptance?: AcceptanceInput }).acceptance !== undefined ? { acceptance: (step as { acceptance?: AcceptanceInput }).acceptance } : {}),
 			output: step.output,
 			outputMode: step.outputMode,
 			reads: step.reads,
 			progress: step.progress,
 			skill: step.skill ?? step.skills,
 			model: step.model,
-		};
+		} as ChainStep;
 	});
 };
 
@@ -832,7 +833,7 @@ type ChainStepObject = {
 	cwd?: string;
 	count?: number;
 	outputSchema?: JsonSchemaObject;
-	acceptance?: string;
+	acceptance?: AcceptanceInput;
 };
 
 const INLINE_ACCEPTANCE_LEVELS = new Set(["auto", "attested", "checked"]);
@@ -885,7 +886,7 @@ const mapParsedTaskToStepObject = (
 		...(config.cwd ? { cwd: config.cwd } : {}),
 		...(opts.inGroup && config.count !== undefined ? { count: config.count } : {}),
 		...(config.outputSchema ? { outputSchema: loadInlineOutputSchema(opts.baseCwd, name, config.outputSchema) } : {}),
-		...(config.acceptance ? { acceptance: config.acceptance } : {}),
+		...(config.acceptance ? { acceptance: config.acceptance as AcceptanceInput } : {}),
 	};
 };
 

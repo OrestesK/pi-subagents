@@ -51,6 +51,14 @@ const OutputModeOverride = Type.String({
 	description: "Return saved output inline (default) or only a concise file reference. file-only requires output to be a path.",
 });
 
+const RequiredCapabilitiesOverride = Type.Array(
+	Type.String({ enum: ["mcp", "direct-mcp", "custom-extension"] }),
+	{
+		description:
+			"Declared tool capability classes this child must have before launch. Used for deterministic preflight only; no task-text inference is performed.",
+	},
+);
+
 const ReadsOverride = Type.Unsafe({
 	anyOf: [
 		{ type: "array", items: { type: "string" } },
@@ -93,8 +101,8 @@ const ToolBudgetOverride = Type.Object({
 }, { additionalProperties: false, description: "Optional child tool-call budget. soft nudges the child; after hard, block tools (default read/grep/find/ls, or '*' for all tools) are blocked so the child can finalize." });
 
 const TaskItem = Type.Object({
-	agent: Type.String(), 
-	task: Type.String(), 
+	agent: Type.String(),
+	task: Type.String(),
 	cwd: Type.Optional(Type.String()),
 	count: Type.Optional(Type.Integer({ minimum: 1, description: "Repeat this parallel task N times with the same settings." })),
 	output: Type.Optional(OutputOverride),
@@ -103,6 +111,7 @@ const TaskItem = Type.Object({
 	progress: Type.Optional(Type.Boolean({ description: "Enable progress.md tracking for this task" })),
 	model: Type.Optional(Type.String({ description: "Override model for this task (e.g. 'google/gemini-3-pro')" })),
 	skill: Type.Optional(SkillOverride),
+	requiresCapabilities: Type.Optional(RequiredCapabilitiesOverride),
 	toolBudget: Type.Optional(ToolBudgetOverride),
 	acceptance: Type.Optional(AcceptanceOverride),
 });
@@ -123,6 +132,7 @@ const ParallelTaskSchema = Type.Object({
 	progress: Type.Optional(Type.Boolean({ description: "Enable progress.md tracking in {chain_dir}" })),
 	skill: Type.Optional(SkillOverride),
 	model: Type.Optional(Type.String({ description: "Override model for this task" })),
+	requiresCapabilities: Type.Optional(RequiredCapabilitiesOverride),
 	toolBudget: Type.Optional(ToolBudgetOverride),
 	acceptance: Type.Optional(AcceptanceOverride),
 });
@@ -151,6 +161,7 @@ const DynamicParallelTemplateSchema = Type.Object({
 	progress: Type.Optional(Type.Boolean({ description: "Enable progress.md tracking in {chain_dir}" })),
 	skill: Type.Optional(SkillOverride),
 	model: Type.Optional(Type.String({ description: "Override model for this task" })),
+	requiresCapabilities: Type.Optional(RequiredCapabilitiesOverride),
 	toolBudget: Type.Optional(ToolBudgetOverride),
 	acceptance: Type.Optional(AcceptanceOverride),
 }, { additionalProperties: false });
@@ -177,6 +188,7 @@ const ChainItem = Type.Object({
 	progress: Type.Optional(Type.Boolean({ description: "Enable progress.md tracking in {chain_dir}" })),
 	skill: Type.Optional(SkillOverride),
 	model: Type.Optional(Type.String({ description: "Override model for this step" })),
+	requiresCapabilities: Type.Optional(RequiredCapabilitiesOverride),
 	toolBudget: Type.Optional(ToolBudgetOverride),
 	acceptance: Type.Optional(AcceptanceOverride),
 	parallel: Type.Optional(Type.Unsafe({
@@ -214,6 +226,14 @@ const ControlOverrides = Type.Object({
 });
 
 const SubagentParamsSchema = Type.Object({
+	workflow: Type.Optional(Type.String({
+		enum: [
+			"builtin.quality-gate",
+			"builtin.research-decision",
+			"builtin.generate-filter",
+		],
+		description: "Deprecated compatibility alias for named builtin workflows. Prefer prompt shortcuts or explicit tasks/chain. Requires task. Mutually exclusive with agent, tasks, chain, action, config, and chainName. Builtin workflows run foreground/fresh by default so the parent can synthesize the result before proceeding.",
+	})),
 	agent: Type.Optional(Type.String({ description: "Agent name (SINGLE mode) or target for management get/update/delete" })),
 	task: Type.Optional(Type.String({ description: "Task (SINGLE mode, optional for self-contained agents)" })),
 	// Management action (when present, tool operates in management mode)
@@ -288,6 +308,7 @@ const SubagentParamsSchema = Type.Object({
 	outputMode: Type.Optional(OutputModeOverride),
 	skill: Type.Optional(SkillOverride),
 	model: Type.Optional(Type.String({ description: "Override model for single agent (e.g. 'anthropic/claude-sonnet-4')" })),
+	requiresCapabilities: Type.Optional(RequiredCapabilitiesOverride),
 	acceptance: Type.Optional(AcceptanceOverride),
 });
 

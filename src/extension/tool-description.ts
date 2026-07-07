@@ -23,7 +23,7 @@ EXECUTION (use exactly ONE mode):
 • PARALLEL: { tasks: [{agent,task,count?,output?,reads?,progress?}, ...], concurrency?: number, worktree?: true } - concurrent execution (worktree: isolate each task in a git worktree)
 • Optional context: { context: "fresh" | "fork" } (explicit value overrides every child; when omitted, each requested agent uses its own defaultContext, otherwise "fresh"; inspect agent defaults via { action: "list" })
 • Optional timeout: { timeoutMs } or { maxRuntimeMs } sets a run-level max runtime for foreground and async/background runs
-• If { action: "list" } shows proactive skill subagent suggestions, consider a small fresh-context fanout for broad tasks where one of those skills would materially help
+• Treat { action: "list" } as effective routing guidance for executable/non-disabled agents and chains; use distinct read-only advisors when they materially improve coverage
 
 CHAIN TEMPLATE VARIABLES (use in task strings):
 • {task} - The original task/request from the user
@@ -72,7 +72,7 @@ EXECUTE:
 • SINGLE {agent, task?}; PARALLEL {tasks:[{agent,task,count?,output?,reads?,progress?}], concurrency?, worktree?}; CHAIN {chain:[{agent,task?},{parallel:[...]}]}.
 • context can be "fresh" or "fork"; omitted uses each agent defaultContext, otherwise fresh. timeoutMs/maxRuntimeMs apply to foreground and async/background runs.
 • Chain templates may use {task}, {previous}, {chain_dir}, and named outputs. Parallel worktree isolation requires a clean git repo.
-• If list shows proactive skill subagent suggestions, use a small fresh-context fanout only when the task is broad enough.
+• Use list as effective routing guidance; launch distinct read-only advisors only when they materially improve coverage.
 
 MANAGE / CONTROL:
 • Use action without execution fields: list, get, models, create, update, delete, eject, disable, enable, reset, doctor.
