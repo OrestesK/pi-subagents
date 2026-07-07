@@ -221,7 +221,7 @@ pi.events.emit("subagents:rpc:v1:request", {
 
 The v1 methods are `ping`, `status`, `spawn`, `interrupt`, and `stop`. `status` and `interrupt` reuse the normal control actions. `spawn` is async-only: omit `async` or set `async: true`, omit `clarify` or set `clarify: false`, and do not pass management `action` values. It goes through the same executor as the `subagent` tool, so agent discovery, validation, session attribution, spawn limits, child-safety depth, artifacts, and async status all behave the same. `stop` targets running async runs through the existing timeout control channel.
 
-`pi.events` is in-process only. It does not reach separate Pi processes or child subagents; use the file lifecycle artifacts or `pi-intercom` for cross-process coordination.
+`pi.events` is in-process only. It does not reach separate Pi processes or child subagents; use lifecycle artifacts for durable state and native supervisor coordination when a child needs to ask the parent for input.
 
 If something feels misconfigured, run:
 
@@ -232,7 +232,7 @@ If something feels misconfigured, run:
 or ask:
 
 ```text
-Check whether subagents and intercom are set up correctly.
+Check whether subagents and supervisor coordination are set up correctly.
 ```
 
 ## Recommended orchestration pattern (scaffolding)
@@ -251,28 +251,33 @@ Child-safety boundaries are enforced at runtime. Spawned child sessions do not r
 
 ## Optional shortcuts
 
-The package includes reusable prompt templates for common workflows. You do not need them, but they are handy when you want the same shape every time:
+The package includes reusable prompt templates for common workflows. You do not need to type these commands; parent agents should map normal requests such as “review this”, “research and decide”, “give me options”, or “argue both sides” to the same workflow shapes. The shortcuts are handy when you want to force the exact shape:
 
 | Prompt | Use it for |
 |--------|------------|
-| `/parallel-review` | Launch fresh-context reviewers with distinct angles, then synthesize what to fix. |
+| `/parallel-review` | Launch fresh-context reviewers with distinct adversarial angles, then synthesize what to fix. |
+| `/quality-gate` | Run a quality-first review gate over a plan, diff, answer, PR, issue, or target, then synthesize `PASS` / `FAIL` / `INCONCLUSIVE`. |
+| `/quick-adversarial-check` | Quickly attack an assumption, plan, claim, or recommendation before committing to it. |
+| `/adversarial-debate` | Generate competing positions, attack them, and synthesize the disagreement by rubric. |
 | `/review-loop` | Run parent-controlled worker, reviewer, and fix-worker cycles until clean or capped. |
 | `/parallel-research` | Combine `researcher` and `scout` for external evidence, local code context, and practical tradeoffs. |
+| `/research-decision` | Research a decision with external evidence, local context, tradeoff critique, and recommendation. |
+| `/generate-filter` | Generate diverse options, run a mandatory reviewer/filter fan-in over concrete options, and return the strongest choices. |
 | `/parallel-context-build` | Run `context-builder` agents in parallel to produce planning handoff context and meta-prompts. |
 | `/parallel-handoff-plan` | Combine external research and `context-builder` passes into an implementation handoff plan and meta-prompt. |
 | `/gather-context-and-clarify` | Scout/research first, then ask the user the clarification questions that matter. |
 | `/parallel-cleanup` | Run review-only cleanup passes after implementation. |
 
-Add `autofix` to `/parallel-review` or `/parallel-cleanup` to apply only the synthesized fixes worth doing now after reviewers return.
+Add `autofix` to `/parallel-review` or `/parallel-cleanup` only when you want the parent to apply synthesized fixes worth doing now after reviewers return. `/quality-gate` is review and synthesis only; use a separate implementation-authorized fix workflow for changes.
 
 ## Native supervisor coordination
 
-Child agents can talk back to the parent Pi session without installing `pi-intercom`. `pi-subagents` now provides the child-facing `contact_supervisor` tool and the parent-facing `subagent_supervisor({ action: "reply" })` path natively. If no external `pi-intercom` tool owns the `intercom` name, the native channel also exposes `intercom` as a compatibility fallback.
+Child agents can talk back to the parent Pi session through native supervisor coordination. `pi-subagents` provides the child-facing `contact_supervisor` tool and the parent-facing `subagent_supervisor({ action: "reply" })` path.
 
 Use it for work where the child might need a decision instead of guessing:
 
 ```text
-Run this implementation in the background. If the worker gets blocked or needs a product decision, have it ask me through intercom.
+Run this implementation in the background. If the worker gets blocked or needs a product decision, have it ask me through supervisor coordination.
 ```
 
 ```text
@@ -293,7 +298,7 @@ If messages do not show up, run:
 /subagents-doctor
 ```
 
-For normal use, you do not need to configure anything. Advanced users can tune the bridge with `intercomBridge` in the configuration section below.
+For normal use, you do not need to configure anything.
 
 At this point, you know enough to use the plugin. The rest of this README is reference material for exact command syntax, custom agents, saved chains, worktrees, and configuration.
 
@@ -883,8 +888,8 @@ What the bundled skill covers:
 - **Delegation patterns**: when to launch which agent, whether to use single, parallel, chain, or async mode, and whether to use fresh or forked context
 - **Prompt workflow recipes**: how to apply the packaged techniques directly with `subagent(...)` when the user describes the workflow in natural language instead of invoking a slash command. This includes parallel review, review-loop, parallel research, parallel context-build, parallel handoff-plan, gather-context-and-clarify, and parallel cleanup
 - **Role-agent prompting guidance**: compact contract prompts instead of long scripts, what to include in role-specific meta prompts, and retrieval budgets for researchers
-- **Safety boundaries**: child agents must not run subagents unless their resolved builtin tools explicitly include `subagent`, must not invent intercom targets, and must escalate unapproved decisions
-- **Intercom conventions**: when to ask vs send, and how parent-side supervisor/result delivery works through the native channel
+- **Safety boundaries**: child agents must not run subagents unless their resolved builtin tools explicitly include `subagent`, must not invent cross-session targets, and must escalate unapproved decisions
+- **Supervisor coordination conventions**: when to ask the parent and how parent-side supervisor/result delivery works through the native channel
 - **Control and diagnostics**: attention signals, soft interrupts, status, and the `doctor` action
 
 If you are writing an agent that orchestrates subagents, the bundled skill helps it behave correctly without guessing the patterns. If you are a human user, you do not need to read it directly; the README and prompt shortcuts encode the same workflows in user-facing form.
@@ -1239,28 +1244,6 @@ export PI_SUBAGENT_PI_BINARY=/path/to/pi-or-wrapper
 
 Overrides the command used to launch child Pi processes. Package wrappers can set this to their own `pi`/agent binary so subagents inherit wrapper flags, environment setup, and bundled resources without relying on `PATH` ordering. Empty or whitespace-only values are ignored.
 
-### `intercomBridge`
-
-```json
-{
-  "intercomBridge": {
-    "mode": "always",
-    "instructionFile": "./intercom-bridge.md"
-  }
-}
-```
-
-Controls whether subagents receive runtime intercom coordination instructions and whether `intercom` and `contact_supervisor` are auto-added to their tool allowlist when needed.
-
-Fields:
-
-- `mode`: default `always`; use `fork-only` to inject only for forked runs, or `off` to disable the bridge.
-- `instructionFile`: optional Markdown template replacing the default bridge instructions. `{orchestratorTarget}` is interpolated. Relative paths resolve from `~/.pi/agent/extensions/subagent/`.
-
-Bridge activation requires a targetable current parent session id, which `pi-subagents` passes to children automatically. It no longer depends on an external `pi-intercom` installation or per-agent extension allowlists.
-
-The default injected guidance tells children to use `contact_supervisor` with `reason: "need_decision"` when blocked or needing a decision, `reason: "progress_update"` only for meaningful blocked/progress updates, generic `intercom` as fallback plumbing, and avoid routine completion handoffs.
-
 ### `worktreeBaseDir`
 
 ```json
@@ -1472,6 +1455,6 @@ The main runtime files are:
 | `src/runs/foreground/chain-execution.ts` / `src/agents/chain-serializer.ts` | Chain orchestration and `.chain.md` parsing. |
 | `src/shared/settings.ts` | Chain behavior, instructions, and config helpers. |
 | `src/runs/shared/worktree.ts` | Git worktree isolation. |
-| `src/intercom/intercom-bridge.ts` | Runtime intercom bridge instructions and diagnostics. |
+| `src/intercom/intercom-bridge.ts` | Native supervisor coordination instructions and diagnostics. |
 | `src/extension/schemas.ts` / `src/shared/types.ts` | Tool schemas, shared types, and event constants. |
 | `test/unit/` / `test/integration/` / `test/e2e/` | Unit, loader-based integration, and real-session E2E tests. |

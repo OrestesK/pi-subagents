@@ -5,7 +5,10 @@ description: |
   parallel, async, forked-context, and intercom-coordinated workflows. Use
   for advisory review, implementation handoffs, and multi-step tasks where a
   single agent should stay in control while other agents contribute context,
-  planning, or execution.
+  planning, or execution. Also use when ordinary user language implies a
+  workflow such as review this, quality gate, fix-review-fix, argue both
+  sides, think through architecture, research and decide, generate options,
+  build context, prepare a handoff, clarify first, or cleanup/deslop.
 ---
 
 # Pi Subagents
@@ -26,6 +29,21 @@ Use this skill when the parent orchestrator needs to launch a specialized subage
 - **Subagent control**: watch needs-attention signals and soft-interrupt only when a delegated run is genuinely blocked
 - **Agent authoring**: create, update, or override agents and chains for a project
 
+## Async Progress Visibility
+
+For async subagents, prefer event-based progress over timer polling.
+
+Use this protocol for long-running async runs:
+
+- For long-running tmux/log/status runs that are not themselves subagent children, start a paired async `run-monitor` with a specific monitoring intent: exact target/evidence surfaces, the parent decision it supports, minimum useful facts to report, escalation triggers, terminal/stop authority for timeout or stuck states, reporting expectations such as a rough maximum silence window, and optional runtime output capture configured by the parent.
+- Give each long-running child an explicit progress file path under `.scratch/` whenever phase checkpoints materially improve parent visibility or recovery.
+- Ask children to update progress after meaningful phases, not every few seconds.
+- Ask children to contact the parent only when blocked, when scope changes, when a must-fix/high-risk finding appears, or when a meaningful progress update changes the plan.
+- Do not poll constantly. Check status opportunistically, use `wait()` when the next step depends on completion, or continue independent work while async results are not required for the next claim.
+- Before final completion, inspect relevant async outputs; do not rely on completion notifications alone.
+
+For short reviewer/scout runs expected under a few minutes, a final saved output is enough. For deeper audits, use both `output` and a progress file, and ask the child to write concise phase checkpoints.
+
 ## Tool vs Slash Commands
 
 Agents can use the `subagent(...)` tool directly for execution, management, status, and control.
@@ -37,7 +55,7 @@ Humans often use the slash-command layer instead:
 - `/run-chain` — launch a saved `.chain.md` or `.chain.json` workflow
 - `/subagent-cost` — show parent plus child token usage and cost for the session
 - `/subagents-fleet` — show the read-only active foreground/background fleet view
-- `/subagents-doctor` — diagnose setup, discovery, async paths, and intercom bridge state
+- `/subagents-doctor` — diagnose setup, discovery, async paths, and supervisor coordination state
 - `/subagents-models [agent]` — show the live runtime-loaded builtin model mapping
 - `/subagents-profiles`, `/subagents-load-profile`, `/subagents-refresh-provider-models`, `/subagents-generate-profiles`, `/subagents-check-profile` — manage model profiles and provider catalogs
 - `/prompt-workflow` and `/chain-prompts` — run prompt templates through native subagent single/chain workflows
@@ -47,8 +65,13 @@ you are guiding a human through an interactive flow.
 
 Packaged prompt shortcuts are also available for repeatable workflows. Treat them as reusable orchestration recipes, not just human slash commands. When the user asks for one of these shapes, or when the workflow clearly fits, apply the same pattern directly with `subagent(...)` and other tools:
 - `/parallel-review` — fresh-context reviewers with distinct review angles, then synthesis
+- `/quality-gate` — review gate over a plan, diff, answer, PR, issue, or target, ending in a parent `PASS` / `FAIL` / `INCONCLUSIVE` verdict
+- `/quick-adversarial-check` — lightweight attack on an assumption, plan, claim, or recommendation
+- `/adversarial-debate` — competing positions, attacks, optional repair, and parent synthesis by rubric
 - `/review-loop` — parent-orchestrated worker, fresh-reviewer, and fix-worker cycles until clean or capped
 - `/parallel-research` — combine `researcher` and `scout` for external evidence plus local code context
+- `/research-decision` — external evidence, local context, tradeoff critique, and recommendation
+- `/generate-filter` — diverse option generation, dedupe/filter, and top-choice synthesis
 - `/parallel-context-build` — parallel `context-builder` passes that produce planning handoff context and meta-prompts
 - `/parallel-handoff-plan` — external-reference research plus local `context-builder` passes, followed by a synthesis handoff plan and implementation-ready meta-prompt
 - `/gather-context-and-clarify` — scout/research first, then ask the user clarifying questions with `interview`
@@ -56,7 +79,74 @@ Packaged prompt shortcuts are also available for repeatable workflows. Treat the
 
 ## Applying Prompt Techniques Without Slash Commands
 
+This section is the canonical owner for subagent natural-language recipe routing. Root and manager workflow docs should point here instead of duplicating the full recipe matrix.
+
+The user does not need to name a slash command. Treat ordinary language as workflow intent when the shape is clear, then run the matching pattern directly with `subagent(...)` or a builtin workflow. Do not wait for the user to say `/quality-gate`, `/adversarial-debate`, or another exact shortcut. If a canonical recipe matches, use it directly; if none matches, design a dynamic runtime chain/swarm before launch.
+
 The prompt templates in `prompts/` encode workflows the parent agent can run on demand. If the user provides a URL, issue, PR, plan, local file, screenshot, or freeform target, treat that target as the primary scope: read or fetch it before launching children, then include it explicitly in every child task. Do not depend on the parent conversation history when the recipe calls for fresh context.
+
+### Natural-language routing and constraints
+
+Adapt to the user's actual phrasing, including typos, shorthand, and repetition. Treat these as workflow intent when the request is nontrivial or asks for multiple independent views:
+
+| User says or implies | Parent should usually run |
+| --- | --- |
+| “review this”, “check this”, “does this look right?” | `review` skill first; use parallel fresh reviewers by default unless an explicit parent-only reason is stronger |
+| “10 review agents”, “different goals”, “validate what the other agents found” | large review matrix with distinct first-pass roles, validators/reducer when needed, and parent synthesis |
+| “before finalizing”, “is this good enough?”, “quality gate this” | quality-gate pattern ending with parent `PASS` / `FAIL` / `INCONCLUSIVE` |
+| “verify your proposal and do it”, “pressure-test this approach, then start”, “if it survives, implement it” | proposal-verification gate first; attack the parent proposal before implementation scouting, worker handoff, or file hunting |
+| “fix, review, fix, review”, “iterate until clean”, “apply the review feedback” | implementation-authorized review/fix loop; one writer at a time, then fresh reviewers |
+| “think about the architecture”, “is this the right approach?”, “argue both sides” | adversarial debate or quick adversarial check depending on scope |
+| “research and decide”, “what should we use?”, “look at docs/source and recommend” | research-decision pattern with researcher + scout + tradeoff reviewer |
+| “give me concrete options”, “generate candidates”, “brainstorm test cases/names after scope is clear” | generate-filter shape; diverse generators must feed a mandatory reviewer/filter fan-in |
+| “learn this codebase”, “build context before planning” | parallel context build |
+| “prepare a handoff”, “study this library/reference and make a worker brief” | parallel handoff plan |
+| “clean this up”, “remove slop”, “make it less verbose” | parallel cleanup; ask before edits unless cleanup/fix was already authorized |
+
+Constraints override recipe enthusiasm:
+- Strict no-artifact wording such as `do not write artifacts`, `no files`, or `inline only` means no subagents. Child sessions, debug logs, temp output, and runtime state are filesystem artifacts.
+- Repo-scoped no-artifact wording still allows advisory subagents, but set top-level `artifacts: false` and child `output: false` / `progress: false`; do not configure chain output paths.
+- Review-only, no-edit, no-live-probe, private MCP, cloud, database, destructive, production-affecting, and behavior/security/scope-decision constraints remain active inside children.
+- Do not downgrade an unauthorized edit/worker request into child fanout. Block or ask for approval directly.
+
+### Runtime chain vs swarm routing
+
+Use top-level parallel swarms (`tasks: [...]`) when children are independent and the parent only needs parallel evidence collection: review, quality gate, sectioned audit, or broad parallel recon.
+
+Use runtime `chain` when a later step depends on concrete output from an earlier step or parallel group through `{previous}` or `{chain_dir}`. Prefer a chain with an initial `parallel` group for generate → filter, debate → attack → synthesis, research + local recon → recommendation, context-build → handoff, scout/context-builder → planner, and any “first X, then use that to do Y” request.
+
+For options, ideas, test cases, names, comparisons, decisions, and “strongest few” requests, generator-only or scout-only fanout is incomplete. A reducer/filter/reviewer step must see the concrete generated outputs before the parent recommends, ranks, or claims completion.
+
+### Large review matrix and review reduction
+
+8-10 review agents are valid defaults when the target is broad enough and roles are distinct or chained through validation. Larger explicit counts are valid when the user says the count is literal, a goal, or a requirement and the target can be decomposed into that many distinct scopes or validation passes. Do not collapse explicit large-review requests to three reviewers when the work has many independent attack surfaces; also do not satisfy them with duplicate vague reviewers.
+
+Default 10-reviewer matrix:
+
+| Stage | Count | Roles |
+| --- | ---: | --- |
+| First-pass reviewers | 6 | correctness/regressions; tests/verification; architecture/source-of-truth; edge cases/data flow; security/privacy/ops; simplicity/slop |
+| Validators | 3 | validate severe findings and false positives; search for missed cross-cutting issues; compare reviewer disagreement and evidence quality |
+| Reducer | 1 | dedupe/rank findings, classify blockers/non-blockers, produce synthesis for parent |
+
+Use this shape when the user asks for many/10 reviewers with different goals, asks agents to examine or validate what other agents found, previous reviewers materially disagree, or a high-stakes target needs false-positive control. The reducer/validator stage must see concrete first-pass findings before the parent decides.
+
+### Proposal-verification gate
+
+Use this gate when the parent has already proposed a plan, architecture, workflow, diagnosis, or implementation approach and the user asks to verify, pressure-test, review, argue both sides, research/decide, or “do it if it survives.” The target is the parent proposal, not the future code location.
+
+Correct first actions:
+- prefer the quality-gate recipe as explicit fresh-context reviewer fanout with parent synthesis for a foreground proposal gate that must be decided before implementation;
+- prefer the research-decision recipe as explicit researcher/scout/reviewer fanout when local/external evidence is needed before choosing;
+- use quick adversarial check for a small proposal or assumption;
+- use adversarial debate for architecture/workflow choices with competing viable paths.
+
+Incorrect first actions:
+- scouting where to implement the proposal before it has survived review;
+- dispatching a planner/worker handoff before a proposal verdict;
+- treating implementation feasibility as a substitute for proposal correctness.
+
+The parent must synthesize `PASS` / `FAIL` / `INCONCLUSIVE` before proceeding. Since implementation depends on that verdict, run the gate foreground or wait-and-inspect its artifacts before making the next claim unless there is genuine independent work to do.
 
 ### Parallel review technique
 
@@ -188,7 +278,7 @@ and user/project agents override builtins with the same name.
 | `context-builder` | Requirements/codebase handoff builder | inherits default | Writes structured context files |
 | `researcher` | Web research brief generator | inherits default | Writes `research.md` |
 | `delegate` | Lightweight generic delegate | inherits default | No fixed output; generic delegated work |
-| `oracle` | Decision-consistency advisory review | inherits default | Advisory review, intercom coordination |
+| `oracle` | Decision-consistency advisory review | inherits default | Advisory review, supervisor coordination |
 
 Builtin agents inherit the current Pi default model unless a run, user setting, project setting, or `subagents.defaultModel` overrides `model`. Set `subagents.defaultModel` when subagents should use a different default model than the parent session. Override builtin defaults before copying full agent files when a small tweak is enough.
 
@@ -215,7 +305,7 @@ A strong subagent prompt usually includes:
 - **Hard constraints**: true invariants only, such as no edits for review-only tasks, one writer thread, child must not run subagents unless it is an explicitly assigned `tools: subagent` fanout child, or escalation for unapproved decisions.
 - **Validation**: targeted checks to run, or the next-best check when validation is impossible.
 - **Output**: the expected summary shape, artifact path, or finding format.
-- **Stop rules**: when to ask via `intercom`, when to stop after enough evidence, and when not to keep searching.
+- **Stop rules**: when to ask the parent through supervisor coordination, when to stop after enough evidence, and when not to keep searching.
 
 Avoid carrying over old prompt habits that over-specify every step. Use `must`, `always`, and `never` for real invariants; for judgment calls, give decision rules. For example, tell a reviewer to inspect the staged diff directly and report only evidence-backed findings, rather than prescribing every file or command. Tell a researcher the retrieval budget: start with broad targeted searches, fetch only the strongest sources, search again only when a required fact is missing, then stop.
 
@@ -387,7 +477,7 @@ subagent({ action: "resume", id: "nested-run-id", message: "Continue this nested
 ```
 
 Resume behavior:
-- If an async child is still running and reachable, `resume` sends the follow-up to that live child over intercom.
+- If an async child is still running and reachable, `resume` sends the follow-up to that live child through the native control channel.
 - If an async child has completed, `resume` revives it by starting a new async child from the persisted child session file.
 - Multi-child async runs require `index` unless only one running child is selectable.
 - Completed foreground single, parallel, and chain runs can also be revived by `index` while their run metadata remains in extension state.
@@ -422,7 +512,7 @@ subagent({ action: "schedule-cancel", id: "ab12" })
 
 Schedules are persisted per session and restored after a Pi restart. A job whose scheduled time passed by more than `scheduledRuns.maxLatenessMs` (default 5 minutes) while Pi was unavailable is marked `missed` instead of firing late. `scheduledRuns.maxPending` (default 20) caps pending or running scheduled jobs per session.
 
-Humans can use `/subagents-doctor` for the same read-only report. It checks runtime paths, discovery counts, async support, current session context, and intercom bridge state.
+Humans can use `/subagents-doctor` for the same read-only report. It checks runtime paths, discovery counts, async support, current session context, and supervisor coordination state.
 
 ### Subagent control
 
@@ -458,7 +548,7 @@ subagent({
 })
 ```
 
-If the run already has an active intercom bridge target, needs-attention notifications can also prepare a compact intercom ping for the orchestrator. When a child route is available, the ping tells the orchestrator which agent needs attention and includes the exact `intercom({ action: "send", to: "..." })` target for a nudge. Do not invent a target or ask the child to self-report when no bridge exists.
+Needs-attention notifications surface through status/events with concrete next actions. When a child needs input, prefer the native supervisor path described below; do not invent cross-session targets or ask a child to self-report through unrelated channels.
 
 ## Clarify TUI
 
@@ -502,7 +592,7 @@ prefer a single-writer pattern instead.
 The intended oracle loop is:
 1. the main agent forks to `oracle`
 2. `oracle` reviews direction, drift, assumptions, and risks
-3. `oracle` can coordinate back through `contact_supervisor` when the bridge injects it
+3. `oracle` can coordinate back through `contact_supervisor` when native supervisor coordination is available
 4. the main agent decides what direction to approve
 5. only then should `worker` implement
 
@@ -526,11 +616,11 @@ history as a baseline contract.
 
 Use `oracle` as a smart-friend escalation when the parent needs help with trajectory rather than diff inspection: architectural boundaries, model capability routing, merge conflicts, reviewer disagreement, context drift after long work, a worker about to invent a pattern, or fixes that require product/scope tradeoffs. Ask broad questions when the right concern is unclear, and let `oracle` point out missing context or files the parent should inspect before asking again. Keep `oracle` advisory unless it has been explicitly assigned the single writer role.
 
-## Subagent + Intercom Coordination
+## Native Supervisor Coordination
 
 `pi-subagents` includes native supervisor coordination. Child agents can use `contact_supervisor` to ask the exact parent session that spawned them; messages are scoped by parent session id and should not appear in other Pi sessions.
 
-Most agents should not call generic `intercom` directly unless bridge instructions provide a target and `contact_supervisor` is unavailable. Do not invent a target. Prefer the tool from the injected bridge instructions.
+Do not invent cross-session targets. Use the native supervisor tools for parent-child coordination.
 
 Use `contact_supervisor` with `reason: "need_decision"` when:
 - a subagent is blocked on a decision
@@ -551,7 +641,7 @@ Message conventions:
 - `reason: "progress_update"` is non-blocking and should stay concise.
 - Child-side routine completion handoffs are not expected. Native supervisor messages are for decisions, structured input, and meaningful progress updates while a child is still running.
 
-If bridge instructions provide the child-facing tool, a child can ask:
+A child can ask:
 
 ```typescript
 contact_supervisor({
@@ -572,9 +662,7 @@ Or inspects unresolved asks first:
 subagent_supervisor({ action: "pending" })
 ```
 
-If no external `pi-intercom` tool owns the `intercom` name, native supervisor coordination may also expose `intercom` as a compatibility fallback. Prefer `subagent_supervisor` for parent replies because it never overrides installed `pi-intercom`.
-
-If intercom messages do not show up, run `subagent({ action: "doctor" })` or `/subagents-doctor`.
+If supervisor messages do not show up, run `subagent({ action: "doctor" })` or `/subagents-doctor`.
 
 ## Management Mode
 
@@ -696,7 +784,7 @@ Additional user prompt templates can delegate into `pi-subagents` through the na
 
 Other Pi extensions can call `pi-subagents` through the in-process event bus. The stable v1 channels are `subagents:rpc:v1:ready`, `subagents:rpc:v1:request`, and per-request replies at `subagents:rpc:v1:reply:<requestId>`. Envelopes use `{ version: 1, requestId, method, params }`, and replies use `{ version: 1, requestId, success, data | error }`.
 
-Methods: `ping`, `status`, `spawn`, `interrupt`, and `stop`. `spawn` is async-only and rejects management actions, `async: false`, or `clarify: true`; it reuses the normal executor, so discovery, validation, session attribution, spawn limits, child-safety depth, artifacts, and async status are shared with the `subagent` tool. `status` and `interrupt` map to the normal control actions. `stop` targets running async runs through the existing timeout control channel. `pi.events` is process-local, so separate Pi processes and child subagents need lifecycle artifact files or `pi-intercom` instead.
+Methods: `ping`, `status`, `spawn`, `interrupt`, and `stop`. `spawn` is async-only and rejects management actions, `async: false`, or `clarify: true`; it reuses the normal executor, so discovery, validation, session attribution, spawn limits, child-safety depth, artifacts, and async status are shared with the `subagent` tool. `status` and `interrupt` map to the normal control actions. `stop` targets running async runs through the existing timeout control channel. `pi.events` is process-local, so separate Pi processes and child subagents need lifecycle artifact files or native supervisor coordination instead.
 
 ## Important Constraints
 
@@ -709,7 +797,7 @@ Methods: `ping`, `status`, `spawn`, `interrupt`, and `stop`. `spawn` is async-on
 - **Default subagent nesting depth is 2.** Deeper recursive delegation is blocked
   unless configured otherwise.
 - **Attention signals are not lifecycle state.** `needs_attention` means no activity has been observed past the configured threshold. `paused` means the child turn was intentionally interrupted or is awaiting direction; it is not the same as `failed`.
-- **Intercom asks are blocking.** A session can only maintain one pending outbound
+- **Supervisor/interview asks are blocking.** A session can only maintain one pending outbound
   ask wait state at a time.
 - **Keep conversational authority clear.** Advisory subagents should not silently
   become second decision-makers.
@@ -755,7 +843,7 @@ Give subagents specific tasks rather than vague mandates.
 ### Escalate decisions upward
 
 If a subagent encounters an unapproved product, architecture, or scope choice,
-it should use `contact_supervisor` and wait for the reply instead of deciding alone. Generic `intercom` is a fallback only when the bridge-provided supervisor tool is unavailable.
+it should use `contact_supervisor` and wait for the reply instead of deciding alone.
 
 ### Intervene only on clear control signals
 
@@ -763,7 +851,7 @@ Use subagent control proactively when a delegated run emits `needs_attention`, o
 
 ### Name sessions meaningfully
 
-Use `/name` so intercom targeting stays stable.
+Use `/name` so status, artifacts, and supervisor-visible context remain easy to identify.
 
 ## Common Workflows
 
@@ -913,10 +1001,10 @@ subagent({ action: "list" })
 // Check available agents and chains, then confirm scope/precedence.
 ```
 
-**Setup, discovery, or intercom confusion**
+**Setup, discovery, or supervisor-coordination confusion**
 ```typescript
 subagent({ action: "doctor" })
-// Check runtime paths, async support, discovery counts, current session, and intercom bridge state.
+// Check runtime paths, async support, discovery counts, current session, and supervisor coordination state.
 ```
 
 **"Max subagent depth exceeded"**
@@ -929,7 +1017,7 @@ subagent({ action: "doctor" })
 // Persist the current session before using context: "fork".
 ```
 
-**Intercom "Already waiting for a reply"**
+**Supervisor/interview "Already waiting for a reply"**
 ```typescript
 // Resolve the current outbound ask before starting another one.
 ```
