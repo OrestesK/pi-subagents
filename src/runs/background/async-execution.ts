@@ -225,8 +225,8 @@ export function formatAsyncStartedMessage(headline: string): string {
 		headline,
 		"",
 		"The async run is detached. Do not run sleep timers or polling loops just to wait for it.",
-		"If you have independent work, continue that work. When you have nothing left to do until the async result arrives, call wait() — it blocks until the run finishes and delivers the completion here. Only if you are certain you will get another turn (an interactive session where the user will prompt you again) can you instead stop and let Pi wake you; inside a skill that must run to completion, or in a non-interactive run, there is no next turn, so use wait().",
-		"Use subagent({ action: \"status\", id: \"...\" }) when you need a one-shot status/result or to inspect a blocked/stale run. To block until completion, prefer wait(). Do not poll in a loop just to wait.",
+		"Persistent interactive parents should continue useful work or applicable Slack work, or yield. Completion notifications resume persistent interactive parents without another user prompt.",
+		"For non-yielding/run-to-completion flows or a named same-control-flow dependency, call wait() only when blocking is required. When a known immediate dependency requires child output, prefer foreground execution. Use subagent({ action: \"status\", id: \"...\" }) only for a one-shot inspection of a blocked or stale run.",
 	].join("\n");
 }
 
@@ -419,7 +419,7 @@ export function buildAsyncRunnerSteps(id: string, params: AsyncRunnerStepBuildPa
 			...(s.model ? { model: s.model } : {}),
 		};
 	};
-	const buildSeqStep = (s: SequentialStep, sessionFile?: string, behaviorCwd?: string, progressPrecreated = false, resolvedBehavior?: ResolvedStepBehavior, flatIndex?: number) => {
+	const buildSeqStep = (s: SequentialStep, sessionFile?: string, behaviorCwd?: string, progressPrecreated = false, resolvedBehavior?: ResolvedStepBehavior, flatIndex?: number, deferExplicitReadValidation = false) => {
 		const a = agents.find((x) => x.name === s.agent)!;
 		const toolBudgetInput = s.toolBudget ?? params.toolBudget ?? a.toolBudget ?? params.configToolBudget;
 		const resolvedToolBudget = validateToolBudgetConfig(toolBudgetInput, s.toolBudget ? "toolBudget" : a.toolBudget ? "agent.toolBudget" : "config.toolBudget");
@@ -441,8 +441,9 @@ export function buildAsyncRunnerSteps(id: string, params: AsyncRunnerStepBuildPa
 			systemPrompt = systemPrompt ? `${systemPrompt}\n\n${memoryInjection}` : memoryInjection;
 		}
 
-		const readValidationCwd = behaviorCwd ? stepCwd : instructionCwd;
-		const readValidationError = validateExplicitReads(behavior, readValidationCwd, `Async step (${s.agent})`, behaviorCwd ? "async/worktree" : "async/chain");
+		const explicitReads = behavior.readsFromDefault === false ? behavior.reads : undefined;
+		const explicitReadsMode = deferExplicitReadValidation || behaviorCwd ? "async/worktree" : "async/chain";
+		const readValidationError = deferExplicitReadValidation ? undefined : validateExplicitReads(behavior, instructionCwd, `Async step (${s.agent})`, explicitReadsMode);
 		if (readValidationError) throw new AsyncStartValidationError(readValidationError);
 		const readInstructions = buildChainInstructions({ ...behavior, output: false, progress: false }, instructionCwd, false);
 		const isFirstProgressAgent = behavior.progress && !progressPrecreated && !progressInstructionCreated;
@@ -488,6 +489,7 @@ export function buildAsyncRunnerSteps(id: string, params: AsyncRunnerStepBuildPa
 			skills: resolvedSkills.map((r) => r.name),
 			outputPath,
 			outputMode: behavior.outputMode,
+			...(explicitReads !== undefined ? { explicitReads, explicitReadsMode } : {}),
 			sessionFile,
 			maxSubagentDepth: resolveChildMaxSubagentDepth(maxSubagentDepth, a.maxSubagentDepth),
 			effectiveAcceptance: resolveEffectiveAcceptance({
@@ -540,7 +542,7 @@ export function buildAsyncRunnerSteps(id: string, params: AsyncRunnerStepBuildPa
 							}
 						}
 						const staticStep = nextFlatStep();
-						return buildSeqStep(t, staticStep.sessionFile, behaviorCwd, progressPrecreated, parallelBehaviors[taskIndex], staticStep.index);
+						return buildSeqStep(t, staticStep.sessionFile, behaviorCwd, progressPrecreated, parallelBehaviors[taskIndex], staticStep.index, s.worktree === true);
 					}),
 					concurrency: s.concurrency,
 					failFast: s.failFast,

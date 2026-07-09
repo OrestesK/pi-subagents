@@ -10,7 +10,9 @@
 
 import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import type { MockPi } from "../support/helpers.ts";
 import {
@@ -124,6 +126,25 @@ const executeChain: ChainExecutionModule["executeChain"] = chainMod?.executeChai
 
 function lastItem<T>(items: readonly T[] | undefined): T | undefined {
 	return items?.[items.length - 1];
+}
+
+function git(cwd: string, args: string[]): string {
+	const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf-8" });
+	if (result.status !== 0) {
+		throw new Error(result.stderr.trim() || result.stdout.trim() || `git ${args.join(" ")} failed`);
+	}
+	return result.stdout.trim();
+}
+
+function createRepo(prefix: string): string {
+	const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+	git(repoDir, ["init"]);
+	git(repoDir, ["config", "user.email", "tests@example.com"]);
+	git(repoDir, ["config", "user.name", "Chain Tests"]);
+	fs.writeFileSync(path.join(repoDir, "input.md"), "input\n", "utf-8");
+	git(repoDir, ["add", "-A"]);
+	git(repoDir, ["commit", "-m", "initial commit"]);
+	return repoDir;
 }
 
 describe("chain execution — sequential", { skip: !available ? "pi packages not available" : undefined }, () => {
@@ -1525,6 +1546,33 @@ describe("chain execution — parallel steps", { skip: !available ? "pi packages
 		);
 
 		assert.ok(result.isError, "chain should fail when parallel step fails");
+	});
+
+	it("foreground worktree parallel resolves reads against the worktree cwd", async () => {
+		const repoDir = createRepo("pi-subagent-chain-worktree-");
+		try {
+			mockPi.onCall({ output: "Worktree report" });
+			const runId = `chain-worktree-${Date.now().toString(36)}`;
+			const result = await executeChain(
+				makeChainParams(
+					[
+						{
+							parallel: [{ agent: "worker", task: "Inspect worktree input", reads: ["input.md"] }],
+							worktree: true,
+						},
+					],
+					[makeAgent("worker")],
+					{ cwd: repoDir, runId },
+				),
+			);
+
+			assert.ok(!result.isError, `chain should succeed: ${result.content[0]?.text ?? ""}`);
+			const worktreeCwd = path.join(os.tmpdir(), `pi-worktree-${runId}-s0-0`);
+			const taskArg = lastItem(readCallArgs(0)) ?? "";
+			assert.ok(taskArg.includes(`[Read from: ${path.join(worktreeCwd, "input.md")}]`), taskArg);
+		} finally {
+			removeTempDir(repoDir);
+		}
 	});
 
 	it("rejects worktree parallel steps that set a different task cwd", async () => {

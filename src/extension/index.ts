@@ -516,7 +516,7 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 		label: "Wait",
 		description: `Block until background (async) subagent runs started in this session finish, then return.
 
-Use this after launching async subagents when you have no independent work left and must not end your turn — for example inside a skill that has to run to completion, or any non-interactive run (\`pi -p ...\`) where the whole task is a single turn and ending it would abandon the still-running children.
+Use wait only for non-yielding/run-to-completion flows or a named same-control-flow dependency. Persistent interactive parents should continue useful work or yield; completion notifications resume them without another user prompt. Prefer foreground execution when a known immediate dependency requires child output.
 
 • { } — return as soon as the FIRST active run finishes (default). Ideal for a rolling fleet: launch N, wait, spawn a replacement for the one that finished, wait again — keeping N in flight.
 • { all: true } — block until EVERY active run in this session is finished.

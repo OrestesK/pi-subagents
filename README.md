@@ -538,9 +538,9 @@ You can combine them in either order:
 /run reviewer "review this diff" --bg --fork
 ```
 
-Background runs are detached. If the parent agent has other independent work, it should keep working. When it has nothing useful to do until a background result arrives, it should call the `wait` tool instead of running sleep or status-polling loops. `wait()` returns when the next active run finishes or needs attention and keeps the turn alive for normal notification delivery; use `wait({ all: true })` to drain every active run, `wait({ id })` for one run, and `wait({ timeoutMs })` to cap the block.
+Background runs are detached. Persistent interactive parents should continue useful work or applicable Slack work, then yield when no useful work remains; completion notifications resume them without another user prompt. Do not run sleep or status-polling loops, and do not call `wait` solely to receive persistent-session completion.
 
-`wait` is what lets a background-launching skill keep moving in a single turn, including non-interactive `pi -p` invocations where there is no subsequent turn to receive a completion notification. Ending the turn to wait for a completion only works in an interactive session where the user will prompt the agent again; in a run-to-completion skill or a non-interactive run, use `wait` so the still-running children are not abandoned.
+Use `wait` only for a non-yielding/run-to-completion flow or a named same-control-flow dependency. It returns when the next active run finishes or needs attention; use `wait({ all: true })` to drain every active run, `wait({ id })` for one run, and `wait({ timeoutMs })` to cap the block. Prefer foreground execution when a known immediate dependency requires child output.
 
 The `oracle` and `worker` builtins are designed for an explicit decision loop. A typical pattern is to ask `oracle` for diagnosis and a recommended execution prompt, then only run `worker` after the main agent approves that direction.
 
@@ -1165,7 +1165,7 @@ Makes top-level calls use background execution when the request does not explici
 { "waitTool": { "enabled": false } }
 ```
 
-Keeps the `wait` tool registered but makes it return immediately instead of blocking on active async runs. Use this in interactive sessions where background completions should arrive as notifications while the main conversation stays steerable. The default is enabled. You can also set `"waitTool": false`; set `PI_SUBAGENT_WAIT_TOOL_ENABLED=false` (or `0`, `off`, `disabled`) to override config for one process. Invalid `waitTool` config or env values fail instead of being coerced.
+Keeps the `wait` tool registered but makes it return immediately instead of blocking on active async runs. Persistent interactive parents already rely on completion notifications and should yield instead of waiting; the blocking tool is for non-yielding/run-to-completion flows or named same-control-flow dependencies. The default is enabled. You can also set `"waitTool": false`; set `PI_SUBAGENT_WAIT_TOOL_ENABLED=false` (or `0`, `off`, `disabled`) to override config for one process. Invalid `waitTool` config or env values fail instead of being coerced.
 
 ### `forceTopLevelAsync`
 

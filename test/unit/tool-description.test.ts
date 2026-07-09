@@ -27,6 +27,16 @@ function parentToolEnv(agentDir?: string): NodeJS.ProcessEnv {
 	return env;
 }
 
+function assertAsyncLifecycleGuidance(description: string): void {
+	assert.match(description, /persistent interactive parents/i);
+	assert.match(description, /continue useful work or applicable Slack work, or yield/i);
+	assert.match(description, /completion notifications resume/i);
+	assert.match(description, /without another user prompt/i);
+	assert.match(description, /non-yielding\/run-to-completion/i);
+	assert.match(description, /named same-control-flow dependency/i);
+	assert.doesNotMatch(description, /call wait.*nothing left/i);
+}
+
 describe("registered subagent tool description", () => {
 	it("keeps full mode safe and free of hardcoded builtin agent names", () => {
 		const description = buildSubagentToolDescription();
@@ -46,6 +56,7 @@ describe("registered subagent tool description", () => {
 		assert.doesNotMatch(description, /omit for async\/background runs/i);
 		assert.match(description, /SAFETY-CRITICAL SUBAGENT GUIDANCE/);
 		assert.match(description, /Do not sleep or poll status just to wait/i);
+		assertAsyncLifecycleGuidance(description);
 		assert.match(description, /ordinary child subagents are not orchestrators/i);
 		assert.match(description, /keep one writer/i);
 		assert.match(description, /view: "fleet"/);
@@ -69,6 +80,7 @@ describe("registered subagent tool description", () => {
 		assert.match(description, /action without execution fields/i);
 		assert.match(description, /wait tool/i);
 		assert.match(description, /Do not sleep or poll/i);
+		assertAsyncLifecycleGuidance(description);
 		assert.match(description, /ordinary child subagents are not orchestrators/i);
 		assert.match(description, /one writer/i);
 		assert.match(description, /view:"fleet"/);
@@ -102,6 +114,7 @@ describe("registered subagent tool description", () => {
 		assert.match(description, new RegExp(escapeRegex(agentDir)));
 		assert.match(description, new RegExp(escapeRegex(projectConfigDir)));
 		assert.match(description, /SAFETY-CRITICAL SUBAGENT GUIDANCE/);
+		assertAsyncLifecycleGuidance(description);
 		assert.equal(warnings.length, 0);
 	});
 

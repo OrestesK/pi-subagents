@@ -86,7 +86,7 @@ import {
 	type WorktreeSetup,
 } from "../shared/worktree.ts";
 import { resolveEffectiveThinking } from "../../shared/model-info.ts";
-import { writeInitialProgressFile } from "../../shared/settings.ts";
+import { validateExplicitReads, writeInitialProgressFile } from "../../shared/settings.ts";
 import { resolveSubagentIntercomTarget } from "../../intercom/intercom-bridge.ts";
 import { acceptanceFailureMessage, aggregateAcceptanceReport, evaluateAcceptance, formatAcceptancePrompt, stripAcceptanceReport } from "../shared/acceptance.ts";
 import { waitForImportedAsyncRoot } from "./chain-root-attachment.ts";
@@ -862,6 +862,17 @@ async function runSingleStep(
 		}
 	}
 
+	const readValidationError = validateRunnerExplicitReads(step, step.cwd ?? ctx.cwd);
+	if (readValidationError) {
+		return {
+			agent: step.agent,
+			output: readValidationError,
+			error: readValidationError,
+			exitCode: 1,
+			sessionFile: step.sessionFile,
+		};
+	}
+
 	const effectiveStructuredOutput = step.structuredOutput ?? (step.structuredOutputSchema
 		? createStructuredOutputRuntime(step.structuredOutputSchema, path.join(path.dirname(ctx.outputFile), "structured-output"))
 		: undefined);
@@ -1259,6 +1270,23 @@ function markParallelGroupRunning(input: {
 		agents: input.group.parallel.map((task) => task.agent),
 		count: input.group.parallel.length,
 	}));
+}
+
+function validateRunnerExplicitReads(step: SubagentStep, cwd: string): string | undefined {
+	if (step.explicitReads === undefined) return undefined;
+	return validateExplicitReads(
+		{
+			output: false,
+			outputMode: "inline",
+			reads: step.explicitReads,
+			readsFromDefault: false,
+			progress: false,
+			skills: false,
+		},
+		cwd,
+		`Async step (${step.agent})`,
+		step.explicitReadsMode ?? "async/runner",
+	);
 }
 
 function prepareParallelTaskRun(

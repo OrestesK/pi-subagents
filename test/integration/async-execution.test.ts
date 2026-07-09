@@ -650,7 +650,16 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		assert.equal(status.steps?.[0]?.turnBudget?.outcome, "exceeded");
 	});
 
-	it("async launch messages tell the parent not to sleep-poll", { skip: !isAsyncAvailable() ? "jiti not available" : undefined }, async () => {
+	it("async launch messages share narrow WAIT lifecycle guidance", { skip: !isAsyncAvailable() ? "jiti not available" : undefined }, async () => {
+		const assertLaunchGuidance = (message: string): void => {
+			assert.match(message, /Do not run sleep timers or polling loops/i);
+			assert.match(message, /Persistent interactive parents should continue useful work or applicable Slack work, or yield/i);
+			assert.match(message, /completion notifications resume persistent interactive parents/i);
+			assert.match(message, /without another user prompt/i);
+			assert.match(message, /non-yielding\/run-to-completion/i);
+			assert.match(message, /named same-control-flow dependency/i);
+			assert.doesNotMatch(message, /call wait\(\).*nothing left/i);
+		};
 		const artifactConfig = {
 			enabled: false,
 			includeInput: false,
@@ -674,9 +683,7 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 			...commonParams,
 		});
 		assert.match(singleResult.content[0]?.text ?? "", /Async: worker \[/);
-		assert.match(singleResult.content[0]?.text ?? "", /Do not run sleep timers or polling loops/);
-		assert.match(singleResult.content[0]?.text ?? "", /call wait\(\)/);
-		assert.match(singleResult.content[0]?.text ?? "", /there is no next turn, so use wait\(\)/);
+		assertLaunchGuidance(singleResult.content[0]?.text ?? "");
 		await waitForAsyncResultFile(singleId, 30_000);
 
 		mockPi.onCall({ output: "parallel one done" });
@@ -689,8 +696,7 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 			...commonParams,
 		});
 		assert.match(parallelResult.content[0]?.text ?? "", /Async parallel:/);
-		assert.match(parallelResult.content[0]?.text ?? "", /Do not run sleep timers or polling loops/);
-		assert.match(parallelResult.content[0]?.text ?? "", /call wait\(\)/);
+		assertLaunchGuidance(parallelResult.content[0]?.text ?? "");
 		const parallelResultPath = await waitForAsyncResultFile(parallelId, 10_000);
 		const parallelPayload = JSON.parse(fs.readFileSync(parallelResultPath, "utf-8")) as { agent?: string; mode?: string };
 		assert.equal(parallelPayload.mode, "parallel");
@@ -704,7 +710,7 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 			...commonParams,
 		});
 		assert.match(chainResult.content[0]?.text ?? "", /Async chain:/);
-		assert.match(chainResult.content[0]?.text ?? "", /Do not run sleep timers or polling loops/);
+		assertLaunchGuidance(chainResult.content[0]?.text ?? "");
 		await waitForAsyncResultFile(chainId, 10_000);
 	});
 
@@ -1263,6 +1269,48 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		assert.ok(Array.isArray(lastItem(payload.results)?.structuredOutput), "failed collect result should preserve ordered collection details");
 		assert.equal(payload.workflowGraph?.nodes?.[1]?.status, "failed");
 		assert.match(payload.workflowGraph?.nodes?.[1]?.error ?? "", /Collected output validation failed/);
+	});
+
+	it("top-level async worktree parallel fails missing explicit reads inside the worktree before child launch", { skip: !isAsyncAvailable() || !createSubagentExecutor ? "jiti or executor not available" : process.platform === "win32" ? "worktree path separators unreliable on Windows CI" : undefined }, async () => {
+		const repoDir = createRepo("pi-subagent-async-worktree-missing-read-");
+		try {
+			fs.appendFileSync(path.join(repoDir, ".git", "info", "exclude"), "\nparent-only.md\n", "utf-8");
+			fs.writeFileSync(path.join(repoDir, "parent-only.md"), "parent only\n", "utf-8");
+			const executor = createSubagentExecutor!({
+				pi: { events: createEventBus(), getSessionName: () => undefined },
+				state: { baseCwd: repoDir, currentSessionId: null, asyncJobs: new Map(), foregroundControls: new Map(), lastForegroundControlId: null },
+				config: {},
+				asyncByDefault: false,
+				tempArtifactsDir: repoDir,
+				getSubagentSessionRoot: () => repoDir,
+				expandTilde: (p: string) => p,
+				discoverAgents: () => ({ agents: [makeAgent("worker")] }),
+			});
+
+			const result = await executor.execute(
+				"async-parallel-worktree-missing-read",
+				{
+					tasks: [{ agent: "worker", task: "Read parent-only file", reads: ["parent-only.md"] }],
+					async: true,
+					clarify: false,
+					worktree: true,
+				},
+				new AbortController().signal,
+				undefined,
+				makeMinimalCtx(repoDir),
+			);
+
+			const asyncId = result.details?.asyncId;
+			assert.ok(asyncId, "expected asyncId");
+			const resultPath = await waitForAsyncResultFile(asyncId, 90_000);
+			const payload = JSON.parse(fs.readFileSync(resultPath, "utf-8")) as AsyncResultPayload;
+			assert.equal(payload.success, false);
+			const resultText = payload.results.map((entry) => `${entry.error ?? ""}\n${entry.output ?? ""}`).join("\n");
+			assert.match(resultText, /Missing explicit reads for Async step \(worker\)/);
+			assert.equal(mockPi.callCount(), 0, "child pi should not launch when worktree explicit reads are missing");
+		} finally {
+			removeTempDir(repoDir);
+		}
 	});
 
 	it("top-level async worktree parallel resolves reads against the worktree and output under project artifacts", { skip: !isAsyncAvailable() || !createSubagentExecutor ? "jiti or executor not available" : process.platform === "win32" ? "worktree path separators unreliable on Windows CI" : undefined }, async () => {

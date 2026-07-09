@@ -143,7 +143,7 @@ describe("subagent extension child mode", () => {
 				registerSubagentExtension(fakePi);
 				if (!waitTool) throw new Error("wait tool not registered");
 				const result = await waitTool.execute("wait-disabled", {}, new AbortController().signal, undefined, {});
-				process.stdout.write(JSON.stringify(result.content[0].text));
+				process.stdout.write(JSON.stringify({ description: waitTool.description, result: result.content[0].text }));
 			`;
 
 			const env = parentToolEnv();
@@ -160,7 +160,13 @@ describe("subagent extension child mode", () => {
 				],
 				{ cwd: projectRoot, env, encoding: "utf-8" },
 			);
-			assert.match(JSON.parse(output) as string, /disabled/i);
+			const registered = JSON.parse(output) as { description: string; result: string };
+			assert.match(registered.result, /disabled/i);
+			assert.match(registered.description, /non-yielding\/run-to-completion/i);
+			assert.match(registered.description, /named same-control-flow dependency/i);
+			assert.match(registered.description, /persistent interactive parents/i);
+			assert.match(registered.description, /completion notifications resume/i);
+			assert.doesNotMatch(registered.description, /nothing left to do/i);
 		} finally {
 			fs.rmSync(agentDir, { recursive: true, force: true });
 		}

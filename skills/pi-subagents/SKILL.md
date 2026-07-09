@@ -24,7 +24,7 @@ Use this skill when the parent orchestrator needs to launch a specialized subage
 - **Implementation handoff**: have `oracle` advise, then `worker` implement only after an approved direction
 - **Recon and planning**: use `scout` or `context-builder`, then `planner`
 - **Parallel exploration**: run multiple non-conflicting tasks concurrently
-- **Manual skill specialists**: when the parent identifies a specific skill perspective that would materially improve the work, launch a small fresh-context fanout and pass that skill explicitly
+- **Manual skill specialists**: when the parent identifies specific skill perspectives that would materially improve the work, launch a fresh-context fanout sized to those distinct useful perspectives and pass each skill explicitly
 - **Long-running work**: launch async/background runs and inspect them later; use `timeoutMs` or `maxRuntimeMs` when a foreground or async run needs a hard max runtime, `turnBudget: { maxTurns, graceTurns }` for a soft assistant-turn budget, or `toolBudget: { soft?, hard, block? }` to nudge after a tool-call threshold and then block read/search tools so the child can finalize
 - **Subagent control**: watch needs-attention signals and soft-interrupt only when a delegated run is genuinely blocked
 - **Agent authoring**: create, update, or override agents and chains for a project
@@ -39,7 +39,7 @@ Use this protocol for long-running async runs:
 - Give each long-running child an explicit progress file path under `.scratch/` whenever phase checkpoints materially improve parent visibility or recovery.
 - Ask children to update progress after meaningful phases, not every few seconds.
 - Ask children to contact the parent only when blocked, when scope changes, when a must-fix/high-risk finding appears, or when a meaningful progress update changes the plan.
-- Do not poll constantly. Check status opportunistically, use `wait()` when the next step depends on completion, or continue independent work while async results are not required for the next claim.
+- Do not poll constantly. Persistent interactive parents should continue useful work or yield and let completion notifications resume them; use `wait()` only for a non-yielding/run-to-completion flow or a named same-control-flow dependency.
 - Before final completion, inspect relevant async outputs; do not rely on completion notifications alone.
 
 For short reviewer/scout runs expected under a few minutes, a final saved output is enough. For deeper audits, use both `output` and a progress file, and ask the child to write concise phase checkpoints.
@@ -157,7 +157,7 @@ Use this when the user wants adversarial review of a diff, plan, issue, file, or
 Use this when a specific available skill would materially improve the user's task and the parent can name the skill perspective explicitly. Local `list` output does not emit proactive skill suggestion blocks; treat skill-specialist fanout as a parent judgment, not an automatic routing rule.
 
 Default guardrails:
-- Keep the fanout small: usually one or two skill-specialist children.
+- Scale fanout to the number of distinct useful skill perspectives; do not impose a fixed small default, and do not duplicate a perspective merely because another child is pending.
 - Prefer `context: "fresh"` and include only the files, diff, plan, URL, or request details each child needs. Use forked context only when private/session history is essential and appropriate to share.
 - Use read-only agents for analysis/review unless implementation was explicitly requested; do not create several writers in the same worktree.
 - Skip skill-specialist fanout for tiny questions, direct commands, highly private requests, or when the user asks not to delegate.
@@ -440,9 +440,9 @@ Async does not mean parallel writes. Do not edit the same active worktree while 
 
 Do not end your turn immediately after launching an async child if you promised to keep working. Continue the local inspection, synthesis, or validation prep, then check the async run when its result is needed.
 
-When there is no independent work left and you just need the next async result, **call `wait()`** rather than `sleep`/status-polling loops. `wait()` returns when the next active run finishes or needs attention and keeps the turn alive for normal notification delivery. Use `wait({ all: true })` to drain every active run, `wait({ id: "..." })` to block on one run, and `wait({ timeoutMs })` to cap how long you block.
+Persistent interactive parents should continue useful work or applicable Slack work, then yield when no useful work remains. Completion notifications resume them without another user prompt; do not call `wait()` solely to receive persistent-session completion.
 
-Prefer `wait()` over ending the turn whenever you must keep going to finish the job — inside a skill that has to run to completion, or in any non-interactive run (`pi -p ...`) where the whole task is a single turn. In those cases ending the turn abandons the still-running children, because there is no next turn to receive their completion. Only end the turn to wait when you are in an interactive session and are certain the user will prompt you again; then Pi will wake you when the run finishes.
+Use `wait()` only for non-yielding/run-to-completion flows or a named same-control-flow dependency. It returns when the next active run finishes or needs attention and keeps that turn alive; use `wait({ all: true })` to drain every active run, `wait({ id: "..." })` for one run, and `wait({ timeoutMs })` to cap the block. When a known immediate dependency requires child output, prefer a foreground run instead of launching async and immediately waiting.
 
 ```typescript
 subagent({
@@ -810,18 +810,9 @@ Runtime config can change orchestration behavior. `asyncByDefault` and `forceTop
 
 Launch every subagent asynchronously by default. Use `async: true` for scouts, researchers, workers, reviewers, validators, oracle checks, one-off delegates, chains, and parallel groups unless you intentionally need a foreground/blocking run. The parent should keep moving: inspect code while scouts run, prepare validation while a worker implements, do a local diff pass while reviewers review, and synthesize or verify while a fix worker applies accepted feedback. Async is the default orchestration posture; foreground runs are the explicit opt-out.
 
-### Use wait() to block until async runs finish
+### Use wait only for blocking dependencies
 
-When you have launched async runs and have no independent work left but must keep going to finish the task, call `wait()`. It blocks the current turn until the next run completes or needs attention, keeps the turn alive for normal notification delivery, then returns.
-
-- `wait()` — return when the next active async run in this session finishes or needs attention.
-- `wait({ all: true })` — block until every active async run in this session finishes or one needs attention.
-- `wait({ id: "..." })` — block on one run (id or prefix).
-- `wait({ timeoutMs })` — cap the block; the runs keep going if it elapses.
-
-`wait()` is the correct way to keep N workers in flight: launch N, call `wait()`, react to the result, launch a replacement if needed, then call `wait()` again. Use `wait({ all: true })` only when you intentionally want to drain the fleet to zero. Reserve ending-the-turn-to-wait for interactive sessions where the user will prompt you again; in a skill that must complete or a non-interactive `pi -p` run there is no next turn, so `wait()` is required to avoid abandoning live children.
-
-If `config.waitTool` or `PI_SUBAGENT_WAIT_TOOL_ENABLED` disables blocking behavior, the `wait` tool stays registered but returns immediately. In that case, inspect status, continue independent work, or rely on normal completion notifications instead of building sleep/status polling loops.
+Follow the operational WAIT lifecycle in **Async/background** above. If `config.waitTool` or `PI_SUBAGENT_WAIT_TOOL_ENABLED` disables blocking behavior, the `wait` tool stays registered but returns immediately; never replace it with sleep or status-polling loops.
 
 ### Keep writes single-threaded by default
 

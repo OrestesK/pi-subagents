@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { buildAsyncRunnerSteps, resolveAsyncRunnerLogPaths } from "../../src/runs/background/async-execution.ts";
+import { buildAsyncRunnerSteps, formatAsyncStartedMessage, resolveAsyncRunnerLogPaths } from "../../src/runs/background/async-execution.ts";
 import type { AgentConfig } from "../../src/agents/agents.ts";
 
 const agent = (name: string, toolBudget?: AgentConfig["toolBudget"]): AgentConfig => ({
@@ -17,6 +17,7 @@ const agent = (name: string, toolBudget?: AgentConfig["toolBudget"]): AgentConfi
 });
 
 const ctx = {
+	pi: {} as never,
 	cwd: process.cwd(),
 	currentSessionId: "session-1",
 	currentModel: undefined,
@@ -25,6 +26,18 @@ const ctx = {
 };
 
 describe("async runner execution", () => {
+	it("guides async parents through persistent and run-to-completion lifecycles", () => {
+		const message = formatAsyncStartedMessage("Async: worker [run-1]");
+
+		assert.match(message, /Do not run sleep timers or polling loops/i);
+		assert.match(message, /Persistent interactive parents should continue useful work or applicable Slack work, or yield/i);
+		assert.match(message, /completion notifications resume persistent interactive parents/i);
+		assert.match(message, /without another user prompt/i);
+		assert.match(message, /non-yielding\/run-to-completion/i);
+		assert.match(message, /named same-control-flow dependency/i);
+		assert.doesNotMatch(message, /call wait\(\).*nothing left/i);
+	});
+
 	it("places detached runner stdio logs in the async run directory", () => {
 		const asyncDir = path.join("tmp", "async-run");
 		assert.deepEqual(resolveAsyncRunnerLogPaths({ asyncDir }), {
@@ -52,8 +65,12 @@ describe("async runner execution", () => {
 		});
 
 		assert.ok("steps" in result, "expected successful step build");
-		assert.deepEqual(result.steps[0]?.toolBudget, { hard: 3, block: ["find"] });
-		assert.deepEqual(result.steps[1]?.toolBudget, { hard: 2, block: ["grep"] });
+		const firstStep = result.steps[0];
+		const secondStep = result.steps[1];
+		assert.ok(firstStep && !("parallel" in firstStep));
+		assert.ok(secondStep && !("parallel" in secondStep));
+		assert.deepEqual(firstStep.toolBudget, { hard: 3, block: ["find"] });
+		assert.deepEqual(secondStep.toolBudget, { hard: 2, block: ["grep"] });
 	});
 
 	it("uses agent tool budget before config default when no run override exists", () => {
@@ -67,7 +84,9 @@ describe("async runner execution", () => {
 		});
 
 		assert.ok("steps" in result, "expected successful step build");
-		assert.deepEqual(result.steps[0]?.toolBudget, { hard: 4, block: ["read"] });
+		const step = result.steps[0];
+		assert.ok(step && !("parallel" in step));
+		assert.deepEqual(step.toolBudget, { hard: 4, block: ["read"] });
 	});
 
 	it("uses config default when no step, run, or agent budget exists", () => {
@@ -81,6 +100,8 @@ describe("async runner execution", () => {
 		});
 
 		assert.ok("steps" in result, "expected successful step build");
-		assert.deepEqual(result.steps[0]?.toolBudget, { hard: 5, block: ["ls"] });
+		const step = result.steps[0];
+		assert.ok(step && !("parallel" in step));
+		assert.deepEqual(step.toolBudget, { hard: 5, block: ["ls"] });
 	});
 });
