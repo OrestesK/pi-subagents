@@ -653,9 +653,13 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 	it("async launch messages share narrow WAIT lifecycle guidance", { skip: !isAsyncAvailable() ? "jiti not available" : undefined }, async () => {
 		const assertLaunchGuidance = (message: string): void => {
 			assert.match(message, /Do not run sleep timers or polling loops/i);
-			assert.match(message, /Persistent interactive parents should continue useful work or applicable Slack work, or yield/i);
+			assert.match(message, /Persistent interactive parents should continue useful work/i);
+			assert.match(message, /During waits, they may do independent reflection or permitted internal-state maintenance, but only when this work cannot delay required work/i);
+			assert.match(message, /When no useful work, independent reflection, or permitted maintenance remains, yield/i);
+			assert.doesNotMatch(message, /\bSlack\b/i);
 			assert.match(message, /completion notifications resume persistent interactive parents/i);
 			assert.match(message, /without another user prompt/i);
+			assert.match(message, /inspect relevant completed outputs before dependent decisions or final claims/i);
 			assert.match(message, /non-yielding\/run-to-completion/i);
 			assert.match(message, /named same-control-flow dependency/i);
 			assert.doesNotMatch(message, /call wait\(\).*nothing left/i);

@@ -514,9 +514,9 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 	const waitTool: ToolDefinition<typeof WaitParams, Details> = {
 		name: "wait",
 		label: "Wait",
-		description: `Block until background (async) subagent runs started in this session finish, then return.
+		description: `Block until background (async) subagent runs started in this session finish or need attention, then return.
 
-Use wait only for non-yielding/run-to-completion flows or a named same-control-flow dependency. Persistent interactive parents should continue useful work or yield; completion notifications resume them without another user prompt. Prefer foreground execution when a known immediate dependency requires child output.
+Use wait only for non-yielding/run-to-completion flows or a named same-control-flow dependency. Persistent interactive parents should continue useful work. During waits, they may do independent reflection or permitted internal-state maintenance, but only when this work cannot delay required work. When no useful work, independent reflection, or permitted maintenance remains, yield. Completion notifications resume them without another user prompt. Inspect relevant completed outputs before dependent decisions or final claims. Prefer foreground execution when a known immediate dependency requires child output.
 
 • { } — return as soon as the FIRST active run finishes (default). Ideal for a rolling fleet: launch N, wait, spawn a replacement for the one that finished, wait again — keeping N in flight.
 • { all: true } — block until EVERY active run in this session is finished.

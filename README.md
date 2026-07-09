@@ -538,7 +538,7 @@ You can combine them in either order:
 /run reviewer "review this diff" --bg --fork
 ```
 
-Background runs are detached. Persistent interactive parents should continue useful work or applicable Slack work, then yield when no useful work remains; completion notifications resume them without another user prompt. Do not run sleep or status-polling loops, and do not call `wait` solely to receive persistent-session completion.
+Background runs are detached. Persistent interactive parents should continue useful work. During waits, they may do independent reflection or permitted internal-state maintenance, but only when this work cannot delay required work. When no useful work, independent reflection, or permitted maintenance remains, yield; completion notifications resume them without another user prompt. Inspect relevant completed outputs before dependent decisions or final claims. Do not run sleep or status-polling loops, and do not call `wait` solely to receive persistent-session completion.
 
 Use `wait` only for a non-yielding/run-to-completion flow or a named same-control-flow dependency. It returns when the next active run finishes or needs attention; use `wait({ all: true })` to drain every active run, `wait({ id })` for one run, and `wait({ timeoutMs })` to cap the block. Prefer foreground execution when a known immediate dependency requires child output.
 

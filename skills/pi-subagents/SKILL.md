@@ -39,8 +39,8 @@ Use this protocol for long-running async runs:
 - Give each long-running child an explicit progress file path under `.scratch/` whenever phase checkpoints materially improve parent visibility or recovery.
 - Ask children to update progress after meaningful phases, not every few seconds.
 - Ask children to contact the parent only when blocked, when scope changes, when a must-fix/high-risk finding appears, or when a meaningful progress update changes the plan.
-- Do not poll constantly. Persistent interactive parents should continue useful work or yield and let completion notifications resume them; use `wait()` only for a non-yielding/run-to-completion flow or a named same-control-flow dependency.
-- Before final completion, inspect relevant async outputs; do not rely on completion notifications alone.
+- Do not poll constantly. Persistent interactive parents should continue useful work. During waits, they may do independent reflection or permitted internal-state maintenance, but only when this work cannot delay required work. When no useful work, independent reflection, or permitted maintenance remains, yield and let completion notifications resume them; use `wait()` only for a non-yielding/run-to-completion flow or a named same-control-flow dependency.
+- Before dependent decisions or final completion, inspect relevant async outputs; do not rely on completion notifications alone.
 
 For short reviewer/scout runs expected under a few minutes, a final saved output is enough. For deeper audits, use both `output` and a progress file, and ask the child to write concise phase checkpoints.
 
@@ -440,7 +440,7 @@ Async does not mean parallel writes. Do not edit the same active worktree while 
 
 Do not end your turn immediately after launching an async child if you promised to keep working. Continue the local inspection, synthesis, or validation prep, then check the async run when its result is needed.
 
-Persistent interactive parents should continue useful work or applicable Slack work, then yield when no useful work remains. Completion notifications resume them without another user prompt; do not call `wait()` solely to receive persistent-session completion.
+Persistent interactive parents should continue useful work. During waits, they may do independent reflection or permitted internal-state maintenance, but only when this work cannot delay required work. When no useful work, independent reflection, or permitted maintenance remains, yield. Completion notifications resume them without another user prompt; do not call `wait()` solely to receive persistent-session completion. Inspect relevant completed outputs before dependent decisions or final claims.
 
 Use `wait()` only for non-yielding/run-to-completion flows or a named same-control-flow dependency. It returns when the next active run finishes or needs attention and keeps that turn alive; use `wait({ all: true })` to drain every active run, `wait({ id: "..." })` for one run, and `wait({ timeoutMs })` to cap the block. When a known immediate dependency requires child output, prefer a foreground run instead of launching async and immediately waiting.
 

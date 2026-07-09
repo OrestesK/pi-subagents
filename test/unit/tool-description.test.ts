@@ -29,9 +29,13 @@ function parentToolEnv(agentDir?: string): NodeJS.ProcessEnv {
 
 function assertAsyncLifecycleGuidance(description: string): void {
 	assert.match(description, /persistent interactive parents/i);
-	assert.match(description, /continue useful work or applicable Slack work, or yield/i);
+	assert.match(description, /continue useful work/i);
+	assert.match(description, /During waits, they may do independent reflection or permitted internal-state maintenance, but only when this work cannot delay required work/i);
+	assert.match(description, /When no useful work, independent reflection, or permitted maintenance remains, yield/i);
+	assert.doesNotMatch(description, /\bSlack\b/i);
 	assert.match(description, /completion notifications resume/i);
 	assert.match(description, /without another user prompt/i);
+	assert.match(description, /inspect relevant completed outputs before dependent decisions or final claims/i);
 	assert.match(description, /non-yielding\/run-to-completion/i);
 	assert.match(description, /named same-control-flow dependency/i);
 	assert.doesNotMatch(description, /call wait.*nothing left/i);
@@ -180,14 +184,15 @@ describe("registered subagent tool description", () => {
 		assert.ok(warnings.some((message) => message.includes("Ignoring invalid toolDescriptionMode")));
 	});
 
-	function readRegisteredDescription(agentDir: string): string {
+	function readRegisteredDescription(agentDir: string, toolName = "subagent"): string {
 		const script = String.raw`
 			import registerSubagentExtension from "./src/extension/index.ts";
 			const events = { on() { return () => {}; }, emit() {} };
+			const targetToolName = ${JSON.stringify(toolName)};
 			let registeredTool;
 			const fakePi = new Proxy({
 				events,
-				registerTool(tool) { if (tool.name === "subagent") registeredTool = tool; },
+				registerTool(tool) { if (tool.name === targetToolName) registeredTool = tool; },
 				registerCommand() {},
 				registerShortcut() {},
 				registerMessageRenderer() {},
@@ -223,6 +228,14 @@ describe("registered subagent tool description", () => {
 		fs.mkdirSync(configDir, { recursive: true });
 		fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify(config), "utf-8");
 	}
+
+	it("registers WAIT lifecycle guidance that covers needs-attention and result inspection", () => {
+		const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-wait-desc-"));
+		const description = readRegisteredDescription(agentDir, "wait");
+
+		assert.match(description, /finish or need attention/i);
+		assertAsyncLifecycleGuidance(description);
+	});
 
 	it("registers full, compact, custom, and fallback descriptions from extension config", () => {
 		const defaultAgentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-tool-desc-default-"));
