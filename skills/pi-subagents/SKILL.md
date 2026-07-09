@@ -24,7 +24,7 @@ Use this skill when the parent orchestrator needs to launch a specialized subage
 - **Implementation handoff**: have `oracle` advise, then `worker` implement only after an approved direction
 - **Recon and planning**: use `scout` or `context-builder`, then `planner`
 - **Parallel exploration**: run multiple non-conflicting tasks concurrently
-- **Regular skill specialists**: when discovery shows proactive skill subagent suggestions and the current work is broad enough, launch a small fresh-context fanout that asks one subagent per relevant regularly used skill to apply that skill's perspective to the task
+- **Manual skill specialists**: when the parent identifies a specific skill perspective that would materially improve the work, launch a small fresh-context fanout and pass that skill explicitly
 - **Long-running work**: launch async/background runs and inspect them later; use `timeoutMs` or `maxRuntimeMs` when a foreground or async run needs a hard max runtime, `turnBudget: { maxTurns, graceTurns }` for a soft assistant-turn budget, or `toolBudget: { soft?, hard, block? }` to nudge after a tool-call threshold and then block read/search tools so the child can finalize
 - **Subagent control**: watch needs-attention signals and soft-interrupt only when a delegated run is genuinely blocked
 - **Agent authoring**: create, update, or override agents and chains for a project
@@ -152,15 +152,15 @@ The parent must synthesize `PASS` / `FAIL` / `INCONCLUSIVE` before proceeding. S
 
 Use this when the user wants adversarial review of a diff, plan, issue, file, or implemented work. Launch fresh-context `reviewer` agents with distinct angles generated from the actual target. Common angles are correctness/regressions, tests/validation, and simplicity/maintainability; adapt for TypeScript, UI, security, docs, or large structural changes. Reviewers should inspect files and diffs directly, return concise evidence-backed findings with file/line references, and avoid edits unless the user explicitly asks for a writer pass. The parent synthesizes fixes worth doing now, optional improvements, and feedback to ignore/defer before applying anything.
 
-### Proactive skill-specialist technique
+### Manual skill-specialist technique
 
-Use this when `{ action: "list" }` reports proactive skill subagent suggestions and the user's task would benefit from perspectives the parent regularly uses. These suggestions are conservative: a skill is recommended only when it is available and referenced repeatedly by configured agents or saved chains. Treat the list as an opt-in hint for the current task, not a command to always fan out.
+Use this when a specific available skill would materially improve the user's task and the parent can name the skill perspective explicitly. Local `list` output does not emit proactive skill suggestion blocks; treat skill-specialist fanout as a parent judgment, not an automatic routing rule.
 
 Default guardrails:
-- Keep the fanout small: usually one or two skill-specialist children, never more than the listed recommendations or configured cap.
+- Keep the fanout small: usually one or two skill-specialist children.
 - Prefer `context: "fresh"` and include only the files, diff, plan, URL, or request details each child needs. Use forked context only when private/session history is essential and appropriate to share.
 - Use read-only agents for analysis/review unless implementation was explicitly requested; do not create several writers in the same worktree.
-- Skip proactive skill subagents for tiny questions, direct commands, highly private requests, or when the user asks not to delegate.
+- Skip skill-specialist fanout for tiny questions, direct commands, highly private requests, or when the user asks not to delegate.
 - Make cost and concurrency visible by using an ordinary `subagent(...)` call rather than hidden/background automation.
 
 Example shape:

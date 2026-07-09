@@ -329,6 +329,8 @@ describe("parallel agent execution", { skip: !piAvailable ? "pi packages not ava
 	});
 
 	it("top-level parallel reads are injected once with chain-style prefix", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
+		fs.writeFileSync(path.join(tempDir, "a.md"), "a", "utf-8");
+		fs.writeFileSync(path.join(tempDir, "b.md"), "b", "utf-8");
 		mockPi.onCall({ output: "Read done" });
 		const executor = makeExecutor();
 

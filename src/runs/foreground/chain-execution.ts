@@ -20,6 +20,7 @@ import {
 	createParallelDirs,
 	suppressProgressForReadOnlyTask,
 	aggregateParallelOutputs,
+	validateExplicitReads,
 	isDynamicParallelStep,
 	isParallelStep,
 	type StepOverrides,
@@ -248,10 +249,14 @@ async function runParallelChainTasks(input: ParallelChainRunInput): Promise<Sing
 
 			const taskTemplate = input.parallelTemplates[taskIndex] ?? "{previous}";
 			const behavior = suppressProgressForReadOnlyTask(input.parallelBehaviors[taskIndex]!, taskTemplate, input.originalTask);
+			const taskCwd = input.worktreeSetup
+				? input.worktreeSetup.worktrees[taskIndex]!.agentCwd
+				: resolveChildCwd(input.cwd ?? input.ctx.cwd, task.cwd);
+			const readCwd = input.worktreeSetup ? taskCwd : input.chainDir;
 			const templateHasPrevious = taskTemplate.includes("{previous}");
 			const { prefix, suffix } = buildChainInstructions(
 				behavior,
-				input.chainDir,
+				readCwd,
 				false,
 				templateHasPrevious ? undefined : input.prev,
 			);
@@ -274,10 +279,6 @@ async function runParallelChainTasks(input: ParallelChainRunInput): Promise<Sing
 			const maxSubagentDepth = resolveChildMaxSubagentDepth(input.maxSubagentDepth, taskAgentConfig?.maxSubagentDepth);
 			const toolBudget = resolveChainToolBudget({ stepBudget: task.toolBudget, runBudget: input.toolBudget, agentBudget: taskAgentConfig?.toolBudget, configBudget: input.configToolBudget });
 			if (toolBudget.error) throw new Error(toolBudget.error);
-
-			const taskCwd = input.worktreeSetup
-				? input.worktreeSetup.worktrees[taskIndex]!.agentCwd
-				: resolveChildCwd(input.cwd ?? input.ctx.cwd, task.cwd);
 
 			const outputPath = typeof behavior.output === "string"
 				? (path.isAbsolute(behavior.output) ? behavior.output : path.join(input.chainDir, behavior.output))
@@ -689,10 +690,14 @@ export async function executeChain(params: ChainExecutionParams): Promise<ChainE
 					.map((behavior, taskIndex) => suppressProgressForReadOnlyTask(behavior, parallelTemplates[taskIndex] ?? step.parallel[taskIndex]?.task, originalTask));
 				for (let taskIndex = 0; taskIndex < step.parallel.length; taskIndex++) {
 					const behavior = parallelBehaviors[taskIndex]!;
+					const label = `Parallel chain step ${stepIndex + 1} task ${taskIndex + 1} (${step.parallel[taskIndex]!.agent})`;
+					const readCwd = worktreeSetup ? worktreeSetup.worktrees[taskIndex]!.agentCwd : chainDir;
+					const readValidationError = validateExplicitReads(behavior, readCwd, label, step.worktree ? "chain/worktree" : "chain");
+					if (readValidationError) return buildChainExecutionErrorResult(readValidationError, makeDetailsInput({ currentStepIndex: stepIndex, currentFlatIndex: globalTaskIndex + taskIndex }));
 					const outputPath = typeof behavior.output === "string"
 						? (path.isAbsolute(behavior.output) ? behavior.output : path.join(chainDir, behavior.output))
 						: undefined;
-					const validationError = validateFileOnlyOutputMode(behavior.outputMode, outputPath, `Parallel chain step ${stepIndex + 1} task ${taskIndex + 1} (${step.parallel[taskIndex]!.agent})`);
+					const validationError = validateFileOnlyOutputMode(behavior.outputMode, outputPath, label);
 					if (validationError) return buildChainExecutionErrorResult(validationError, makeDetailsInput({ currentStepIndex: stepIndex, currentFlatIndex: globalTaskIndex + taskIndex }));
 				}
 				progressCreated = ensureParallelProgressFile(chainDir, progressCreated, parallelBehaviors);
@@ -906,10 +911,16 @@ export async function executeChain(params: ChainExecutionParams): Promise<ChainE
 
 			for (let taskIndex = 0; taskIndex < dynamicParallelStep.parallel.length; taskIndex++) {
 				const behavior = parallelBehaviors[taskIndex]!;
+				const label = `Dynamic chain step ${stepIndex + 1} item ${taskIndex + 1} (${dynamicParallelStep.parallel[taskIndex]!.agent})`;
+				const readValidationError = validateExplicitReads(behavior, chainDir, label, "chain");
+				if (readValidationError) {
+					dynamicGroupStatuses[stepIndex] = { status: "failed", error: readValidationError };
+					return buildChainExecutionErrorResult(readValidationError, makeDetailsInput({ currentStepIndex: stepIndex, currentFlatIndex: globalTaskIndex + taskIndex }));
+				}
 				const outputPath = typeof behavior.output === "string"
 					? (path.isAbsolute(behavior.output) ? behavior.output : path.join(chainDir, behavior.output))
 					: undefined;
-				const validationError = validateFileOnlyOutputMode(behavior.outputMode, outputPath, `Dynamic chain step ${stepIndex + 1} item ${taskIndex + 1} (${dynamicParallelStep.parallel[taskIndex]!.agent})`);
+				const validationError = validateFileOnlyOutputMode(behavior.outputMode, outputPath, label);
 				if (validationError) {
 					dynamicGroupStatuses[stepIndex] = { status: "failed", error: validationError };
 					return buildChainExecutionErrorResult(validationError, makeDetailsInput({ currentStepIndex: stepIndex, currentFlatIndex: globalTaskIndex + taskIndex }));
@@ -1119,10 +1130,15 @@ export async function executeChain(params: ChainExecutionParams): Promise<ChainE
 				{ scope: modelScope, source: explicitStepModel ? "explicit" : "inherited" },
 			);
 
+			const label = `Chain step ${stepIndex + 1} (${seqStep.agent})`;
+			const readValidationError = validateExplicitReads(behavior, chainDir, label, "chain");
+			if (readValidationError) {
+				return buildChainExecutionErrorResult(readValidationError, makeDetailsInput({ currentStepIndex: stepIndex, currentFlatIndex: globalTaskIndex }));
+			}
 			const outputPath = typeof behavior.output === "string"
 				? (path.isAbsolute(behavior.output) ? behavior.output : path.join(chainDir, behavior.output))
 				: undefined;
-			const validationError = validateFileOnlyOutputMode(behavior.outputMode, outputPath, `Chain step ${stepIndex + 1} (${seqStep.agent})`);
+			const validationError = validateFileOnlyOutputMode(behavior.outputMode, outputPath, label);
 			if (validationError) {
 				return buildChainExecutionErrorResult(validationError, makeDetailsInput({ currentStepIndex: stepIndex, currentFlatIndex: globalTaskIndex }));
 			}

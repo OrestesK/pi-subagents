@@ -90,6 +90,7 @@ interface ChainResultItem {
 	detached?: boolean;
 	timedOut?: boolean;
 	error?: string;
+	model?: string;
 	attemptedModels?: string[];
 	skills?: string[];
 	acceptance?: { status?: string; verifyRuns?: Array<{ status?: string }>; childReport?: unknown; runtimeChecks?: Array<{ status?: string; id?: string }> };
@@ -117,7 +118,13 @@ interface ChainExecutionModule {
 
 const chainMod = await tryImport<ChainExecutionModule>("./src/runs/foreground/chain-execution.ts");
 const available = !!chainMod;
-const executeChain = chainMod?.executeChain;
+const executeChain: ChainExecutionModule["executeChain"] = chainMod?.executeChain ?? (async () => {
+	throw new Error("chain execution module is not available");
+});
+
+function lastItem<T>(items: readonly T[] | undefined): T | undefined {
+	return items?.[items.length - 1];
+}
 
 describe("chain execution — sequential", { skip: !available ? "pi packages not available" : undefined }, () => {
 	let tempDir: string;
@@ -205,6 +212,40 @@ describe("chain execution — sequential", { skip: !available ? "pi packages not
 		);
 	}
 
+	it("fails missing explicit reads for sequential chain steps before launching the child", async () => {
+		mockPi.onCall({ output: "should not run" });
+
+		const result = await executeChain(
+			makeChainParams(
+				[{ agent: "analyst", task: "Analyze missing context", reads: ["missing.md"] }],
+				[makeAgent("analyst")],
+			),
+		);
+
+		assert.equal(result.isError, true);
+		assert.match(result.content[0]?.text ?? "", /Missing explicit reads/);
+		assert.match(result.content[0]?.text ?? "", /Chain step 1 \(analyst\)/);
+		assert.match(result.content[0]?.text ?? "", /mode: chain/);
+		assert.equal(fs.readdirSync(mockPi.dir).filter((name) => name.startsWith("call-")).length, 0);
+	});
+
+	it("fails missing explicit reads for parallel chain steps before launching children", async () => {
+		mockPi.onCall({ output: "should not run" });
+
+		const result = await executeChain(
+			makeChainParams(
+				[{ parallel: [{ agent: "reviewer", task: "Review missing input", reads: ["missing.md"] }] }],
+				[makeAgent("reviewer")],
+			),
+		);
+
+		assert.equal(result.isError, true);
+		assert.match(result.content[0]?.text ?? "", /Missing explicit reads/);
+		assert.match(result.content[0]?.text ?? "", /Parallel chain step 1 task 1 \(reviewer\)/);
+		assert.match(result.content[0]?.text ?? "", /mode: chain/);
+		assert.equal(fs.readdirSync(mockPi.dir).filter((name) => name.startsWith("call-")).length, 0);
+	});
+
 	it("runs a 2-step chain", async () => {
 		mockPi.onCall({ output: "Analysis complete: found 3 issues" });
 		const agents = [makeAgent("analyst"), makeAgent("reporter")];
@@ -283,7 +324,7 @@ describe("chain execution — sequential", { skip: !available ? "pi packages not
 		assert.ok(!result.isError, `chain should succeed: ${JSON.stringify(result.content)}`);
 		assert.equal(customCalls, 1);
 		assert.equal(mockPi.callCount(), 2);
-		assert.match(readCallArgs(0).at(-1) ?? "", /Clarified analysis/);
+		assert.match(lastItem(readCallArgs(0)) ?? "", /Clarified analysis/);
 	});
 
 	it("preserves completed chain results and marks the timed-out current step", async () => {
@@ -329,7 +370,7 @@ describe("chain execution — sequential", { skip: !available ? "pi packages not
 		assert.ok(!result.isError, `chain should succeed: ${JSON.stringify(result.content)}`);
 		assert.match(result.details.results[0]?.finalOutput ?? "", /Output saved to:/);
 		assert.doesNotMatch(result.details.results[0]?.finalOutput ?? "", /full chain output/);
-		const secondTaskArg = readCallArgs(1).at(-1) ?? "";
+		const secondTaskArg = lastItem(readCallArgs(1)) ?? "";
 		assert.match(secondTaskArg, /Output saved to:/);
 		assert.match(secondTaskArg, /2 lines/);
 		assert.doesNotMatch(secondTaskArg, /full chain output/);
@@ -555,7 +596,7 @@ describe("chain execution — sequential", { skip: !available ? "pi packages not
 			),
 		);
 
-		const taskArg = readCallArgs(0).at(-1) ?? "";
+		const taskArg = lastItem(readCallArgs(0)) ?? "";
 		assert.doesNotMatch(taskArg, /progress\.md/);
 		assert.equal(fs.existsSync(path.join(tempDir, "progress.md")), false);
 	});
@@ -574,7 +615,7 @@ describe("chain execution — sequential", { skip: !available ? "pi packages not
 			),
 		);
 
-		const taskArg = readCallArgs(0).at(-1) ?? "";
+		const taskArg = lastItem(readCallArgs(0)) ?? "";
 		assert.ok(taskArg.includes(`Create and maintain progress at: ${path.join(chainDir, runId, "progress.md")}`), taskArg);
 	});
 
@@ -590,7 +631,7 @@ describe("chain execution — sequential", { skip: !available ? "pi packages not
 		);
 
 		assert.ok(!result.isError);
-		const step2Task = result.details.results[1].task;
+		const step2Task = result.details.results[1]?.task ?? "";
 		assert.ok(
 			step2Task.includes("MARKER_ABC_123"),
 			`step 2 task should contain step 1 output via {previous}: ${step2Task.slice(0, 200)}`,
@@ -613,7 +654,7 @@ describe("chain execution — sequential", { skip: !available ? "pi packages not
 		);
 
 		assert.ok(!result.isError);
-		assert.match(readCallArgs(1).at(-1) ?? "", /CTX_123/);
+		assert.match(lastItem(readCallArgs(1)) ?? "", /CTX_123/);
 		assert.equal(result.details.workflowGraph?.nodes[0]?.outputName, "contextOutput");
 	});
 
@@ -650,9 +691,9 @@ describe("chain execution — sequential", { skip: !available ? "pi packages not
 
 		assert.ok(!result.isError);
 		assert.equal(mockPi.callCount(), 4);
-		assert.match(readCallArgs(1).at(-1) ?? "", /Review src\/a\.ts/);
-		assert.match(readCallArgs(2).at(-1) ?? "", /Review src\/b\.ts/);
-		assert.match(readCallArgs(3).at(-1) ?? "", /"key":"src\/a\.ts"/);
+		assert.match(lastItem(readCallArgs(1)) ?? "", /Review src\/a\.ts/);
+		assert.match(lastItem(readCallArgs(2)) ?? "", /Review src\/b\.ts/);
+		assert.match(lastItem(readCallArgs(3)) ?? "", /"key":"src\/a\.ts"/);
 		const collected = result.details.outputs?.reviews?.structured as Array<{ key: string; structured: unknown }>;
 		assert.deepEqual(collected.map((item) => item.key), ["src/a.ts", "src/b.ts"]);
 		assert.deepEqual(collected.map((item) => item.structured), [{ ok: "a" }, { ok: "b" }]);
@@ -952,7 +993,7 @@ describe("chain execution — sequential", { skip: !available ? "pi packages not
 		);
 
 		assert.ok(!result.isError);
-		const workerTask = result.details.results[0].task;
+		const workerTask = result.details.results[0]?.task ?? "";
 		assert.ok(
 			workerTask.includes("the authentication module"),
 			`should substitute {task}: ${workerTask.slice(0, 200)}`,
@@ -1031,15 +1072,15 @@ describe("chain execution — sequential", { skip: !available ? "pi packages not
 		assert.equal(result.details.totalSteps, chainLength);
 		assert.equal(result.details.chainAgents?.length, chainLength);
 		assert.equal(result.details.workflowGraph?.nodes.length, chainLength);
-		assert.equal(result.details.workflowGraph?.nodes.at(-1)?.agent, "reviewer");
-		assert.equal(result.details.workflowGraph?.nodes.at(-1)?.flatIndex, chainLength - 1);
+		assert.equal(lastItem(result.details.workflowGraph?.nodes)?.agent, "reviewer");
+		assert.equal(lastItem(result.details.workflowGraph?.nodes)?.flatIndex, chainLength - 1);
 		assert.ok(result.details.results.every((r) => r.exitCode === 0));
 		assert.deepEqual(
 			result.details.results.map((r) => r.agent),
 			chain.map((step) => step.agent),
 		);
 
-		const finalTaskArg = readCallArgs(chainLength - 1).at(-1) ?? "";
+		const finalTaskArg = lastItem(readCallArgs(chainLength - 1)) ?? "";
 		assert.match(finalTaskArg, /step-38-output/);
 		assert.doesNotMatch(finalTaskArg, /step-37-output/);
 		assert.match(result.content[0]?.text ?? "", /40 steps/);
@@ -1246,7 +1287,7 @@ describe("chain execution — parallel steps", { skip: !available ? "pi packages
 
 		assert.ok(!result.isError);
 		assert.equal(result.details.results.length, 3);
-		const synthTask = result.details.results[2].task;
+		const synthTask = result.details.results[2]?.task ?? "";
 		assert.ok(
 			synthTask.includes("=== Parallel Task 1 (reviewer-a) ==="),
 			"synthesizer should include reviewer-a output block",
@@ -1279,7 +1320,7 @@ describe("chain execution — parallel steps", { skip: !available ? "pi packages
 		);
 
 		assert.ok(!result.isError);
-		const finalTask = readCallArgs(2).at(-1) ?? "";
+		const finalTask = lastItem(readCallArgs(2)) ?? "";
 		assert.match(finalTask, /Alpha named output/);
 		assert.match(finalTask, /Beta named output/);
 	});
@@ -1316,13 +1357,13 @@ describe("chain execution — parallel steps", { skip: !available ? "pi packages
 		assert.ok(!result.isError, `should succeed: ${JSON.stringify(result.content)}`);
 		assert.deepEqual(result.details.results.map((entry) => entry.agent), ["scout-a", "scout-b", "synthesizer", "review-a", "review-b"]);
 		assert.equal(result.details.totalSteps, 3);
-		const funnelTask = readCallArgsMatching("Synthesize:").at(-1) ?? "";
+		const funnelTask = lastItem(readCallArgsMatching("Synthesize:")) ?? "";
 		assert.match(funnelTask, /=== Parallel Task 1 \(scout-a\) ===/);
 		assert.match(funnelTask, /Scout A findings/);
 		assert.match(funnelTask, /=== Parallel Task 2 \(scout-b\) ===/);
 		assert.match(funnelTask, /Scout B findings/);
-		const fanoutTaskA = readCallArgsMatching("Review funnel A:").at(-1) ?? "";
-		const fanoutTaskB = readCallArgsMatching("Review funnel B:").at(-1) ?? "";
+		const fanoutTaskA = lastItem(readCallArgsMatching("Review funnel A:")) ?? "";
+		const fanoutTaskB = lastItem(readCallArgsMatching("Review funnel B:")) ?? "";
 		assert.match(fanoutTaskA, /Review funnel A:\nFunnel synthesis/);
 		assert.match(fanoutTaskB, /Review funnel B:\nFunnel synthesis/);
 		assert.equal(result.details.workflowGraph?.nodes[0]?.kind, "parallel-group");
@@ -1353,7 +1394,7 @@ describe("chain execution — parallel steps", { skip: !available ? "pi packages
 		assert.ok(!result.isError, `should succeed: ${JSON.stringify(result.content)}`);
 		assert.doesNotMatch(result.details.results[0]?.finalOutput ?? "", /full parallel chain output/);
 		assert.doesNotMatch(result.details.results[1]?.finalOutput ?? "", /full parallel chain output/);
-		const synthTaskArg = readCallArgs(2).at(-1) ?? "";
+		const synthTaskArg = lastItem(readCallArgs(2)) ?? "";
 		assert.match(synthTaskArg, /Output saved to:/);
 		assert.match(synthTaskArg, /2 lines/);
 		assert.doesNotMatch(synthTaskArg, /full parallel chain output/);

@@ -12,7 +12,7 @@ import type { AgentConfig } from "../../agents/agents.ts";
 import { applyThinkingSuffix } from "../shared/pi-args.ts";
 import { formatChainStepLabel } from "../../shared/agent-labels.ts";
 import { injectOutputPathSystemPrompt, injectSingleOutputInstruction, normalizeSingleOutputOverride, resolveSingleOutputPath, validateFileOnlyOutputMode } from "../shared/single-output.ts";
-import { buildChainInstructions, isDynamicParallelStep, isParallelStep, resolveStepBehavior, suppressProgressForReadOnlyTask, writeInitialProgressFile, type ChainStep, type ResolvedStepBehavior, type SequentialStep, type StepOverrides } from "../../shared/settings.ts";
+import { buildChainInstructions, isDynamicParallelStep, isParallelStep, resolveStepBehavior, suppressProgressForReadOnlyTask, validateExplicitReads, writeInitialProgressFile, type ChainStep, type ResolvedStepBehavior, type SequentialStep, type StepOverrides } from "../../shared/settings.ts";
 import type { RunnerStep } from "../shared/parallel-utils.ts";
 import { resolvePiPackageRoot } from "../shared/pi-spawn.ts";
 import { buildSkillInjection, normalizeSkillInput, resolveSkillsWithFallback } from "../../agents/skills.ts";
@@ -159,6 +159,7 @@ interface AsyncSingleParams {
 	sessionRoot?: string;
 	sessionFile?: string;
 	skills?: string[];
+	reads?: string[] | false;
 	output?: string | boolean;
 	outputMode?: "inline" | "file-only";
 	outputBaseDir?: string;
@@ -440,6 +441,9 @@ export function buildAsyncRunnerSteps(id: string, params: AsyncRunnerStepBuildPa
 			systemPrompt = systemPrompt ? `${systemPrompt}\n\n${memoryInjection}` : memoryInjection;
 		}
 
+		const readValidationCwd = behaviorCwd ? stepCwd : instructionCwd;
+		const readValidationError = validateExplicitReads(behavior, readValidationCwd, `Async step (${s.agent})`, behaviorCwd ? "async/worktree" : "async/chain");
+		if (readValidationError) throw new AsyncStartValidationError(readValidationError);
 		const readInstructions = buildChainInstructions({ ...behavior, output: false, progress: false }, instructionCwd, false);
 		const isFirstProgressAgent = behavior.progress && !progressPrecreated && !progressInstructionCreated;
 		if (behavior.progress) progressInstructionCreated = true;
@@ -901,13 +905,17 @@ export function executeAsyncSingle(
 		};
 	}
 
+	const readBehavior = resolveStepBehavior(agentConfig, { reads: params.reads ?? false });
+	const readValidationError = validateExplicitReads(readBehavior, runnerCwd, `Async single run (${agent})`, "async/single");
+	if (readValidationError) return formatAsyncStartError("single", readValidationError);
+	const readInstructions = buildChainInstructions({ ...readBehavior, output: false, progress: false }, runnerCwd, false);
 	const effectiveOutput = normalizeSingleOutputOverride(params.output, agentConfig.output);
 	const outputPath = resolveSingleOutputPath(effectiveOutput, ctx.cwd, runnerCwd, params.outputBaseDir ?? (artifactsDir ? path.join(artifactsDir, "outputs", id) : undefined));
 	systemPrompt = injectOutputPathSystemPrompt(systemPrompt, outputPath);
 	const outputMode = params.outputMode ?? "inline";
 	const validationError = validateFileOnlyOutputMode(outputMode, outputPath, `Async single run (${agent})`);
 	if (validationError) return formatAsyncStartError("single", validationError);
-	const taskWithOutputInstruction = injectSingleOutputInstruction(task, outputPath);
+	const taskWithOutputInstruction = injectSingleOutputInstruction(`${readInstructions.prefix}${task}`, outputPath);
 	const primaryModel = resolveSubagentModelOverride(
 		params.modelOverride ?? agentConfig.model,
 		ctx.currentModel,

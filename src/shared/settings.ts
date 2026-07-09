@@ -311,6 +311,24 @@ function resolveChainPath(filePath: string, chainDir: string): string {
 	return path.isAbsolute(filePath) ? filePath : path.join(chainDir, filePath);
 }
 
+export function validateExplicitReads(
+	behavior: ResolvedStepBehavior,
+	cwd: string,
+	label: string,
+	mode: string,
+): string | undefined {
+	if (!behavior.reads || behavior.readsFromDefault !== false) return undefined;
+	const resolvedCwd = path.resolve(cwd);
+	const missing = behavior.reads
+		.map((readPath) => ({ readPath, resolvedPath: resolveChainPath(readPath, resolvedCwd) }))
+		.filter(({ resolvedPath }) => !fs.existsSync(resolvedPath));
+	if (missing.length === 0) return undefined;
+	const missingText = missing
+		.map(({ readPath, resolvedPath }) => readPath === resolvedPath ? readPath : `${readPath} (resolved: ${resolvedPath})`)
+		.join(", ");
+	return `Missing explicit reads for ${label} (mode: ${mode}). Resolved cwd: ${resolvedCwd}. Missing: ${missingText}.`;
+}
+
 export function resolveProgressReportMode(config: ProgressConfig | undefined): ProgressReportMode {
 	return config?.reportMode === "supervisor" ? "supervisor" : "file";
 }
@@ -463,9 +481,10 @@ export function resolveParallelBehaviors(
 			}
 		}
 
-		const outputMode = task.outputMode ?? "inline";
+			const outputMode = task.outputMode ?? "inline";
 		const model = task.model ?? config.model;
-		return { output, outputMode, reads, progress, skills, model };
+		const readsFromDefault = task.reads === undefined;
+		return { output, outputMode, reads, readsFromDefault, progress, skills, model };
 	});
 }
 

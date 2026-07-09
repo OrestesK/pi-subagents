@@ -28,6 +28,7 @@ import {
 	resolveStepBehavior,
 	suppressProgressForReadOnlyTask,
 	taskDisallowsFileUpdates,
+	validateExplicitReads,
 	type ChainStep,
 	type ParallelStep,
 	type ResolvedStepBehavior,
@@ -142,6 +143,7 @@ export interface SubagentParamsLike {
 	dir?: string;
 	index?: number;
 	view?: "fleet" | "transcript";
+	offset?: number;
 	lines?: number;
 	agent?: string;
 	task?: string;
@@ -168,6 +170,7 @@ export interface SubagentParamsLike {
 	skill?: string | string[] | boolean;
 	output?: string | boolean;
 	outputMode?: "inline" | "file-only";
+	reads?: string[] | boolean;
 	agentScope?: unknown;
 	requiresCapabilities?: SubagentCapability[];
 	chainDir?: string;
@@ -2617,9 +2620,12 @@ async function runParallelPath(data: ExecutionContextData, deps: ExecutorDeps): 
 		});
 		if (duplicateOutputError) return buildParallelModeError(duplicateOutputError);
 		for (let index = 0; index < tasks.length; index++) {
+			const behavior = behaviors[index]!;
 			const taskCwd = resolveParallelTaskCwd(tasks[index]!, effectiveCwd, worktreeSetup, index);
-			const outputPath = resolveSingleOutputPath(behaviors[index]?.output, ctx.cwd, taskCwd, outputBaseDir);
-			const validationError = validateFileOnlyOutputMode(behaviors[index]?.outputMode, outputPath, `Parallel task ${index + 1} (${tasks[index]!.agent})`);
+			const readValidationError = validateExplicitReads(behavior, taskCwd, `Parallel task ${index + 1} (${tasks[index]!.agent})`, params.worktree ? "parallel/worktree" : "parallel");
+			if (readValidationError) return buildParallelModeError(readValidationError);
+			const outputPath = resolveSingleOutputPath(behavior.output, ctx.cwd, taskCwd, outputBaseDir);
+			const validationError = validateFileOnlyOutputMode(behavior.outputMode, outputPath, `Parallel task ${index + 1} (${tasks[index]!.agent})`);
 			if (validationError) return buildParallelModeError(validationError);
 		}
 
@@ -2804,6 +2810,7 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 		{ scope: data.modelScope, source: (params.model as string | undefined) ? "explicit" : "inherited" },
 	);
 	let skillOverride: string[] | false | undefined = normalizeSkillInput(params.skill);
+	let readsOverride: string[] | false | undefined = params.reads !== undefined && params.reads !== true ? params.reads : undefined;
 	const rawOutput = params.output !== undefined ? params.output : agentConfig.output;
 	let effectiveOutput = normalizeSingleOutputOverride(rawOutput, agentConfig.output);
 	const effectiveOutputMode = params.outputMode ?? "inline";
@@ -2811,7 +2818,7 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 	const maxSubagentDepth = resolveChildMaxSubagentDepth(currentMaxSubagentDepth, agentConfig.maxSubagentDepth);
 
 	if (params.clarify === true && ctx.hasUI) {
-		const behavior = resolveStepBehavior(agentConfig, { output: effectiveOutput, skills: skillOverride });
+		const behavior = resolveStepBehavior(agentConfig, { output: effectiveOutput, outputMode: effectiveOutputMode, reads: readsOverride ?? false, skills: skillOverride });
 		const availableSkills = discoverAvailableSkills(effectiveCwd);
 
 		const result = await ctx.ui.custom<ChainClarifyResult>(
@@ -2840,6 +2847,7 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 		const override = result.behaviorOverrides[0];
 		if (override?.model) modelOverride = resolveSubagentModelOverride(override.model, ctx.model, availableModels, currentProvider, { scope: data.modelScope, source: "explicit" });
 		if (override?.output !== undefined) effectiveOutput = normalizeSingleOutputOverride(override.output, agentConfig.output);
+		if (override?.reads !== undefined) readsOverride = override.reads;
 		if (override?.skills !== undefined) skillOverride = override.skills;
 
 		if (result.runInBackground) {
@@ -2874,6 +2882,7 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 				sessionRoot,
 				sessionFile: sessionFileForTask(params.agent!, 0),
 				skills: skillOverride === false ? [] : skillOverride,
+				reads: readsOverride,
 				output: effectiveOutput,
 				outputMode: effectiveOutputMode,
 				outputBaseDir: resolveSingleRunOutputBaseDir(deps, artifactsDir, id),
@@ -2897,12 +2906,18 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 		task = wrapForkTask(task);
 	}
 	const cleanTask = task;
+	const singleReadBehavior = resolveStepBehavior(agentConfig, { reads: readsOverride ?? false });
+	const readValidationError = validateExplicitReads(singleReadBehavior, effectiveCwd, `Single run (${params.agent})`, "single");
+	if (readValidationError) {
+		return { content: [{ type: "text", text: readValidationError }], isError: true, details: { mode: "single", results: [] } };
+	}
+	const readInstructions = buildChainInstructions({ ...singleReadBehavior, output: false, progress: false }, effectiveCwd, false, undefined, data.progressReportMode);
 	const outputPath = resolveSingleOutputPath(effectiveOutput, ctx.cwd, effectiveCwd, resolveSingleRunOutputBaseDir(deps, artifactsDir, runId));
 	const validationError = validateFileOnlyOutputMode(effectiveOutputMode, outputPath, `Single run (${params.agent})`);
 	if (validationError) {
 		return { content: [{ type: "text", text: validationError }], isError: true, details: { mode: "single", results: [] } };
 	}
-	task = injectSingleOutputInstruction(task, outputPath);
+	task = injectSingleOutputInstruction(`${readInstructions.prefix}${task}`, outputPath);
 
 	let effectiveSkills: string[] | undefined;
 	if (skillOverride === false) {
@@ -3181,8 +3196,9 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 				const targetRunId = paramsWithResolvedCwd.id ?? paramsWithResolvedCwd.runId;
 				const nestedScope = nestedResolutionScopeForExecutor(deps);
 				const sessionRoots = trustedSessionRootsForStatus(ctx, deps);
+				const statusParams = { ...paramsWithResolvedCwd, action: "status" as const, offset: paramsWithResolvedCwd.offset };
 				if (paramsWithResolvedCwd.view === "fleet") {
-					return inspectSubagentStatus(paramsWithResolvedCwd as Parameters<typeof inspectSubagentStatus>[0], { state: deps.state, nested: nestedScope, sessionRoots });
+					return inspectSubagentStatus(statusParams, { state: deps.state, nested: nestedScope, sessionRoots });
 				}
 				if (targetRunId) {
 					try {
@@ -3213,7 +3229,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 						};
 					}
 				}
-				return inspectSubagentStatus(paramsWithResolvedCwd as Parameters<typeof inspectSubagentStatus>[0], { state: deps.state, nested: nestedScope, sessionRoots });
+				return inspectSubagentStatus(statusParams, { state: deps.state, nested: nestedScope, sessionRoots });
 			}
 			if (action === "resume") {
 				return resumeAsyncRun({ params: paramsWithResolvedCwd, requestCwd, ctx, deps });

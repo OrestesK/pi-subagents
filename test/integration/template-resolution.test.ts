@@ -19,6 +19,7 @@ const available = !!(settings && skills);
 
 const resolveChainTemplates = settings?.resolveChainTemplates;
 const buildChainInstructions = settings?.buildChainInstructions;
+const validateExplicitReads = settings?.validateExplicitReads;
 const resolveStepBehavior = settings?.resolveStepBehavior;
 const resolveParallelBehaviors = settings?.resolveParallelBehaviors;
 const suppressProgressForReadOnlyTask = settings?.suppressProgressForReadOnlyTask;
@@ -26,6 +27,10 @@ const taskDisallowsFileUpdates = settings?.taskDisallowsFileUpdates;
 const isParallelStep = settings?.isParallelStep;
 const createChainDir = settings?.createChainDir;
 const normalizeSkillInput = skills?.normalizeSkillInput;
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 describe("resolveChainTemplates", { skip: !available ? "pi packages not available" : undefined }, () => {
 	it("uses step task for first step", () => {
@@ -143,6 +148,14 @@ describe("resolveStepBehavior", { skip: !available ? "pi packages not available"
 		assert.equal(behavior.output, "report.md");
 		assert.equal(behavior.progress, true);
 		assert.deepEqual(behavior.reads, ["input.md"]);
+		assert.equal(behavior.readsFromDefault, true);
+	});
+
+	it("marks step read overrides as explicit", () => {
+		const config = { name: "test", defaultReads: ["default.md"] };
+		const behavior = resolveStepBehavior(config, { reads: ["input.md"] });
+		assert.deepEqual(behavior.reads, ["input.md"]);
+		assert.equal(behavior.readsFromDefault, false);
 	});
 
 	it("step overrides take precedence", () => {
@@ -189,6 +202,78 @@ describe("resolveParallelBehaviors", { skip: !available ? "pi packages not avail
 		);
 
 		assert.equal(behaviors[0]?.output, false);
+	});
+
+	it("tracks default versus explicit reads for chain parallel tasks", () => {
+		const behaviors = resolveParallelBehaviors(
+			[
+				{ agent: "default-reader", task: "Review defaults" },
+				{ agent: "explicit-reader", task: "Review input", reads: ["input.md"] },
+			],
+			[
+				{ name: "default-reader", defaultReads: ["default.md"] },
+				{ name: "explicit-reader", defaultReads: ["default.md"] },
+			],
+			0,
+		);
+
+		assert.deepEqual(behaviors[0]?.reads, ["default.md"]);
+		assert.equal(behaviors[0]?.readsFromDefault, true);
+		assert.deepEqual(behaviors[1]?.reads, ["input.md"]);
+		assert.equal(behaviors[1]?.readsFromDefault, false);
+	});
+});
+
+describe("validateExplicitReads", { skip: !available ? "pi packages not available" : undefined }, () => {
+	it("accepts explicit reads that exist after path resolution", () => {
+		const dir = createTempDir("reads-ok-");
+		try {
+			fs.writeFileSync(path.join(dir, "context.md"), "context", "utf-8");
+			const error = validateExplicitReads(
+				{ reads: ["context.md"], readsFromDefault: false, output: false, outputMode: "inline", progress: false, skills: undefined },
+				dir,
+				"Chain step 1 (worker)",
+				"chain",
+			);
+			assert.equal(error, undefined);
+		} finally {
+			removeTempDir(dir);
+		}
+	});
+
+	it("fails explicit missing reads with label, path, cwd, and mode", () => {
+		const dir = createTempDir("reads-missing-");
+		try {
+			const error = validateExplicitReads(
+				{ reads: ["missing.md"], readsFromDefault: false, output: false, outputMode: "inline", progress: false, skills: undefined },
+				dir,
+				"Parallel task 1 (worker)",
+				"parallel/worktree",
+			);
+			assert.match(error ?? "", /Missing explicit reads/);
+			assert.match(error ?? "", /Parallel task 1 \(worker\)/);
+			assert.match(error ?? "", /missing\.md/);
+			assert.match(error ?? "", new RegExp(escapeRegExp(path.join(dir, "missing.md"))));
+			assert.match(error ?? "", new RegExp(escapeRegExp(dir)));
+			assert.match(error ?? "", /mode: parallel\/worktree/);
+		} finally {
+			removeTempDir(dir);
+		}
+	});
+
+	it("does not validate missing agent default reads", () => {
+		const dir = createTempDir("reads-default-");
+		try {
+			const error = validateExplicitReads(
+				{ reads: ["missing-default.md"], readsFromDefault: true, output: false, outputMode: "inline", progress: false, skills: undefined },
+				dir,
+				"Chain step 1 (worker)",
+				"chain",
+			);
+			assert.equal(error, undefined);
+		} finally {
+			removeTempDir(dir);
+		}
 	});
 });
 

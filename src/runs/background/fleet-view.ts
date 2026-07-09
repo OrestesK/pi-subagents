@@ -17,15 +17,18 @@ import {
 import { readStatus } from "../../shared/utils.ts";
 import { formatNestedRunStatusLines } from "../shared/nested-render.ts";
 import { formatAsyncRunOutputPath, formatAsyncRunProgressLabel, listAsyncRuns, type AsyncRunSummary } from "./async-status.ts";
+import { fitCompleteRecordPage, fitMetadataAndNewestTail } from "./output-budget.ts";
 
 const DEFAULT_TRANSCRIPT_LINES = 80;
 const MAX_TRANSCRIPT_LINES = 500;
 const TRANSCRIPT_TAIL_BYTES = 256 * 1024;
 
+type FleetToolResult = AgentToolResult<Details> & { isError?: boolean };
 type ForegroundControl = SubagentState["foregroundControls"] extends Map<string, infer T> ? T : never;
 type ForegroundRun = NonNullable<SubagentState["foregroundRuns"]> extends Map<string, infer T> ? T : never;
 
 interface FleetViewParams {
+	offset?: number;
 	lines?: number;
 }
 
@@ -90,7 +93,7 @@ function isNotFoundError(error: unknown): boolean {
 		&& (error as NodeJS.ErrnoException).code === "ENOENT";
 }
 
-function readTextTail(filePath: string, maxLines: number): TextTailResult {
+export function readTextTail(filePath: string, maxLines: number): TextTailResult {
 	let stat: fs.Stats;
 	try {
 		stat = fs.statSync(filePath);
@@ -107,9 +110,13 @@ function readTextTail(filePath: string, maxLines: number): TextTailResult {
 		const buffer = Buffer.alloc(bytesToRead);
 		fd = fs.openSync(filePath, "r");
 		const bytesRead = fs.readSync(fd, buffer, 0, bytesToRead, start);
-		const content = buffer.subarray(0, bytesRead).toString("utf-8");
+		let contentStart = 0;
+		if (start > 0) {
+			while (contentStart < bytesRead && (buffer[contentStart] & 0xc0) === 0x80) contentStart++;
+		}
+		const content = buffer.subarray(contentStart, bytesRead).toString("utf-8");
 		let lines = content.split(/\r?\n/);
-		if (start > 0 && lines.length > 0) lines = lines.slice(1);
+		if (start > 0 && lines.length > 1) lines = lines.slice(1);
 		if (lines[lines.length - 1] === "") lines = lines.slice(0, -1);
 		return { path: filePath, lines: lines.slice(-maxLines), truncated: start > 0 || lines.length > maxLines };
 	} catch (error) {
@@ -307,7 +314,7 @@ function formatAsyncFleetLines(runs: AsyncRunSummary[]): string[] {
 	return lines;
 }
 
-export function inspectSubagentFleet(_params: FleetViewParams, deps: FleetViewDeps = {}): AgentToolResult<Details> {
+export function inspectSubagentFleet(params: FleetViewParams, deps: FleetViewDeps = {}): FleetToolResult {
 	if (deps.childSafe) {
 		return {
 			content: [{ type: "text", text: "Child-safe subagent fleet view is unavailable without an explicit run id. Use subagent({ action: \"status\", id: \"...\" }) for the delegated run you can see." }],
@@ -343,19 +350,72 @@ export function inspectSubagentFleet(_params: FleetViewParams, deps: FleetViewDe
 		};
 	}
 
-	const lines = [`Subagent fleet: ${total} tracked`, ""];
-	const foregroundLines = formatForegroundFleetLines(foregroundControls);
-	if (foregroundLines.length) lines.push(...foregroundLines, "");
-	const detachedForegroundLines = formatDetachedForegroundFleetLines(detachedForegroundRuns);
-	if (detachedForegroundLines.length) lines.push(...detachedForegroundLines, "");
-	const asyncLines = formatAsyncFleetLines(asyncRuns);
-	if (asyncLines.length) lines.push(...asyncLines, "");
-	lines.push("Commands:");
-	lines.push("  Refresh fleet: subagent({ action: \"status\", view: \"fleet\" })");
-	lines.push("  Tail run transcript: subagent({ action: \"status\", id: \"<run-id>\", view: \"transcript\" })");
-	lines.push("  Tail child transcript: subagent({ action: \"status\", id: \"<run-id>\", index: 0, view: \"transcript\" })");
+	type FleetRecord = { category: string; full: string; compact: string };
+	const records: FleetRecord[] = [];
+	const orderedForeground = [...foregroundControls].sort((left, right) => right.updatedAt - left.updatedAt);
+	for (const control of orderedForeground) {
+		records.push({
+			category: "Foreground runs:",
+			full: formatForegroundFleetLines([control]).slice(1).join("\n"),
+			compact: [
+				`- ${control.runId} | running | ${control.mode}`,
+				`  status: subagent({ action: "status", id: "${control.runId}" })`,
+				`  transcript: subagent({ action: "status", id: "${control.runId}", view: "transcript" })`,
+			].join("\n"),
+		});
+	}
+	const orderedDetached = [...detachedForegroundRuns].sort((left, right) => right.updatedAt - left.updatedAt);
+	for (const run of orderedDetached) {
+		records.push({
+			category: "Detached foreground runs:",
+			full: formatDetachedForegroundFleetLines([run]).slice(1).join("\n"),
+			compact: [
+				`- ${run.runId} | detached | ${run.mode}`,
+				`  status: subagent({ action: "status", id: "${run.runId}" })`,
+				`  transcript: subagent({ action: "status", id: "${run.runId}", view: "transcript" })`,
+			].join("\n"),
+		});
+	}
+	for (const run of asyncRuns) {
+		records.push({
+			category: "Async runs:",
+			full: formatAsyncFleetLines([run]).slice(1).join("\n"),
+			compact: [
+				`- ${run.id} | ${run.state} | ${run.mode}`,
+				`  status: subagent({ action: "status", id: "${run.id}" })`,
+				`  transcript: subagent({ action: "status", id: "${run.id}", view: "transcript" })`,
+			].join("\n"),
+		});
+	}
+	const text = fitCompleteRecordPage({
+		records,
+		offset: params.offset ?? 0,
+		render: (page) => {
+			const lines = [
+				`Subagent fleet: ${page.total} tracked`,
+				`Total: ${page.total} | Offset: ${page.offset} | Shown: ${page.shown} | Remaining: ${page.remaining}`,
+				"",
+			];
+			let category: string | undefined;
+			for (const record of page.records) {
+				if (record.category !== category) {
+					if (category !== undefined) lines.push("");
+					category = record.category;
+					lines.push(category);
+				}
+				lines.push(page.compact ? record.compact : record.full);
+			}
+			if (page.compact) lines.push("", "Notice: full run details omitted because this record exceeds the 50,000-byte page limit.");
+			lines.push("", "Commands:");
+			lines.push("  Refresh fleet: subagent({ action: \"status\", view: \"fleet\" })");
+			lines.push("  Tail run transcript: subagent({ action: \"status\", id: \"<run-id>\", view: \"transcript\" })");
+			lines.push("  Tail child transcript: subagent({ action: \"status\", id: \"<run-id>\", index: 0, view: \"transcript\" })");
+			if (page.remaining > 0) lines.push(`  Next page: subagent({ action: "status", view: "fleet", offset: ${page.offset + page.shown} })`);
+			return lines.join("\n").trimEnd();
+		},
+	}).text;
 
-	return { content: [{ type: "text", text: lines.join("\n").trimEnd() }], details: { mode: "management", results: [] } };
+	return { content: [{ type: "text", text }], details: { mode: "management", results: [] } };
 }
 
 function validateTranscriptIndex(index: number | undefined, steps: AsyncJobStep[]): number | undefined {
@@ -390,7 +450,6 @@ function stepStateLine(mode: SubagentRunMode, index: number | undefined, step: A
 		step.status,
 		formatActivityFacts(step),
 		modelThinking,
-		step.error ? `error: ${step.error}` : undefined,
 	].filter(Boolean);
 	return parts.join(" | ");
 }
@@ -407,13 +466,11 @@ function appendKnownArtifacts(lines: string[], input: { outputPaths: string[]; s
 	for (const artifact of artifacts) lines.push(`  ${artifact}`);
 }
 
-function appendTranscriptBody(lines: string[], sourceLabel: string, sourceLines: string[], truncated: boolean): void {
-	lines.push(`${sourceLabel}${truncated ? " (tail truncated)" : ""}:`);
-	if (sourceLines.length === 0) {
-		lines.push("  (no transcript lines available yet)");
-		return;
-	}
-	for (const line of sourceLines) lines.push(`  ${line}`);
+function formatTranscriptOutput(coreMetadata: string[], selectedMetadata: string[], secondaryMetadata: string[], sourceLabel: string, sourceLines: string[], truncated: boolean): string {
+	const heading = `${sourceLabel}${truncated ? " (tail truncated)" : ""}:`;
+	const metadata = [...coreMetadata, heading, ...selectedMetadata, ...secondaryMetadata];
+	if (sourceLines.length === 0) return fitMetadataAndNewestTail([...metadata, "  (no transcript lines available yet)"]);
+	return fitMetadataAndNewestTail(metadata, sourceLines.map((line) => `  ${line}`).join("\n"));
 }
 
 export function formatAsyncRunTranscript(status: AsyncStatus, asyncDir: string, options: TranscriptOptions = {}): string {
@@ -428,14 +485,15 @@ export function formatAsyncRunTranscript(status: AsyncStatus, asyncDir: string, 
 	const sessionFile = selected.index !== undefined ? selected.step?.sessionFile : status.sessionFile;
 	const eventsPath = path.join(asyncDir, "events.jsonl");
 
-	const lines = [
+	const coreMetadata = [
 		`Run: ${status.runId}`,
 		`State: ${status.state}`,
 		`Mode: ${status.mode}`,
-		stepStateLine(status.mode, selected.index, selected.step),
-		selected.hint,
-	].filter((line): line is string => Boolean(line));
-	appendKnownArtifacts(lines, { outputPaths, sessionFile, eventsPath: fs.existsSync(eventsPath) ? eventsPath : undefined, logPath: fs.existsSync(logPath) ? logPath : undefined });
+	];
+	const selectedMetadata = [stepStateLine(status.mode, selected.index, selected.step)].filter((line): line is string => Boolean(line));
+	const secondaryMetadata = selected.hint ? [selected.hint] : [];
+	appendKnownArtifacts(secondaryMetadata, { outputPaths, sessionFile, eventsPath: fs.existsSync(eventsPath) ? eventsPath : undefined, logPath: fs.existsSync(logPath) ? logPath : undefined });
+	if (selected.step?.error) secondaryMetadata.push(`Error: ${selected.step.error}`);
 
 	const warnings: string[] = [];
 	let transcriptLines: string[] = [];
@@ -462,11 +520,10 @@ export function formatAsyncRunTranscript(status: AsyncStatus, asyncDir: string, 
 	}
 
 	if (warnings.length) {
-		lines.push("Warnings:");
-		for (const warning of warnings) lines.push(`  ${warning}`);
+		secondaryMetadata.push("Warnings:");
+		for (const warning of warnings) secondaryMetadata.push(`  ${warning}`);
 	}
-	appendTranscriptBody(lines, transcriptSource, transcriptLines, truncated);
-	return lines.join("\n");
+	return formatTranscriptOutput(coreMetadata, selectedMetadata, secondaryMetadata, transcriptSource, transcriptLines, truncated);
 }
 
 export function formatNestedRunTranscript(run: NestedRunSummary, options: TranscriptOptions = {}): string {
@@ -475,24 +532,22 @@ export function formatNestedRunTranscript(run: NestedRunSummary, options: Transc
 		if (status) return formatAsyncRunTranscript(status, run.asyncDir, options);
 	}
 	const lineLimit = transcriptLineLimit(options.lines);
-	const lines = [
+	const coreMetadata = [
 		`Nested run: ${run.id}`,
 		`State: ${run.state}`,
 		run.mode ? `Mode: ${run.mode}` : undefined,
-		run.agent ? `Agent: ${run.agent}` : run.agents?.length ? `Agents: ${run.agents.join(", ")}` : undefined,
 	].filter((line): line is string => Boolean(line));
-	appendKnownArtifacts(lines, { outputPaths: [], sessionFile: run.sessionFile });
-	if (!run.sessionFile) {
-		appendTranscriptBody(lines, "Transcript tail", [], false);
-		return lines.join("\n");
-	}
+	const selectedMetadata = [run.agent ? `Agent: ${run.agent}` : run.agents?.length ? `Agents: ${run.agents.join(", ")}` : undefined]
+		.filter((line): line is string => Boolean(line));
+	const secondaryMetadata: string[] = [];
+	appendKnownArtifacts(secondaryMetadata, { outputPaths: [], sessionFile: run.sessionFile });
+	if (!run.sessionFile) return formatTranscriptOutput(coreMetadata, selectedMetadata, secondaryMetadata, "Transcript tail", [], false);
 	const sessionTail = readSessionTranscriptTail(run.sessionFile, lineLimit, options.sessionRoots ?? []);
 	if (sessionTail.warnings.length) {
-		lines.push("Warnings:");
-		for (const warning of sessionTail.warnings) lines.push(`  ${warning}`);
+		secondaryMetadata.push("Warnings:");
+		for (const warning of sessionTail.warnings) secondaryMetadata.push(`  ${warning}`);
 	}
-	appendTranscriptBody(lines, `Session transcript tail from ${run.sessionFile}`, sessionTail.lines, false);
-	return lines.join("\n");
+	return formatTranscriptOutput(coreMetadata, selectedMetadata, secondaryMetadata, `Session transcript tail from ${run.sessionFile}`, sessionTail.lines, false);
 }
 
 export function formatAsyncResultTranscript(data: {
@@ -524,13 +579,15 @@ export function formatAsyncResultTranscript(data: {
 		: data.output ?? data.summary ?? "";
 	const transcriptLines = output.split(/\r?\n/).slice(-lineLimit);
 	const sessionFile = child?.sessionFile ?? data.sessionFile;
-	const lines = [
+	const coreMetadata = [
 		`Run: ${runId}`,
 		`State: ${data.state ?? (data.success ? "complete" : "failed")}`,
-		index !== undefined && child ? `Child: ${index} (${child.agent ?? "subagent"})` : undefined,
-		index === undefined && children.length > 1 ? `Tip: pass index to inspect a specific child transcript (${children.map((candidate, childIndex) => `${childIndex}=${candidate.agent ?? "subagent"}`).join(", ")}).` : undefined,
-	].filter((line): line is string => Boolean(line));
-	appendKnownArtifacts(lines, { outputPaths: [], sessionFile, resultPath });
-	appendTranscriptBody(lines, "Result transcript tail", transcriptLines.filter((line) => line.trim()), output.split(/\r?\n/).length > lineLimit);
-	return lines.join("\n");
+	];
+	const selectedMetadata = [index !== undefined && child ? `Child: ${index} (${child.agent ?? "subagent"})` : undefined]
+		.filter((line): line is string => Boolean(line));
+	const secondaryMetadata = index === undefined && children.length > 1
+		? [`Tip: pass index to inspect a specific child transcript (${children.map((candidate, childIndex) => `${childIndex}=${candidate.agent ?? "subagent"}`).join(", ")}).`]
+		: [];
+	appendKnownArtifacts(secondaryMetadata, { outputPaths: [], sessionFile, resultPath });
+	return formatTranscriptOutput(coreMetadata, selectedMetadata, secondaryMetadata, "Result transcript tail", transcriptLines.filter((line) => line.trim()), output.split(/\r?\n/).length > lineLimit);
 }

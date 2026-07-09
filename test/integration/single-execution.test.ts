@@ -54,6 +54,7 @@ interface ProgressSummary {
 	tokens?: number;
 	durationMs: number;
 	toolCount: number;
+	recentOutput?: string[];
 }
 
 interface ArtifactPaths {
@@ -158,9 +159,15 @@ const utils = await tryImport<UtilsModule>("./src/shared/utils.ts");
 const executorMod = await tryImport<ExecutorModule>("./src/runs/foreground/subagent-executor.ts");
 const available = !!(execution && utils);
 
-const runSync = execution?.runSync;
-const getFinalOutput = utils?.getFinalOutput;
+const runSync: ExecutionModule["runSync"] = execution?.runSync ?? (async () => {
+	throw new Error("execution module is not available");
+});
+const getFinalOutput: UtilsModule["getFinalOutput"] = utils?.getFinalOutput ?? (() => "");
 const createSubagentExecutor = executorMod?.createSubagentExecutor;
+
+function lastItem<T>(items: readonly T[] | undefined): T | undefined {
+	return items?.[items.length - 1];
+}
 
 function escapeRegExp(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -204,10 +211,9 @@ describe("single sync execution", { skip: !available ? "pi packages not availabl
 	});
 
 	function readCall(): { args: string[]; systemPrompts: NonNullable<MockPiCallRecord["systemPrompts"]> } {
-		const callFile = fs.readdirSync(mockPi.dir)
+		const callFile = lastItem(fs.readdirSync(mockPi.dir)
 			.filter((name) => name.startsWith("call-") && name.endsWith(".json"))
-			.sort()
-			.at(-1);
+			.sort());
 		assert.ok(callFile, "expected a recorded mock pi call");
 		const payload = JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")) as MockPiCallRecord;
 		assert.ok(Array.isArray(payload.args), "expected recorded args");
@@ -261,6 +267,46 @@ describe("single sync execution", { skip: !available ? "pi packages not availabl
 
 		assert.equal(result.isError, undefined);
 		assert.match(result.content[0]?.text ?? "", /single alias finished/);
+	});
+
+	it("injects existing explicit reads for single execution", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
+		fs.writeFileSync(path.join(tempDir, "context.md"), "context", "utf-8");
+		mockPi.onCall({ output: "single read finished" });
+		const executor = makeExecutor([makeAgent("echo")]);
+
+		const result = await executor.execute(
+			"single-explicit-reads",
+			{ agent: "echo", task: "Inspect context", reads: ["context.md"] },
+			new AbortController().signal,
+			undefined,
+			makeMinimalCtx(tempDir),
+		);
+
+		assert.equal(result.isError, undefined);
+		const args = readCallArgs();
+		const taskArg = args[args.length - 1] ?? "";
+		assert.ok(taskArg.startsWith(`Task: [Read from: ${path.join(tempDir, "context.md")}]
+
+Inspect context`));
+	});
+
+	it("fails missing explicit reads for single execution before launching the child", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
+		mockPi.onCall({ output: "should not run" });
+		const executor = makeExecutor([makeAgent("echo")]);
+
+		const result = await executor.execute(
+			"single-missing-explicit-reads",
+			{ agent: "echo", task: "Inspect missing context", reads: ["missing.md"] },
+			new AbortController().signal,
+			undefined,
+			makeMinimalCtx(tempDir),
+		);
+
+		assert.equal(result.isError, true);
+		assert.match(result.content[0]?.text ?? "", /Missing explicit reads/);
+		assert.match(result.content[0]?.text ?? "", /Single run \(echo\)/);
+		assert.match(result.content[0]?.text ?? "", /mode: single/);
+		assert.equal(mockPi.callCount(), 0);
 	});
 
 	it("rejects unknown action strings at runtime", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
@@ -1063,7 +1109,7 @@ describe("single sync execution", { skip: !available ? "pi packages not availabl
 		const transcript = fs.readFileSync(result.transcriptPath, "utf-8").trim().split("\n").map((line) => JSON.parse(line) as { recordType?: string; source?: string; text?: string });
 		assert.equal(transcript[0]?.recordType, "message");
 		assert.equal(transcript[0]?.source, "foreground");
-		assert.match(transcript.at(-1)?.text ?? "", /^Result text/);
+		assert.match(lastItem(transcript)?.text ?? "", /^Result text/);
 		assert.equal(result.transcriptError, undefined);
 		assert.ok(fs.existsSync(artifactsDir), "artifacts dir should exist");
 	});
@@ -1142,7 +1188,7 @@ describe("single sync execution", { skip: !available ? "pi packages not availabl
 			makeMinimalCtx(tempDir),
 		);
 
-		const taskArg = readCallArgs().at(-1) ?? "";
+		const taskArg = lastItem(readCallArgs()) ?? "";
 		assert.equal(result.isError, undefined);
 		assert.match(taskArg, new RegExp(`Write your findings to exactly this path: ${escapeRegExp(path.join(tempDir, ".pi-subagents", "artifacts", "outputs"))}.*context\\.md`));
 		assert.equal(fs.existsSync(path.join(tempDir, "context.md")), false);
@@ -1165,7 +1211,7 @@ describe("single sync execution", { skip: !available ? "pi packages not availabl
 		);
 
 		const expectedOutputPath = path.join(configuredBase, "context.md");
-		const taskArg = readCallArgs().at(-1) ?? "";
+		const taskArg = lastItem(readCallArgs()) ?? "";
 		assert.equal(result.isError, undefined);
 		assert.match(taskArg, new RegExp(`Write your findings to exactly this path: ${escapeRegExp(expectedOutputPath)}`));
 		assert.equal(fs.readFileSync(expectedOutputPath, "utf-8"), "configured report");
@@ -1191,7 +1237,7 @@ describe("single sync execution", { skip: !available ? "pi packages not availabl
 		);
 
 		const call = readCall();
-		const taskArg = call.args.at(-1) ?? "";
+		const taskArg = lastItem(call.args) ?? "";
 		const systemPrompt = call.systemPrompts[0]?.text ?? "";
 		assert.equal(result.isError, undefined);
 		assert.match(taskArg, new RegExp(`Write your findings to exactly this path: ${escapeRegExp(overridePath)}`));
@@ -1218,7 +1264,7 @@ describe("single sync execution", { skip: !available ? "pi packages not availabl
 		assert.doesNotMatch(result.content[0]?.text ?? "", /Output saved to:/);
 		assert.equal(fs.existsSync(path.join(tempDir, "false")), false);
 		assert.equal(fs.existsSync(path.join(tempDir, "default-report.md")), false);
-		assert.doesNotMatch(readCallArgs().at(-1) ?? "", /Write your findings to(?: exactly this path)?:/);
+		assert.doesNotMatch(lastItem(readCallArgs()) ?? "", /Write your findings to(?: exactly this path)?:/);
 	});
 
 	it("rejects mismatched foreground timeout aliases before spawning", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
@@ -1423,7 +1469,7 @@ describe("single sync execution", { skip: !available ? "pi packages not availabl
 
 		assert.equal(result.exitCode, 0);
 		const args = readCallArgs();
-		const extensionArgs = args.filter((arg, index) => args[index - 1] === "--extension");
+		const extensionArgs = args.filter((_arg, index) => args[index - 1] === "--extension");
 		assert.ok(extensionArgs.some((arg) => arg.endsWith(path.join("src", "runs", "shared", "subagent-prompt-runtime.ts"))));
 		assert.ok(extensionArgs.some((arg) => arg.replace(/\\/g, "/").endsWith("custom-tool.ts")));
 		assert.ok(extensionArgs.some((arg) => arg.replace(/\\/g, "/").endsWith("allowed-ext.ts")));
@@ -1442,7 +1488,7 @@ describe("single sync execution", { skip: !available ? "pi packages not availabl
 
 		assert.equal(result.exitCode, 0);
 		const args = readCallArgs();
-		const extensionArgs = args.filter((arg, index) => args[index - 1] === "--extension");
+		const extensionArgs = args.filter((_arg, index) => args[index - 1] === "--extension");
 		assert.ok(extensionArgs.some((arg) => arg.endsWith(path.join("src", "runs", "shared", "subagent-prompt-runtime.ts"))));
 		assert.ok(extensionArgs.some((arg) => arg.replace(/\\/g, "/").endsWith("child-only-tool.ts")));
 	});
@@ -1526,7 +1572,7 @@ describe("single sync execution", { skip: !available ? "pi packages not availabl
 		const start = Date.now();
 		setTimeout(() => controller.abort(), 200);
 
-		const result = await runSync(tempDir, agents, "slow", "Slow task", {
+		await runSync(tempDir, agents, "slow", "Slow task", {
 			signal: controller.signal,
 		});
 		const elapsed = Date.now() - start;

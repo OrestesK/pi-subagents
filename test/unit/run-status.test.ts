@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { createRequire, syncBuiltinESMExports } from "node:module";
 import { describe, it } from "node:test";
 import { inspectSubagentStatus } from "../../src/runs/background/run-status.ts";
 import { createNestedRoute, writeNestedEvent } from "../../src/runs/shared/nested-events.ts";
@@ -16,6 +17,10 @@ function errno(code: string): NodeJS.ErrnoException {
 function textContent(result: ReturnType<typeof inspectSubagentStatus>): string {
 	const first = result.content[0];
 	return first?.type === "text" ? first.text : "";
+}
+
+function assertModelVisibleBound(text: string): void {
+	assert.ok(Buffer.byteLength(text, "utf-8") <= 50_000, `model-visible output was ${Buffer.byteLength(text, "utf-8")} bytes`);
 }
 
 describe("async run status inspection", () => {
@@ -992,6 +997,277 @@ describe("async run status inspection", () => {
 			assert.match(text, /result survived missing status/);
 		} finally {
 			fs.rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("caps and paginates explicit fleet records without changing fleet order", () => {
+		const controls = new Map<string, unknown>();
+		for (let index = 0; index < 320; index++) {
+			const runId = `fg-page-${String(index).padStart(3, "0")}`;
+			controls.set(runId, {
+				runId,
+				mode: "single",
+				startedAt: index,
+				updatedAt: index,
+				currentAgent: `worker-${"界🙂".repeat(24)}`,
+				currentIndex: 0,
+			});
+		}
+		const state = {
+			foregroundControls: controls,
+			foregroundRuns: new Map(),
+		} as unknown as SubagentState;
+		let offset = 0;
+		let pages = 0;
+		let lastText = "";
+		do {
+			const result = inspectSubagentStatus({ view: "fleet", offset }, { state, asyncDirRoot: "/missing", resultsDir: "/missing" });
+			lastText = textContent(result);
+			assertModelVisibleBound(lastText);
+			assert.match(lastText, /Total: 320 \| Offset: \d+ \| Shown: \d+ \| Remaining: \d+/);
+			const next = lastText.match(/subagent\(\{ action: "status", view: "fleet", offset: (\d+) \}\)/);
+			if (!next) break;
+			offset = Number(next[1]);
+			pages++;
+		} while (pages < 20);
+
+		assert.ok(pages > 0, "fleet should require pagination");
+		assert.match(lastText, /fg-page-000/);
+		assert.doesNotMatch(lastText, /Next page:/);
+
+		const clamped = textContent(inspectSubagentStatus({ view: "fleet", offset: 999 }, { state, asyncDirRoot: "/missing", resultsDir: "/missing" }));
+		assertModelVisibleBound(clamped);
+		assert.match(clamped, /Total: 320 \| Offset: 320 \| Shown: 0 \| Remaining: 0/);
+	});
+
+	it("uses an advancing compact record when an explicit fleet record is oversized", () => {
+		const oversizedId = "fg-oversized";
+		const followingId = "fg-following";
+		const state = {
+			foregroundControls: new Map([
+				[oversizedId, {
+					runId: oversizedId,
+					mode: "single",
+					startedAt: 1,
+					updatedAt: 2,
+					currentAgent: `worker-${"界🙂".repeat(30_000)}`,
+					currentIndex: 0,
+				}],
+				[followingId, {
+					runId: followingId,
+					mode: "single",
+					startedAt: 1,
+					updatedAt: 1,
+					currentAgent: "worker",
+					currentIndex: 0,
+				}],
+			]),
+			foregroundRuns: new Map(),
+		} as unknown as SubagentState;
+
+		const compact = textContent(inspectSubagentStatus({ view: "fleet" }, { state, asyncDirRoot: "/missing", resultsDir: "/missing" }));
+		assertModelVisibleBound(compact);
+		assert.match(compact, /Total: 2 \| Offset: 0 \| Shown: 1 \| Remaining: 1/);
+		assert.match(compact, /fg-oversized \| running \| single/);
+		assert.match(compact, /status: subagent\(\{ action: "status", id: "fg-oversized" \}\)/);
+		assert.match(compact, /Next page: subagent\(\{ action: "status", view: "fleet", offset: 1 \}\)/);
+
+		const following = textContent(inspectSubagentStatus({ view: "fleet", offset: 1 }, { state, asyncDirRoot: "/missing", resultsDir: "/missing" }));
+		assertModelVisibleBound(following);
+		assert.match(following, /fg-following/);
+	});
+
+	it("caps and paginates the default active list with an advancing compact fallback", () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-run-status-list-budget-"));
+		try {
+			const asyncRoot = path.join(root, "runs");
+			const resultsDir = path.join(root, "results");
+			for (let index = 0; index < 90; index++) {
+				const runId = `run-list-${String(index).padStart(3, "0")}`;
+				const asyncDir = path.join(asyncRoot, runId);
+				fs.mkdirSync(asyncDir, { recursive: true });
+				fs.writeFileSync(path.join(asyncDir, "status.json"), JSON.stringify({
+					runId,
+					mode: "single",
+					state: "running",
+					startedAt: index,
+					lastUpdate: index,
+					error: `failure-${"界🙂".repeat(90)}`,
+					steps: [{ agent: "worker", status: "running", startedAt: index }],
+				}), "utf-8");
+			}
+
+			const first = textContent(inspectSubagentStatus({}, { asyncDirRoot: asyncRoot, resultsDir, kill: () => true, now: () => 100 }));
+			assertModelVisibleBound(first);
+			assert.match(first, /Total: 90 \| Offset: 0 \| Shown: \d+ \| Remaining: \d+/);
+			const nextOffset = Number(first.match(/Next page: subagent\(\{ action: "status", offset: (\d+) \}\)/)?.[1]);
+			assert.ok(Number.isInteger(nextOffset) && nextOffset > 0);
+			const next = textContent(inspectSubagentStatus({ offset: nextOffset }, { asyncDirRoot: asyncRoot, resultsDir, kill: () => true, now: () => 100 }));
+			assertModelVisibleBound(next);
+			assert.match(next, /run-list-000/);
+
+			const hugeDir = path.join(asyncRoot, "run-list-huge");
+			fs.mkdirSync(hugeDir, { recursive: true });
+			fs.writeFileSync(path.join(hugeDir, "status.json"), JSON.stringify({
+				runId: "run-list-huge",
+				mode: "single",
+				state: "running",
+				startedAt: 1000,
+				lastUpdate: 1000,
+				error: "界🙂".repeat(30_000),
+				steps: [],
+			}), "utf-8");
+			const compact = textContent(inspectSubagentStatus({}, { asyncDirRoot: asyncRoot, resultsDir, kill: () => true, now: () => 1001 }));
+			assertModelVisibleBound(compact);
+			assert.match(compact, /Total: 91 \| Offset: 0 \| Shown: 1 \| Remaining: 90/);
+			assert.match(compact, /run-list-huge \| running \| single/);
+			assert.match(compact, /status: subagent\(\{ action: "status", id: "run-list-huge" \}\)/);
+			assert.match(compact, /transcript: subagent\(\{ action: "status", id: "run-list-huge", view: "transcript" \}\)/);
+			assert.match(compact, /Exact run status: subagent\(\{ action: "status", id: "<run-id>" \}\)/);
+			assert.match(compact, /Next page: subagent\(\{ action: "status", offset: 1 \}\)/);
+
+			const afterCompact = textContent(inspectSubagentStatus({ offset: 1 }, { asyncDirRoot: asyncRoot, resultsDir, kill: () => true, now: () => 1001 }));
+			assertModelVisibleBound(afterCompact);
+			assert.match(afterCompact, /run-list-089/);
+		} finally {
+			fs.rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("caps async, completed-result, and remembered-foreground transcripts while retaining newest UTF-8 text", () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-run-status-transcript-budget-"));
+		try {
+			const asyncRoot = path.join(root, "runs");
+			const resultsDir = path.join(root, "results");
+			const asyncDir = path.join(asyncRoot, "run-budget-async");
+			fs.mkdirSync(asyncDir, { recursive: true });
+			fs.mkdirSync(resultsDir, { recursive: true });
+			fs.writeFileSync(path.join(asyncDir, "output-0.log"), `${"界🙂".repeat(100_000)}ASYNC_FINAL_SENTINEL`, "utf-8");
+			fs.writeFileSync(path.join(asyncDir, "status.json"), JSON.stringify({
+				runId: "run-budget-async",
+				mode: "single",
+				state: "running",
+				startedAt: 1,
+				lastUpdate: 2,
+				currentStep: 0,
+				steps: [{ agent: "worker", status: "running", startedAt: 1, error: "錯🙂".repeat(30_000) }],
+			}), "utf-8");
+			const asyncText = textContent(inspectSubagentStatus({ id: "run-budget-async", view: "transcript", index: 0 }, { asyncDirRoot: asyncRoot, resultsDir, kill: () => true, now: () => 3 }));
+			assertModelVisibleBound(asyncText);
+			assert.match(asyncText, /ASYNC_FINAL_SENTINEL/);
+			assert.match(asyncText, /omitted/i);
+			assert.doesNotMatch(asyncText, /�/);
+
+			fs.writeFileSync(path.join(resultsDir, "run-budget-result.json"), JSON.stringify({
+				id: "run-budget-result",
+				success: true,
+				results: [
+					{ agent: `first-${"界".repeat(60_000)}`, output: `${"🙂".repeat(30_000)}FIRST_SENTINEL` },
+					{ agent: "second", output: `${"界🙂".repeat(30_000)}RESULT_FINAL_SENTINEL` },
+				],
+			}), "utf-8");
+			const resultText = textContent(inspectSubagentStatus({ id: "run-budget-result", view: "transcript", index: 1 }, { asyncDirRoot: asyncRoot, resultsDir }));
+			assertModelVisibleBound(resultText);
+			assert.match(resultText, /Child: 1 \(second\)/);
+			assert.match(resultText, /RESULT_FINAL_SENTINEL/);
+			assert.doesNotMatch(resultText, /FIRST_SENTINEL|�/);
+
+			const foregroundRun = {
+				runId: "run-budget-foreground",
+				mode: "single",
+				updatedAt: 2,
+				cwd: root,
+				children: [{ index: 0, agent: "worker", status: "complete", finalOutput: `${"界🙂".repeat(30_000)}FOREGROUND_FINAL_SENTINEL` }],
+			};
+			const state = {
+				asyncJobs: new Map(),
+				foregroundControls: new Map(),
+				foregroundRuns: new Map([[foregroundRun.runId, foregroundRun]]),
+			} as unknown as SubagentState;
+			const foregroundText = textContent(inspectSubagentStatus({ id: foregroundRun.runId, view: "transcript" }, { asyncDirRoot: asyncRoot, resultsDir, state }));
+			assertModelVisibleBound(foregroundText);
+			assert.match(foregroundText, /FOREGROUND_FINAL_SENTINEL/);
+			assert.doesNotMatch(foregroundText, /�/);
+
+			const artifactPath = path.join(root, "remembered-output.log");
+			fs.writeFileSync(artifactPath, `${"界🙂".repeat(100_000)}ARTIFACT_FINAL_SENTINEL`, "utf-8");
+			const artifactRun = {
+				runId: "run-budget-artifact",
+				mode: "single",
+				updatedAt: 3,
+				cwd: root,
+				children: [{
+					index: 0,
+					agent: "worker",
+					status: "complete",
+					artifactPaths: { outputPath: artifactPath },
+					finalOutput: "FINAL_OUTPUT_FALLBACK",
+				}],
+			};
+			state.foregroundRuns!.set(artifactRun.runId, artifactRun as never);
+			const mutableFs = createRequire(import.meta.url)("node:fs") as typeof fs;
+			const originalReadFileSync = mutableFs.readFileSync;
+			mutableFs.readFileSync = ((filePath: fs.PathOrFileDescriptor, ...args: unknown[]) => {
+				if (filePath === artifactPath) throw new Error("whole-file artifact read forbidden");
+				return originalReadFileSync(filePath, ...(args as Parameters<typeof fs.readFileSync> extends [unknown, ...infer Rest] ? Rest : never));
+			}) as typeof fs.readFileSync;
+			syncBuiltinESMExports();
+			try {
+				const artifactText = textContent(inspectSubagentStatus({ id: artifactRun.runId, view: "transcript" }, { asyncDirRoot: asyncRoot, resultsDir, state }));
+				assertModelVisibleBound(artifactText);
+				assert.match(artifactText, /ARTIFACT_FINAL_SENTINEL/);
+				assert.doesNotMatch(artifactText, /FINAL_OUTPUT_FALLBACK|�/);
+			} finally {
+				mutableFs.readFileSync = originalReadFileSync;
+				syncBuiltinESMExports();
+			}
+		} finally {
+			fs.rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("caps nested transcripts without changing selected nested source", () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-run-status-nested-transcript-budget-"));
+		const route = createNestedRoute("run-budget-nested-root");
+		try {
+			const asyncRoot = path.join(root, "runs");
+			const nestedDir = path.join(root, "nested");
+			fs.mkdirSync(nestedDir, { recursive: true });
+			fs.writeFileSync(path.join(nestedDir, "output-0.log"), `${"界🙂".repeat(30_000)}NESTED_FINAL_SENTINEL`, "utf-8");
+			fs.writeFileSync(path.join(nestedDir, "status.json"), JSON.stringify({
+				runId: "run-budget-nested",
+				mode: "single",
+				state: "running",
+				startedAt: 1,
+				lastUpdate: 2,
+				currentStep: 0,
+				steps: [{ agent: "reviewer", status: "running", startedAt: 1 }],
+			}), "utf-8");
+			writeNestedEvent(route, {
+				type: "subagent.nested.updated",
+				ts: 2,
+				parentRunId: "run-budget-nested-root",
+				parentStepIndex: 0,
+				child: {
+					id: "run-budget-nested",
+					parentRunId: "run-budget-nested-root",
+					parentStepIndex: 0,
+					depth: 1,
+					path: [{ runId: "run-budget-nested-root", stepIndex: 0 }],
+					asyncDir: nestedDir,
+					state: "running",
+					agent: "reviewer",
+					lastUpdate: 2,
+				},
+			});
+			const nestedText = textContent(inspectSubagentStatus({ id: "run-budget-nested", view: "transcript", index: 0 }, { asyncDirRoot: asyncRoot, resultsDir: path.join(root, "results") }));
+			assertModelVisibleBound(nestedText);
+			assert.match(nestedText, /NESTED_FINAL_SENTINEL/);
+			assert.match(nestedText, new RegExp(`Transcript tail from ${path.join(nestedDir, "output-0.log").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+			assert.doesNotMatch(nestedText, /�/);
+		} finally {
+			fs.rmSync(root, { recursive: true, force: true });
+			fs.rmSync(path.dirname(route.eventSink), { recursive: true, force: true });
 		}
 	});
 });

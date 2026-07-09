@@ -22,6 +22,8 @@ interface ChainStepResult {
 	agent: string;
 	output: string;
 	success: boolean;
+	artifactPath?: string;
+	artifactPaths?: { outputPath?: string };
 }
 
 export interface SubagentNotifyDetails {
@@ -29,6 +31,10 @@ export interface SubagentNotifyDetails {
 	status: "completed" | "failed" | "paused";
 	taskInfo?: string;
 	resultPreview: string;
+	runId?: string;
+	cwd?: string;
+	launchedAt?: number;
+	outputPath?: string;
 	durationMs?: number;
 	sessionLabel?: string;
 	sessionValue?: string;
@@ -36,6 +42,7 @@ export interface SubagentNotifyDetails {
 
 interface SubagentResult {
 	id: string | null;
+	runId?: string | null;
 	agent: string | null;
 	success: boolean;
 	summary: string;
@@ -70,10 +77,21 @@ function formatSessionLine(details: SubagentNotifyDetails): string | undefined {
 	return details.sessionLabel ? `${details.sessionLabel}: ${details.sessionValue}` : details.sessionValue;
 }
 
+function formatMetadataLines(details: SubagentNotifyDetails): string[] {
+	return [
+		details.runId ? `Run: ${details.runId}` : undefined,
+		`Role: ${details.agent}`,
+		details.cwd ? `Cwd: ${details.cwd}` : undefined,
+		typeof details.launchedAt === "number" ? `Launched: ${new Date(details.launchedAt).toISOString()}` : undefined,
+		`Output: ${details.outputPath ?? "(not configured)"}`,
+	].filter((line): line is string => line !== undefined);
+}
+
 export function formatSingleCompletion(details: SubagentNotifyDetails): string {
 	const sessionLine = formatSessionLine(details);
 	return [
 		`Background task ${details.status}: **${details.agent}**${details.taskInfo ?? ""}`,
+		...formatMetadataLines(details),
 		"",
 		details.resultPreview.trim() ? details.resultPreview : "(no output)",
 		sessionLine ? "" : undefined,
@@ -91,6 +109,8 @@ export function formatGroupedCompletion(details: SubagentNotifyDetails[]): strin
 		if (!detail) continue;
 		const sessionLine = formatSessionLine(detail);
 		blocks.push(`${index + 1}. ${detail.agent}${detail.taskInfo ?? ""}`);
+		blocks.push(...formatMetadataLines(detail));
+		blocks.push("");
 		blocks.push(detail.resultPreview.trim() ? detail.resultPreview : "(no output)");
 		if (sessionLine) blocks.push(sessionLine);
 		blocks.push("");
@@ -120,6 +140,18 @@ function completionBatchKey(result: SubagentResult): string {
 	return cwd ? `cwd:${cwd}` : "unknown";
 }
 
+function nonEmptyString(value: unknown): string | undefined {
+	return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function resolveOutputPath(result: SubagentResult): string | undefined {
+	for (const child of result.results ?? []) {
+		const outputPath = nonEmptyString(child.artifactPath) ?? nonEmptyString(child.artifactPaths?.outputPath);
+		if (outputPath) return outputPath;
+	}
+	return undefined;
+}
+
 export function buildCompletionDetails(result: SubagentResult): SubagentNotifyDetails {
 	const agent = result.agent ?? "unknown";
 	const summary = typeof result.summary === "string" ? result.summary : "";
@@ -144,12 +176,22 @@ export function buildCompletionDetails(result: SubagentResult): SubagentNotifyDe
 					? { label: "Session file", value: result.sessionFile }
 					: undefined;
 
+	const runId = nonEmptyString(result.runId) ?? nonEmptyString(result.id);
+	const durationMs = typeof result.durationMs === "number" && Number.isFinite(result.durationMs) ? result.durationMs : undefined;
+	const launchedAt = typeof result.timestamp === "number" && Number.isFinite(result.timestamp)
+		? result.timestamp - (durationMs ?? 0)
+		: undefined;
+
 	return {
 		agent,
 		status,
 		...(taskInfo ? { taskInfo } : {}),
 		resultPreview: summary,
-		...(typeof result.durationMs === "number" ? { durationMs: result.durationMs } : {}),
+		...(runId ? { runId } : {}),
+		...(nonEmptyString(result.cwd) ? { cwd: nonEmptyString(result.cwd) } : {}),
+		...(launchedAt !== undefined ? { launchedAt } : {}),
+		...(resolveOutputPath(result) ? { outputPath: resolveOutputPath(result) } : {}),
+		...(durationMs !== undefined ? { durationMs } : {}),
 		...(session ? { sessionLabel: session.label, sessionValue: session.value } : {}),
 	};
 }
@@ -195,6 +237,7 @@ export default function registerSubagentNotify(
 		const result = data as SubagentResult;
 		if (typeof result.sessionId !== "string" || result.sessionId !== state.currentSessionId) return;
 		const now = nowFn();
+		if (typeof result.timestamp === "number" && Number.isFinite(result.timestamp) && now - result.timestamp > ttlMs) return;
 		const key = buildCompletionKey(result, "notify");
 		if (markSeenWithTtl(seen, key, now, ttlMs)) return;
 

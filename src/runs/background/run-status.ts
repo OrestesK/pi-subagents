@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { formatAsyncRunList, formatAsyncRunOutputPath, formatAsyncRunProgressLabel, listAsyncRuns } from "./async-status.ts";
-import { formatAsyncResultTranscript, formatAsyncRunTranscript, formatNestedRunTranscript, inspectSubagentFleet } from "./fleet-view.ts";
+import { formatAsyncResultTranscript, formatAsyncRunTranscript, formatNestedRunTranscript, inspectSubagentFleet, readTextTail } from "./fleet-view.ts";
 import { formatNestedRunStatusLines } from "../shared/nested-render.ts";
 import { formatModelThinking } from "../../shared/formatters.ts";
 import { formatActivityLabel } from "../../shared/status-format.ts";
@@ -12,7 +12,10 @@ import { resolveAsyncRunLocation } from "./async-resume.ts";
 import { resolveSubagentRunId } from "./run-id-resolver.ts";
 import { flatToLogicalStepIndex, normalizeParallelGroups } from "./parallel-groups.ts";
 import { reconcileAsyncRun, reconcileNestedAsyncDescendants } from "./stale-run-reconciler.ts";
+import { fitMetadataAndNewestTail } from "./output-budget.ts";
 import { attachRootChildrenToSteps, findNestedRouteForRootId, projectNestedRegistryForRoot, type NestedRunResolutionScope } from "../shared/nested-events.ts";
+
+type StatusToolResult = AgentToolResult<Details> & { isError?: boolean };
 
 interface RunStatusParams {
 	action?: "status";
@@ -21,6 +24,7 @@ interface RunStatusParams {
 	dir?: string;
 	index?: number;
 	view?: "fleet" | "transcript";
+	offset?: number;
 	lines?: number;
 }
 
@@ -93,6 +97,16 @@ function rememberedForegroundChildOutput(child: ForegroundResumeRun["children"][
 	return child.finalOutput ?? "";
 }
 
+function rememberedForegroundChildTranscriptLines(child: ForegroundResumeRun["children"][number], maxLines: number): string[] {
+	const outputPath = child.artifactPaths?.outputPath ?? child.savedOutputPath;
+	if (outputPath) {
+		const artifactTail = readTextTail(outputPath, maxLines);
+		const artifactLines = artifactTail.lines.filter((line) => line.trim());
+		if (artifactLines.length > 0) return artifactLines;
+	}
+	return (child.finalOutput ?? "").split(/\r?\n/).filter((line) => line.trim()).slice(-maxLines);
+}
+
 function formatRememberedForegroundStatus(run: ForegroundResumeRun): string {
 	const lines = [
 		`Run: ${run.runId}`,
@@ -141,21 +155,22 @@ function formatRememberedForegroundTranscript(run: ForegroundResumeRun, options:
 	if (index < 0 || index >= run.children.length) throw new Error(`Transcript index ${index} is out of range for ${run.children.length} foreground children.`);
 	const child = run.children[index]!;
 	const lineLimit = Math.max(1, Math.min(options.lines ?? 80, 1000));
-	const outputLines = rememberedForegroundChildOutput(child).split(/\r?\n/).filter((line) => line.trim()).slice(-lineLimit);
-	const lines = [
+	const outputLines = rememberedForegroundChildTranscriptLines(child, lineLimit);
+	const primaryMetadata = [
 		`Run: ${run.runId}`,
 		`State: ${child.status}`,
 		`Child: ${index} (${child.agent})`,
+	];
+	const secondaryMetadata = [
 		child.sessionFile ? `Session: ${child.sessionFile}` : undefined,
 		child.transcriptPath ? `Transcript: ${child.transcriptPath}` : undefined,
 		child.artifactPaths?.outputPath ? `Output: ${child.artifactPaths.outputPath}` : undefined,
 		child.savedOutputPath && child.savedOutputPath !== child.artifactPaths?.outputPath ? `Saved output: ${child.savedOutputPath}` : undefined,
 		child.outputSaveError ? `Output warning: ${child.outputSaveError}` : undefined,
 	].filter((line): line is string => Boolean(line));
-	lines.push("Result transcript tail:");
-	if (outputLines.length === 0) lines.push("  (no recovered final output available yet)");
-	else for (const line of outputLines) lines.push(`  ${line}`);
-	return lines.join("\n");
+	const metadata = [primaryMetadata[0]!, primaryMetadata[1]!, "Result transcript tail:", primaryMetadata[2]!, ...secondaryMetadata];
+	if (outputLines.length === 0) return fitMetadataAndNewestTail([...metadata, "  (no recovered final output available yet)"]);
+	return fitMetadataAndNewestTail(metadata, outputLines.map((line) => `  ${line}`).join("\n"));
 }
 
 function formatNestedExactStatus(rootRunId: string, run: NestedRunSummary): string {
@@ -190,7 +205,7 @@ function formatNestedExactStatus(rootRunId: string, run: NestedRunSummary): stri
 	return lines.join("\n");
 }
 
-export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDeps = {}): AgentToolResult<Details> {
+export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDeps = {}): StatusToolResult {
 	const asyncDirRoot = deps.asyncDirRoot ?? ASYNC_DIR;
 	const resultsDir = deps.resultsDir ?? RESULTS_DIR;
 	const currentSessionId = deps.state?.currentSessionId ?? undefined;
@@ -223,7 +238,7 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 				};
 			}
 			return {
-				content: [{ type: "text", text: formatAsyncRunList(runs) }],
+				content: [{ type: "text", text: formatAsyncRunList(runs, "Active async runs", params.offset ?? 0) }],
 				details: { mode: "single", results: [] },
 			};
 		} catch (error) {

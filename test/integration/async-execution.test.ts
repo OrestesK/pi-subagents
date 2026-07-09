@@ -40,9 +40,9 @@ interface AsyncResultPayload {
 	wrapUpRequested?: boolean;
 	totalTokens?: { input: number; output: number; total: number };
 	totalCost?: { inputTokens: number; outputTokens: number; costUsd: number };
-	results: Array<{ output?: string; success?: boolean; error?: string; timedOut?: boolean; turnBudget?: { maxTurns: number; graceTurns: number; outcome: string; turnCount: number; wrapUpRequestedAtTurn?: number; exceededAtTurn?: number }; turnBudgetExceeded?: boolean; wrapUpRequested?: boolean; model?: string; attemptedModels?: string[]; modelAttempts?: Array<{ success?: boolean; error?: string }>; totalCost?: { inputTokens: number; outputTokens: number; costUsd: number }; structuredOutput?: unknown; intercomTarget?: string; acceptance?: { status?: string; childReport?: unknown } }>;
+	results: Array<{ output?: string; success?: boolean; error?: string; timedOut?: boolean; turnBudget?: { maxTurns: number; graceTurns: number; outcome: string; turnCount: number; wrapUpRequestedAtTurn?: number; exceededAtTurn?: number }; turnBudgetExceeded?: boolean; wrapUpRequested?: boolean; model?: string; attemptedModels?: string[]; modelAttempts?: Array<{ success?: boolean; error?: string }>; totalCost?: { inputTokens: number; outputTokens: number; costUsd: number }; structuredOutput?: unknown; intercomTarget?: string; acceptance?: { status?: string; childReport?: unknown; reviewResult?: { status?: string } } }>;
 	outputs?: Record<string, { text?: string; structured?: unknown }>;
-	workflowGraph?: { nodes?: Array<{ kind?: string; label?: string; phase?: string; status?: string; error?: string; outputName?: string; structured?: boolean; children?: Array<{ label?: string; outputName?: string; itemKey?: string; status?: string; error?: string }> }> };
+	workflowGraph?: { nodes?: Array<{ kind?: string; label?: string; phase?: string; flatIndex?: number; status?: string; error?: string; outputName?: string; structured?: boolean; children?: Array<{ label?: string; outputName?: string; itemKey?: string; status?: string; error?: string }> }> };
 }
 
 interface AsyncStatusPayload {
@@ -63,9 +63,11 @@ interface AsyncStatusPayload {
 	totalCost?: { inputTokens: number; outputTokens: number; costUsd: number };
 	parallelGroups?: Array<{ start: number; count: number; stepIndex: number }>;
 	steps?: Array<{
+		agent?: string;
 		label?: string;
 		phase?: string;
 		outputName?: string;
+		sessionFile?: string;
 		structured?: boolean;
 		skills?: string[];
 		activityState?: string;
@@ -139,14 +141,22 @@ const typesMod = await tryImport<TypesModule>("./src/shared/types.ts");
 const executorMod = await tryImport<ExecutorModule>("./src/runs/foreground/subagent-executor.ts");
 const available = !!(asyncMod && utils && typesMod);
 
-const isAsyncAvailable = asyncMod?.isAsyncAvailable;
-const executeAsyncSingle = asyncMod?.executeAsyncSingle;
-const executeAsyncChain = asyncMod?.executeAsyncChain;
-const readStatus = utils?.readStatus;
-const ASYNC_DIR = typesMod?.ASYNC_DIR;
-const RESULTS_DIR = typesMod?.RESULTS_DIR;
-const TEMP_ROOT_DIR = typesMod?.TEMP_ROOT_DIR;
+const isAsyncAvailable: AsyncExecutionModule["isAsyncAvailable"] = asyncMod?.isAsyncAvailable ?? (() => false);
+const executeAsyncSingle: AsyncExecutionModule["executeAsyncSingle"] = asyncMod?.executeAsyncSingle ?? (() => {
+	throw new Error("async execution module is not available");
+});
+const executeAsyncChain: AsyncExecutionModule["executeAsyncChain"] = asyncMod?.executeAsyncChain ?? (() => {
+	throw new Error("async execution module is not available");
+});
+const readStatus: UtilsModule["readStatus"] = utils?.readStatus ?? (() => null);
+const ASYNC_DIR = typesMod?.ASYNC_DIR ?? path.join(os.tmpdir(), "pi-subagents-missing-async-dir");
+const RESULTS_DIR = typesMod?.RESULTS_DIR ?? path.join(os.tmpdir(), "pi-subagents-missing-results-dir");
+const TEMP_ROOT_DIR = typesMod?.TEMP_ROOT_DIR ?? path.join(os.tmpdir(), "pi-subagents-missing-temp-root");
 const createSubagentExecutor = executorMod?.createSubagentExecutor;
+
+function lastItem<T>(items: readonly T[] | undefined): T | undefined {
+	return items?.[items.length - 1];
+}
 
 function escapeRegExp(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -199,10 +209,10 @@ async function waitForAsyncResultFile(id: string, timeoutMs = 15_000): Promise<s
 async function waitForMockPiCall(mockPi: MockPi, index: number, timeoutMs = 30_000): Promise<{ args: string[]; systemPrompts: NonNullable<MockPiCallRecord["systemPrompts"]> }> {
 	const deadline = Date.now() + timeoutMs;
 	for (;;) {
-		const callFile = fs.readdirSync(mockPi.dir)
+		const callFiles = fs.readdirSync(mockPi.dir)
 			.filter((name) => name.startsWith("call-") && name.endsWith(".json"))
-			.sort()
-			.at(index);
+			.sort();
+		const callFile = callFiles[index];
 		if (callFile) {
 			const payload = JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")) as MockPiCallRecord;
 			assert.ok(Array.isArray(payload.args), "expected recorded args");
@@ -218,10 +228,9 @@ async function waitForMockPiArgs(mockPi: MockPi, index: number, timeoutMs = 30_0
 }
 
 function readLastMockPiArgs(mockPi: MockPi): string[] {
-	const callFile = fs.readdirSync(mockPi.dir)
+	const callFile = lastItem(fs.readdirSync(mockPi.dir)
 		.filter((name) => name.startsWith("call-") && name.endsWith(".json"))
-		.sort()
-		.at(-1);
+		.sort());
 	assert.ok(callFile, "expected a recorded mock pi call");
 	const payload = JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")) as MockPiCallRecord;
 	assert.ok(Array.isArray(payload.args), "expected recorded args");
@@ -229,10 +238,10 @@ function readLastMockPiArgs(mockPi: MockPi): string[] {
 }
 
 function readMockPiArgs(mockPi: MockPi, index: number): string[] {
-	const callFile = fs.readdirSync(mockPi.dir)
+	const callFiles = fs.readdirSync(mockPi.dir)
 		.filter((name) => name.startsWith("call-") && name.endsWith(".json"))
-		.sort()
-		.at(index);
+		.sort();
+	const callFile = callFiles[index];
 	assert.ok(callFile, `expected recorded call ${index}`);
 	const payload = JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")) as MockPiCallRecord;
 	assert.ok(Array.isArray(payload.args), "expected recorded args");
@@ -275,6 +284,28 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 	it("reports jiti availability as boolean", () => {
 		const result = isAsyncAvailable();
 		assert.equal(typeof result, "boolean");
+	});
+
+	it("fails missing explicit reads for async single runs before spawning", { skip: !isAsyncAvailable() ? "jiti not available" : undefined }, () => {
+		mockPi.onCall({ output: "should not run" });
+		const id = `async-missing-explicit-reads-${Date.now().toString(36)}`;
+
+		const result = executeAsyncSingle(id, {
+			agent: "worker",
+			task: "Read missing context",
+			reads: ["missing.md"],
+			agentConfig: makeAgent("worker"),
+			ctx: { pi: { events: { emit() {} } }, cwd: tempDir, currentSessionId: "session-reads" },
+			artifactConfig: { enabled: false, includeInput: false, includeOutput: false, includeJsonl: false, includeMetadata: false, cleanupDays: 7 },
+			shareEnabled: false,
+			maxSubagentDepth: 2,
+		});
+
+		assert.equal(result.isError, true);
+		assert.match(result.content[0]?.text ?? "", /Missing explicit reads/);
+		assert.match(result.content[0]?.text ?? "", /Async single run \(worker\)/);
+		assert.match(result.content[0]?.text ?? "", /mode: async\/single/);
+		assert.equal(mockPi.callCount(), 0);
 	});
 
 	it("spawns the async runner with node when process.execPath is not node", { skip: !isAsyncAvailable() ? "jiti not available" : undefined }, async () => {
@@ -678,6 +709,7 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 	});
 
 	it("top-level async parallel conversion preserves output, reads, and progress", { skip: !isAsyncAvailable() || !createSubagentExecutor ? "jiti or executor not available" : undefined }, async () => {
+		fs.writeFileSync(path.join(tempDir, "input.md"), "input", "utf-8");
 		mockPi.onCall({ output: "Async top-level report" });
 		const executor = createSubagentExecutor!({
 			pi: { events: createEventBus(), getSessionName: () => undefined },
@@ -731,7 +763,7 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		const callFile = fs.readdirSync(mockPi.dir).find((name) => name.startsWith("call-"));
 		assert.ok(callFile, "expected a recorded mock pi call");
 		const args = JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")).args as string[];
-		const taskArg = args.at(-1) ?? "";
+		const taskArg = lastItem(args) ?? "";
 		const progressPath = path.join(tempDir, ".pi-subagents", "artifacts", "progress", asyncId, "progress.md");
 		assert.ok(taskArg.includes(`[Read from: ${path.join(tempDir, "input.md")}]`));
 		assert.ok(taskArg.includes(`Update progress at: ${progressPath}`));
@@ -825,7 +857,7 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		const callFile = fs.readdirSync(mockPi.dir).find((name) => name.startsWith("call-"));
 		assert.ok(callFile, "expected a recorded mock pi call");
 		const args = JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")).args as string[];
-		assert.doesNotMatch(args.at(-1) ?? "", /progress\.md/);
+		assert.doesNotMatch(lastItem(args) ?? "", /progress\.md/);
 		assert.equal(fs.existsSync(path.join(tempDir, "progress.md")), false);
 	});
 
@@ -879,7 +911,7 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		const status = JSON.parse(fs.readFileSync(path.join(ASYNC_DIR, id, "status.json"), "utf-8")) as AsyncStatusPayload;
 		assert.deepEqual(payload.results[0]?.structuredOutput, { value: "Alpha structured" });
 		assert.deepEqual(payload.outputs?.data?.structured, { value: "Alpha structured" });
-		assert.match(readMockPiArgs(mockPi, 1).at(-1) ?? "", /Alpha structured/);
+		assert.match(lastItem(readMockPiArgs(mockPi, 1)) ?? "", /Alpha structured/);
 		assert.equal(status.steps?.[0]?.label, "Produce structured data");
 		assert.equal(status.steps?.[0]?.phase, "Collect");
 		assert.equal(status.steps?.[0]?.outputName, "data");
@@ -939,13 +971,13 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 			{ start: 0, count: 2, stepIndex: 0 },
 			{ start: 3, count: 2, stepIndex: 2 },
 		]);
-		const funnelTask = readMockPiArgsMatching(mockPi, "Synthesize:").at(-1) ?? "";
+		const funnelTask = lastItem(readMockPiArgsMatching(mockPi, "Synthesize:")) ?? "";
 		assert.match(funnelTask, /=== Parallel Task 1 \(scout-a\) ===/);
 		assert.match(funnelTask, /Scout A async findings/);
 		assert.match(funnelTask, /=== Parallel Task 2 \(scout-b\) ===/);
 		assert.match(funnelTask, /Scout B async findings/);
-		assert.match(readMockPiArgsMatching(mockPi, "Review funnel A:").at(-1) ?? "", /Review funnel A:\nAsync funnel synthesis/);
-		assert.match(readMockPiArgsMatching(mockPi, "Review funnel B:").at(-1) ?? "", /Review funnel B:\nAsync funnel synthesis/);
+		assert.match(lastItem(readMockPiArgsMatching(mockPi, "Review funnel A:")) ?? "", /Review funnel A:\nAsync funnel synthesis/);
+		assert.match(lastItem(readMockPiArgsMatching(mockPi, "Review funnel B:")) ?? "", /Review funnel B:\nAsync funnel synthesis/);
 		assert.equal(payload.workflowGraph?.nodes?.[0]?.kind, "parallel-group");
 		assert.equal(payload.workflowGraph?.nodes?.[0]?.status, "completed");
 		assert.equal(payload.workflowGraph?.nodes?.[1]?.kind, "step");
@@ -1035,9 +1067,9 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		const status = JSON.parse(fs.readFileSync(path.join(ASYNC_DIR, id, "status.json"), "utf-8")) as AsyncStatusPayload;
 		assert.equal(payload.success, true);
 		assert.equal(mockPi.callCount(), 4);
-		assert.match(readMockPiArgs(mockPi, 1).at(-1) ?? "", /Review src\/a\.ts/);
-		assert.match(readMockPiArgs(mockPi, 2).at(-1) ?? "", /Review src\/b\.ts/);
-		assert.match(readMockPiArgs(mockPi, 3).at(-1) ?? "", /"key":"src\/a\.ts"/);
+		assert.match(lastItem(readMockPiArgs(mockPi, 1)) ?? "", /Review src\/a\.ts/);
+		assert.match(lastItem(readMockPiArgs(mockPi, 2)) ?? "", /Review src\/b\.ts/);
+		assert.match(lastItem(readMockPiArgs(mockPi, 3)) ?? "", /"key":"src\/a\.ts"/);
 		const collected = payload.outputs?.reviews?.structured as Array<{ key: string; structured: unknown }>;
 		assert.deepEqual(collected.map((item) => item.key), ["src/a.ts", "src/b.ts"]);
 		assert.deepEqual(collected.map((item) => item.structured), [{ ok: "a" }, { ok: "b" }]);
@@ -1127,8 +1159,8 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		const dynamicNode = payload.workflowGraph?.nodes?.[1] as { status?: string; error?: string; acceptanceStatus?: string } | undefined;
 		assert.equal(payload.state, "failed");
 		assert.equal(payload.timedOut, true);
-		assert.equal(payload.results.at(-1)?.timedOut, true);
-		assert.equal(payload.results.at(-1)?.acceptance, undefined);
+		assert.equal(lastItem(payload.results)?.timedOut, true);
+		assert.equal(lastItem(payload.results)?.acceptance, undefined);
 		assert.equal(dynamicNode?.status, "failed");
 		assert.match(dynamicNode?.error ?? "", /Subagent timed out after 1000ms\./);
 		assert.notEqual(dynamicNode?.acceptanceStatus, "verified");
@@ -1195,7 +1227,7 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		const payload = JSON.parse(fs.readFileSync(resultPath, "utf-8")) as AsyncResultPayload;
 		const status = JSON.parse(fs.readFileSync(path.join(ASYNC_DIR, id, "status.json"), "utf-8")) as AsyncStatusPayload & { workflowGraph?: AsyncResultPayload["workflowGraph"]; error?: string };
 		assert.equal(payload.success, false);
-		assert.match(payload.results.at(-1)?.error ?? "", /exceeding maxItems 1/);
+		assert.match(lastItem(payload.results)?.error ?? "", /exceeding maxItems 1/);
 		assert.equal(payload.workflowGraph?.nodes?.[1]?.status, "failed");
 		assert.match(payload.workflowGraph?.nodes?.[1]?.error ?? "", /exceeding maxItems 1/);
 		assert.equal(status.state, "failed");
@@ -1227,8 +1259,8 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		const resultPath = await waitForAsyncResultFile(id, 10_000);
 		const payload = JSON.parse(fs.readFileSync(resultPath, "utf-8")) as AsyncResultPayload;
 		assert.equal(payload.success, false);
-		assert.match(payload.results.at(-1)?.error ?? "", /Collected output validation failed/);
-		assert.ok(Array.isArray(payload.results.at(-1)?.structuredOutput), "failed collect result should preserve ordered collection details");
+		assert.match(lastItem(payload.results)?.error ?? "", /Collected output validation failed/);
+		assert.ok(Array.isArray(lastItem(payload.results)?.structuredOutput), "failed collect result should preserve ordered collection details");
 		assert.equal(payload.workflowGraph?.nodes?.[1]?.status, "failed");
 		assert.match(payload.workflowGraph?.nodes?.[1]?.error ?? "", /Collected output validation failed/);
 	});
@@ -1266,7 +1298,7 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 
 			const worktreeCwd = path.join(os.tmpdir(), `pi-worktree-${asyncId}-s0-0`);
 			const args = await waitForMockPiArgs(mockPi, 0);
-			const taskArg = args.at(-1) ?? "";
+			const taskArg = lastItem(args) ?? "";
 			assert.ok(taskArg.includes(`[Read from: ${path.join(worktreeCwd, "input.md")}]`));
 			assert.ok(taskArg.includes(`Write your findings to exactly this path: ${path.join(repoDir, ".pi-subagents", "artifacts", "outputs", asyncId, "report.md")}`));
 			await waitForAsyncResultFile(asyncId, 90_000);
@@ -1369,12 +1401,13 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		assert.deepEqual(payload.results[0].totalCost, { inputTokens: 110, outputTokens: 55, costUsd: 0.011 });
 		assert.deepEqual(payload.totalCost, { inputTokens: 110, outputTokens: 55, costUsd: 0.011 });
 		const statusPayload = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf-8")) as AsyncStatusPayload;
+		const statusStep = statusPayload.steps?.[0];
 		assert.equal(statusPayload.lifecycleArtifactVersion, 1);
-		assert.equal(statusPayload.steps[0]?.model, "anthropic/claude-sonnet-4:low");
-		assert.equal(statusPayload.steps[0]?.thinking, "low");
+		assert.equal(statusStep?.model, "anthropic/claude-sonnet-4:low");
+		assert.equal(statusStep?.thinking, "low");
 		assert.ok(statusPayload.totalTokens!.total > 0);
-		assert.ok(statusPayload.steps[0]?.tokens!.total > 0);
-		assert.deepEqual(statusPayload.steps[0]?.totalCost, { inputTokens: 110, outputTokens: 55, costUsd: 0.011 });
+		assert.ok(statusStep?.tokens!.total > 0);
+		assert.deepEqual(statusStep?.totalCost, { inputTokens: 110, outputTokens: 55, costUsd: 0.011 });
 		assert.deepEqual(statusPayload.totalCost, { inputTokens: 110, outputTokens: 55, costUsd: 0.011 });
 		const events = fs.readFileSync(path.join(asyncDir, "events.jsonl"), "utf-8").trim().split("\n").map((line) => JSON.parse(line));
 		assert.equal(events.find((event) => event.type === "subagent.run.started")?.lifecycleArtifactVersion, 1);
@@ -1698,7 +1731,7 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		assert.equal(run.details.asyncId, id);
 		const outputPath = path.join(outputBaseDir, "context.md");
 		const call = await waitForMockPiCall(mockPi, 0);
-		const taskArg = call.args.at(-1) ?? "";
+		const taskArg = lastItem(call.args) ?? "";
 		assert.match(taskArg, new RegExp(`Write your findings to exactly this path: ${escapeRegExp(outputPath)}`));
 		const resultPath = await waitForAsyncResultFile(id);
 		const payload = JSON.parse(fs.readFileSync(resultPath, "utf-8")) as AsyncResultPayload;
@@ -1735,7 +1768,7 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 
 		assert.equal(run.details.asyncId, id);
 		const call = await waitForMockPiCall(mockPi, 0);
-		const taskArg = call.args.at(-1) ?? "";
+		const taskArg = lastItem(call.args) ?? "";
 		const systemPrompt = call.systemPrompts[0]?.text ?? "";
 		assert.match(taskArg, new RegExp(`Write your findings to exactly this path: ${escapeRegExp(outputPath)}`));
 		assert.match(systemPrompt, /Output format \(`default-report\.md`\):/);
@@ -1775,7 +1808,7 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		assert.doesNotMatch(payload.summary ?? "", /Output saved to:/);
 		assert.equal(fs.existsSync(path.join(tempDir, "false")), false);
 		assert.equal(fs.existsSync(path.join(tempDir, "default-report.md")), false);
-		assert.doesNotMatch(readLastMockPiArgs(mockPi).at(-1) ?? "", /Write your findings to(?: exactly this path)?:/);
+		assert.doesNotMatch(lastItem(readLastMockPiArgs(mockPi)) ?? "", /Write your findings to(?: exactly this path)?:/);
 	});
 
 	it("background runs detect hidden tool failures even when the child exits 0", { skip: !isAsyncAvailable() ? "jiti not available" : undefined }, async () => {

@@ -6,6 +6,7 @@ import { type ActivityState, type AsyncJobStep, type AsyncParallelGroupStatus, t
 import { readStatus } from "../../shared/utils.ts";
 import { attachRootChildrenToSteps, buildNestedRouteIndex, type NestedRoute, projectNestedEvents } from "../shared/nested-events.ts";
 import { formatNestedRunStatusLines } from "../shared/nested-render.ts";
+import { fitCompleteRecordPage } from "./output-budget.ts";
 import { flatToLogicalStepIndex, normalizeParallelGroups } from "./parallel-groups.ts";
 import { reconcileAsyncRun, reconcileNestedAsyncDescendants } from "./stale-run-reconciler.ts";
 
@@ -366,25 +367,54 @@ function formatRunHeader(run: AsyncRunSummary): string {
 	return `${run.id} | ${run.state}${activity ? ` | ${activity}` : ""} | ${run.mode} | ${stepLabel}${pending} | ${cwd}`;
 }
 
-export function formatAsyncRunList(runs: AsyncRunSummary[], heading = "Active async runs"): string {
-	if (runs.length === 0) return `No ${heading.toLowerCase()}.`;
-
-	const lines = [`${heading}: ${runs.length}`, ""];
-	for (const run of runs) {
-		lines.push(`- ${formatRunHeader(run)}`);
-		for (const step of run.steps) {
-			lines.push(`  ${formatStepLine(step)}`);
-			lines.push(...formatNestedRunStatusLines(step.children, { indent: "    ", maxLines: 12 }));
-		}
-		const attached = new Set(run.steps.flatMap((step) => step.children?.map((child) => child.id) ?? []));
-		const unattached = run.nestedChildren?.filter((child) => !attached.has(child.id)) ?? [];
-		lines.push(...formatNestedRunStatusLines(unattached, { indent: "  ", maxLines: 12 }));
-		if (run.error) lines.push(`  Error: ${run.error}`);
-		for (const warning of run.nestedWarnings ?? []) lines.push(`  Warning: ${warning}`);
-		const outputPath = formatAsyncRunOutputPath(run);
-		if (outputPath) lines.push(`  output: ${shortenPath(outputPath)}`);
-		if (run.sessionFile) lines.push(`  session: ${shortenPath(run.sessionFile)}`);
-		lines.push("");
+function formatAsyncRunRecord(run: AsyncRunSummary): string {
+	const lines = [`- ${formatRunHeader(run)}`];
+	for (const step of run.steps) {
+		lines.push(`  ${formatStepLine(step)}`);
+		lines.push(...formatNestedRunStatusLines(step.children, { indent: "    ", maxLines: 12 }));
 	}
-	return lines.join("\n").trimEnd();
+	const attached = new Set(run.steps.flatMap((step) => step.children?.map((child) => child.id) ?? []));
+	const unattached = run.nestedChildren?.filter((child) => !attached.has(child.id)) ?? [];
+	lines.push(...formatNestedRunStatusLines(unattached, { indent: "  ", maxLines: 12 }));
+	if (run.error) lines.push(`  Error: ${run.error}`);
+	for (const warning of run.nestedWarnings ?? []) lines.push(`  Warning: ${warning}`);
+	const outputPath = formatAsyncRunOutputPath(run);
+	if (outputPath) lines.push(`  output: ${shortenPath(outputPath)}`);
+	if (run.sessionFile) lines.push(`  session: ${shortenPath(run.sessionFile)}`);
+	return lines.join("\n");
+}
+
+function formatCompactAsyncRunRecord(run: AsyncRunSummary): string {
+	return [
+		`- ${run.id} | ${run.state} | ${run.mode}`,
+		`  status: subagent({ action: "status", id: "${run.id}" })`,
+		`  transcript: subagent({ action: "status", id: "${run.id}", view: "transcript" })`,
+	].join("\n");
+}
+
+export function formatAsyncRunList(runs: AsyncRunSummary[], heading = "Active async runs", offset = 0): string {
+	if (runs.length === 0) return `No ${heading.toLowerCase()}.`;
+	const records = runs.map((run) => ({ full: formatAsyncRunRecord(run), compact: formatCompactAsyncRunRecord(run) }));
+	return fitCompleteRecordPage({
+		records,
+		offset,
+		render: (page) => {
+			const lines = [
+				`${heading}: ${page.total}`,
+				`Total: ${page.total} | Offset: ${page.offset} | Shown: ${page.shown} | Remaining: ${page.remaining}`,
+				"",
+				...page.records.map((record) => page.compact ? record.compact : record.full),
+			];
+			if (page.compact) lines.push("", "Notice: full run details omitted because this record exceeds the 50,000-byte page limit.");
+			lines.push(
+				"",
+				"Commands:",
+				"  Refresh: subagent({ action: \"status\" })",
+				"  Exact run status: subagent({ action: \"status\", id: \"<run-id>\" })",
+				"  Exact run transcript: subagent({ action: \"status\", id: \"<run-id>\", view: \"transcript\" })",
+			);
+			if (page.remaining > 0) lines.push(`  Next page: subagent({ action: "status", offset: ${page.offset + page.shown} })`);
+			return lines.join("\n").trimEnd();
+		},
+	}).text;
 }

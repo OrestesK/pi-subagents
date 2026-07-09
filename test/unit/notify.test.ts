@@ -22,7 +22,7 @@ function createPi(currentSessionId = "session-1", registerOptions: RegisterSubag
 
 	// Formatting-focused tests run with batching disabled so single completions
 	// emit synchronously. Batching behavior is covered by the dedicated suite below.
-	registerSubagentNotify(pi as never, { currentSessionId }, { batchConfig: { enabled: false }, ...registerOptions });
+	registerSubagentNotify(pi as never, { currentSessionId }, { now: () => 1000, batchConfig: { enabled: false }, ...registerOptions });
 
 	return { events, sent };
 }
@@ -80,14 +80,18 @@ function createFakeClock() {
 }
 
 function completionResult(overrides: Record<string, unknown> = {}) {
+	const agent = typeof overrides.agent === "string" ? overrides.agent : "worker";
 	return {
 		id: `notify-${Math.random().toString(36).slice(2)}`,
-		agent: "worker",
+		agent,
 		success: true,
 		summary: "Done",
 		exitCode: 0,
 		timestamp: 123,
+		durationMs: 50,
+		cwd: "/repo",
 		sessionId: "session-a",
+		results: [{ agent, success: true, output: "Done", artifactPaths: { outputPath: `/tmp/${agent}.md` } }],
 		...overrides,
 	};
 }
@@ -110,7 +114,15 @@ describe("registerSubagentNotify", () => {
 		assert.deepEqual(sent[0], {
 			message: {
 				customType: "subagent-notify",
-				content: "Background task completed: **worker**\n\n(no output)",
+				content: [
+					"Background task completed: **worker**",
+					"Run: notify-empty-1",
+					"Role: worker",
+					"Launched: 1970-01-01T00:00:00.123Z",
+					"Output: (not configured)",
+					"",
+					"(no output)",
+				].join("\n"),
 				display: true,
 			},
 			options: { triggerTurn: true },
@@ -137,7 +149,15 @@ describe("registerSubagentNotify", () => {
 		assert.deepEqual(sent[0], {
 			message: {
 				customType: "subagent-notify",
-				content: `Background task completed: **worker** (2/3)\n\n${summary}`,
+				content: [
+					"Background task completed: **worker** (2/3)",
+					"Run: notify-summary-1",
+					"Role: worker",
+					"Launched: 1970-01-01T00:00:00.456Z",
+					"Output: (not configured)",
+					"",
+					summary,
+				].join("\n"),
 				display: true,
 			},
 			options: { triggerTurn: true },
@@ -149,19 +169,34 @@ describe("registerSubagentNotify", () => {
 
 		events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, {
 			id: "notify-path-1",
+			runId: "run-path-1",
 			agent: "worker",
 			success: true,
 			summary: "Done",
 			exitCode: 0,
 			timestamp: 456,
+			durationMs: 56,
+			cwd: "/repo",
 			sessionFile: "/tmp/session.jsonl",
 			sessionId: "session-1",
+			results: [{ agent: "worker", success: true, output: "Done", artifactPaths: { outputPath: "/tmp/output.md" } }],
 		});
 
 		assert.deepEqual(sent, [{
 			message: {
 				customType: "subagent-notify",
-				content: "Background task completed: **worker**\n\nDone\n\nSession file: /tmp/session.jsonl",
+				content: [
+					"Background task completed: **worker**",
+					"Run: run-path-1",
+					"Role: worker",
+					"Cwd: /repo",
+					"Launched: 1970-01-01T00:00:00.400Z",
+					"Output: /tmp/output.md",
+					"",
+					"Done",
+					"",
+					"Session file: /tmp/session.jsonl",
+				].join("\n"),
 				display: true,
 			},
 			options: { triggerTurn: true },
@@ -185,7 +220,15 @@ describe("registerSubagentNotify", () => {
 		assert.deepEqual(sent[0], {
 			message: {
 				customType: "subagent-notify",
-				content: "Background task paused: **worker**\n\nPaused after interrupt. Waiting for explicit next action.",
+				content: [
+					"Background task paused: **worker**",
+					"Run: notify-paused-1",
+					"Role: worker",
+					"Launched: 1970-01-01T00:00:00.789Z",
+					"Output: (not configured)",
+					"",
+					"Paused after interrupt. Waiting for explicit next action.",
+				].join("\n"),
 				display: true,
 			},
 			options: { triggerTurn: true },
@@ -246,8 +289,8 @@ describe("registerSubagentNotify", () => {
 		assert.equal(sent.length, 1);
 		const content = (sent[0]!.message as { content: string }).content;
 		assert.match(content, /^Background tasks completed \(3\): \*\*alpha\*\*, \*\*beta\*\*, \*\*gamma\*\*/);
-		assert.match(content, /1\. alpha\nalpha done/);
-		assert.match(content, /3\. gamma\ngamma done/);
+		assert.match(content, /1\. alpha\nRun: g-1[\s\S]*alpha done/);
+		assert.match(content, /3\. gamma\nRun: g-3[\s\S]*gamma done/);
 		assert.deepEqual(sent[0]!.options, { triggerTurn: true });
 	});
 
@@ -277,6 +320,22 @@ describe("registerSubagentNotify", () => {
 		assert.match((sent[0]!.message as { content: string }).content, /^Background task completed: \*\*alpha\*\*/);
 		assert.doesNotMatch((sent[0]!.message as { content: string }).content, /boom/);
 	});
+
+	it("suppresses stale completions instead of notifying a later session turn", () => {
+		const { events, sent } = createPi("session-1", { now: () => 20 * 60 * 1000 });
+
+		events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, {
+			id: "stale-worker-1",
+			agent: "worker",
+			success: true,
+			summary: "old worker output",
+			exitCode: 0,
+			timestamp: 1,
+			sessionId: "session-1",
+		});
+
+		assert.deepEqual(sent, []);
+	});
 });
 
 describe("completion formatting helpers", () => {
@@ -289,7 +348,15 @@ describe("completion formatting helpers", () => {
 			sessionLabel: "Session file",
 			sessionValue: "/tmp/session.jsonl",
 		});
-		assert.equal(content, "Background task completed: **worker** (2/3)\n\nDone\n\nSession file: /tmp/session.jsonl");
+		assert.equal(content, [
+			"Background task completed: **worker** (2/3)",
+			"Role: worker",
+			"Output: (not configured)",
+			"",
+			"Done",
+			"",
+			"Session file: /tmp/session.jsonl",
+		].join("\n"));
 	});
 
 	it("formatGroupedCompletion lists each agent with its summary and session", () => {
@@ -300,8 +367,8 @@ describe("completion formatting helpers", () => {
 		assert.equal(
 			content,
 			"Background tasks completed (2): **alpha**, **beta** (1/2)\n\n"
-			+ "1. alpha\nalpha done\n\n"
-			+ "2. beta (1/2)\n(no output)\nSession: https://share/abc",
+			+ "1. alpha\nRole: alpha\nOutput: (not configured)\n\nalpha done\n\n"
+			+ "2. beta (1/2)\nRole: beta\nOutput: (not configured)\n\n(no output)\nSession: https://share/abc",
 		);
 	});
 

@@ -17,6 +17,9 @@ interface SubagentParamsSchema {
 						minimum?: number;
 						description?: string;
 					};
+					output?: JsonSchemaNode;
+					reads?: JsonSchemaNode;
+					progress?: { type?: string };
 				};
 			};
 		};
@@ -36,6 +39,12 @@ interface SubagentParamsSchema {
 			properties?: {
 				maxTurns?: { minimum?: number };
 				graceTurns?: { minimum?: number };
+			};
+		};
+		toolBudget?: {
+			properties?: {
+				soft?: { minimum?: number };
+				hard?: { minimum?: number };
 			};
 		};
 		id?: {
@@ -60,6 +69,11 @@ interface SubagentParamsSchema {
 			enum?: string[];
 			description?: string;
 		};
+		offset?: {
+			type?: string;
+			minimum?: number;
+			description?: string;
+		};
 		lines?: {
 			minimum?: number;
 			maximum?: number;
@@ -79,6 +93,7 @@ interface SubagentParamsSchema {
 		skill?: JsonSchemaNode;
 		output?: JsonSchemaNode;
 		config?: JsonSchemaNode;
+		acceptance?: JsonSchemaNode;
 		chain?: {
 			items?: JsonSchemaNode & {
 				properties?: Record<string, JsonSchemaNode>;
@@ -125,7 +140,7 @@ let schemas: Record<string, JsonSchemaNode> = {};
 let SubagentParams: SubagentParamsSchema | undefined;
 let schemasAvailable = true;
 try {
-	schemas = await import("../../src/extension/schemas.ts") as Record<string, JsonSchemaNode>;
+	schemas = await import("../../src/extension/schemas.ts") as unknown as Record<string, JsonSchemaNode>;
 	SubagentParams = schemas.SubagentParams as SubagentParamsSchema;
 } catch (error) {
 	if (missingPackageName(error) !== "typebox") throw error;
@@ -234,6 +249,12 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		assert.match(String(viewSchema.description ?? ""), /status view/i);
 		assert.match(String(viewSchema.description ?? ""), /transcript/i);
 
+		const offsetSchema = SubagentParams?.properties?.offset;
+		assert.ok(offsetSchema, "offset schema should exist");
+		assert.equal(offsetSchema.type, "integer");
+		assert.equal(offsetSchema.minimum, 0);
+		assert.match(String(offsetSchema.description ?? ""), /pagination/i);
+
 		const linesSchema = SubagentParams?.properties?.lines;
 		assert.ok(linesSchema, "lines schema should exist");
 		assert.equal(linesSchema.minimum, 1);
@@ -251,6 +272,16 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		assert.deepEqual(controlSchema.properties?.notifyChannels?.items?.enum, ["event", "async", "intercom"]);
 	});
 
+	it("accepts non-negative integer offsets and rejects invalid offsets", () => {
+		assert.ok(CompileSchema, "typebox compiler should be available");
+		assert.ok(SubagentParams, "SubagentParams schema should exist");
+		const validator = CompileSchema(SubagentParams);
+		assert.equal(validator.Check({ offset: 0 }), true);
+		assert.equal(validator.Check({ offset: 12 }), true);
+		assert.equal(validator.Check({ offset: -1 }), false);
+		assert.equal(validator.Check({ offset: 1.5 }), false);
+	});
+
 	it("does not emit description-only schema nodes", () => {
 		const descriptionOnlyPaths: string[] = [];
 
@@ -261,7 +292,7 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 				if (!current.value || typeof current.value !== "object") continue;
 
 				const node = current.value as JsonSchemaNode;
-				if (Object.hasOwn(node, "description") && !Object.hasOwn(node, "type") && !Object.hasOwn(node, "anyOf")) {
+				if (Object.prototype.hasOwnProperty.call(node, "description") && !Object.prototype.hasOwnProperty.call(node, "type") && !Object.prototype.hasOwnProperty.call(node, "anyOf")) {
 					descriptionOnlyPaths.push(current.path);
 				}
 
@@ -289,7 +320,7 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 				if (!current.value || typeof current.value !== "object") continue;
 
 				const node = current.value as JsonSchemaNode;
-				if (node.type === "array" && !Object.hasOwn(node, "items")) {
+				if (node.type === "array" && !Object.prototype.hasOwnProperty.call(node, "items")) {
 					missingItemsPaths.push(current.path);
 				}
 
@@ -370,11 +401,11 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 				if (Array.isArray(node.type)) {
 					rejectedPaths.push(`${current.path}.type`);
 				}
-				if (Object.hasOwn(node, "anyOf") && Object.hasOwn(node, "type")) {
+				if (Object.prototype.hasOwnProperty.call(node, "anyOf") && Object.prototype.hasOwnProperty.call(node, "type")) {
 					rejectedPaths.push(`${current.path}.type+anyOf`);
 				}
 				for (const keyword of rejectedKeywords) {
-					if (Object.hasOwn(node, keyword)) rejectedPaths.push(`${current.path}.${keyword}`);
+					if (Object.prototype.hasOwnProperty.call(node, keyword)) rejectedPaths.push(`${current.path}.${keyword}`);
 				}
 
 				if (Array.isArray(current.value)) {

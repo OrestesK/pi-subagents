@@ -2,14 +2,16 @@
 
 This directory is a git checkout of `https://github.com/nicobailon/pi-subagents.git`, loaded by Pi from `/home/orestes/.config/pi/settings.json` as `packages/pi-subagents`.
 
-It is not an unpacked `npm:pi-subagents` copy. Treat local behavior as commits on top of upstream `origin/main`.
+It is not an unpacked `npm:pi-subagents` copy. The current local overlay is tracked relative to upstream commit `4fb627d1fdae90e18e9f5c744a9853e3231bed19`.
+
+Later upstream commits are incoming upstream work and are out of scope for this ledger until explicitly ported.
 
 ## Local stack
 
 Use this command for current hashes:
 
 ```sh
-(cd packages/pi-subagents && git log --oneline --reverse origin/main..HEAD)
+(cd packages/pi-subagents && git log --oneline --reverse 4fb627d..HEAD)
 ```
 
 As of 2026-07-08, the local stack contains these concerns:
@@ -17,7 +19,7 @@ As of 2026-07-08, the local stack contains these concerns:
 - `change: update subagent workflow docs` — updates README and `skills/pi-subagents/SKILL.md` for the local orchestration workflow, review gates, artifacts, async usage, and fan-in patterns.
 - `change: update bundled agent contracts` — updates bundled agent prompts/contracts for current tool boundaries, supervisor coordination, review expectations, and handoff style.
 - `change: update prompt workflows` — adds prompt workflow templates for adversarial debate, generate/filter, quality gates, quick adversarial checks, and research-decision flows.
-- `change: layer local runtime overlay` — carries runtime behavior not in upstream `origin/main`, including acceptance gates, capability checks, dynamic fanout helpers, workflow expansion, child event logging, path/output collision guards, parallel writer/straggler safeguards, async cleanup, model fallback, and compact agent labels.
+- `change: layer local runtime overlay` — carries runtime behavior not in upstream `4fb627d`, including acceptance gates, capability checks, dynamic fanout helpers, workflow expansion, child event logging, path/output collision guards, parallel writer/straggler safeguards, async cleanup, model fallback, and compact agent labels.
 - `test: add local runtime coverage` — adds tests for the local overlay and adjusts support fixtures.
 
 ## Notable local runtime behavior
@@ -26,8 +28,11 @@ As of 2026-07-08, the local stack contains these concerns:
 - `src/shared/agent-labels.ts` compacts repeated async parallel child labels, for example `Async parallel: 19× delegate [id]` instead of a long repeated-agent list.
 - `steer` is the canonical parent-to-child guidance action. The old public `action: "message"` / `ack_supervisor_message` path is intentionally not preserved.
 - `subagent({ action: "list" })` is a local routing surface: it shows effective, deduped, non-disabled agents with concise route guidance, keeps chain diagnostics, and uses `get` for provenance/details.
+- Local `list` and parent tool-description guidance intentionally omit proactive skill subagent suggestions; local orchestration policy relies on explicit parent judgment and read-only advisory fanout rather than automatic skill suggestion blocks.
 - Structured acceptance uses the unified `src/runs/shared/acceptance.ts` path. The stale local acceptance split/finalization modules and `maxFinalizationTurns` surface are intentionally removed unless a future feature explicitly revives same-session finalization.
 - Dynamic chain fanout uses `src/runs/shared/dynamic-fanout.ts`; the older `src/shared/chain-dynamic.ts` helper and its stale `.mjs` test are intentionally removed.
+- Explicit `reads` are a launch contract: single, parallel, chain, async, and worktree paths fail before child launch when user-specified read files are missing after path resolution. Agent `defaultReads` remain best-effort so missing local workflow defaults do not block unrelated runs.
+- Background completion notifications include run id, role, cwd when present, launch time, and output path when configured, and suppress stale completions older than the notification dedupe TTL. This prevents ambiguous/stale messages such as bare worker/root-output completions from being treated as current work.
 - Top-level `workflow: "builtin.*"` remains accepted as a deprecated compatibility alias for now. First-party guidance should prefer prompt shortcuts or explicit `tasks`/`chain` shapes before eventual removal.
 
 ## Setup
@@ -57,5 +62,5 @@ Useful read-only sync checks:
 ```sh
 (cd packages/pi-subagents && git fetch origin --dry-run)
 (cd packages/pi-subagents && git status --short --branch --untracked-files=all)
-(cd packages/pi-subagents && git diff --stat origin/main..HEAD)
+(cd packages/pi-subagents && git diff --stat 4fb627d..HEAD)
 ```

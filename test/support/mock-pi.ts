@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 interface MockPiResponse {
 	output?: string;
+	structuredOutput?: unknown;
 	stderr?: string;
 	exitCode?: number;
 	delay?: number;
@@ -101,7 +102,9 @@ export function createMockPi(): MockPi {
 			}
 			try {
 				fs.rmSync(rootDir, { recursive: true, force: true });
-			} catch {}
+			} catch {
+				// Test cleanup is best effort; stale temp dirs should not mask test failures.
+			}
 		},
 		onCall(response) {
 			ensureDir(queueDir);
@@ -119,7 +122,9 @@ export function createMockPi(): MockPi {
 			for (const entry of fs.readdirSync(queueDir)) {
 				try {
 					fs.rmSync(path.join(queueDir, entry), { recursive: true, force: true });
-				} catch {}
+				} catch {
+					// Test cleanup is best effort; stale queue entries should not mask test failures.
+				}
 			}
 		},
 		callCount() {
