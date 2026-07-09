@@ -1,14 +1,20 @@
 /**
  * Subagent completion notifications.
  *
- * Successful (completed) async results are held briefly and emitted as a
- * single grouped message when sibling jobs finish within a short window (see
- * `completion-batcher.ts`). Failed and paused results bypass grouping and fire
- * immediately, flushing any held successes first, so failure and attention
- * signals are never delayed.
+ * Successful (completed) async results that need a full fallback are held
+ * briefly and emitted as a single grouped message when sibling jobs finish
+ * within a short window (see `completion-batcher.ts`). Delivered results need
+ * no fallback, while uncertain delivery timeouts emit metadata-only retrieval
+ * notices. Failed and paused full fallbacks bypass grouping and fire immediately.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import * as fs from "node:fs";
+import {
+	MODEL_VISIBLE_COMPLETION_BUDGET,
+	boundCompletionOutput,
+	completionItemBudget,
+} from "../../shared/completion-output.ts";
 import { buildCompletionKey, getGlobalSeenMap, markSeenWithTtl } from "./completion-dedupe.ts";
 import {
 	type CompletionBatchConfig,
@@ -16,7 +22,11 @@ import {
 	createCompletionBatcher,
 	resolveCompletionBatchConfig,
 } from "./completion-batcher.ts";
-import { SUBAGENT_ASYNC_COMPLETE_EVENT, type SubagentState } from "../../shared/types.ts";
+import {
+	SUBAGENT_ASYNC_COMPLETE_EVENT,
+	type SubagentResultDeliveryState,
+	type SubagentState,
+} from "../../shared/types.ts";
 
 interface ChainStepResult {
 	agent: string;
@@ -59,6 +69,7 @@ interface SubagentResult {
 	taskIndex?: number;
 	totalTasks?: number;
 	sessionId?: string | null;
+	deliveryState?: SubagentResultDeliveryState;
 }
 
 interface NotifyTimerApi {
@@ -70,6 +81,7 @@ export interface RegisterSubagentNotifyOptions {
 	batchConfig?: CompletionBatchConfig;
 	timers?: NotifyTimerApi;
 	now?: () => number;
+	existsSync?: (path: string) => boolean;
 }
 
 function formatSessionLine(details: SubagentNotifyDetails): string | undefined {
@@ -118,19 +130,54 @@ export function formatGroupedCompletion(details: SubagentNotifyDetails[]): strin
 	return blocks.join("\n").trimEnd();
 }
 
-function sendCompletion(pi: Pick<ExtensionAPI, "sendMessage">, details: SubagentNotifyDetails[]): void {
-	if (details.length === 0) return;
-	const content = details.length === 1
-		? formatSingleCompletion(details[0]!)
-		: formatGroupedCompletion(details);
+function sendNotification(pi: Pick<ExtensionAPI, "sendMessage">, content: string): void {
+	const bounded = boundCompletionOutput(
+		content,
+		MODEL_VISIBLE_COMPLETION_BUDGET,
+		"Use the listed run IDs with subagent status to retrieve full output",
+	);
 	pi.sendMessage(
 		{
 			customType: "subagent-notify",
-			content,
+			content: bounded.text,
 			display: true,
 		},
 		{ triggerTurn: true },
 	);
+}
+
+function completionRecoveryHint(details: SubagentNotifyDetails): string | undefined {
+	if (details.outputPath) return `Full output: ${details.outputPath}`;
+	if (details.sessionValue) return `${details.sessionLabel ?? "Session"}: ${details.sessionValue}`;
+	if (details.runId) return `Inspect: subagent({ action: "status", id: "${details.runId}" })`;
+	return undefined;
+}
+
+function sendCompletion(pi: Pick<ExtensionAPI, "sendMessage">, details: SubagentNotifyDetails[]): void {
+	if (details.length === 0) return;
+	const itemBudget = completionItemBudget(details.length);
+	const boundedDetails = details.map((detail) => ({
+		...detail,
+		resultPreview: boundCompletionOutput(detail.resultPreview, itemBudget, completionRecoveryHint(detail)).text,
+	}));
+	const content = boundedDetails.length === 1
+		? formatSingleCompletion(boundedDetails[0]!)
+		: formatGroupedCompletion(boundedDetails);
+	sendNotification(pi, content);
+}
+
+function sendTimedOutCompletion(pi: Pick<ExtensionAPI, "sendMessage">, details: SubagentNotifyDetails): void {
+	const sessionLine = formatSessionLine(details);
+	const content = [
+		`Background task ${details.status} (intercom delivery timed out): **${details.agent}**${details.taskInfo ?? ""}`,
+		...formatMetadataLines(details),
+		details.runId ? `Inspect: subagent({ action: "status", id: "${details.runId}" })` : undefined,
+		sessionLine ? "" : undefined,
+		sessionLine,
+	]
+		.filter((line) => line !== undefined)
+		.join("\n");
+	sendNotification(pi, content);
 }
 
 function completionBatchKey(result: SubagentResult): string {
@@ -144,15 +191,18 @@ function nonEmptyString(value: unknown): string | undefined {
 	return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
-function resolveOutputPath(result: SubagentResult): string | undefined {
+function resolveOutputPath(result: SubagentResult, existsSync: (path: string) => boolean): string | undefined {
 	for (const child of result.results ?? []) {
 		const outputPath = nonEmptyString(child.artifactPath) ?? nonEmptyString(child.artifactPaths?.outputPath);
-		if (outputPath) return outputPath;
+		if (outputPath && existsSync(outputPath)) return outputPath;
 	}
 	return undefined;
 }
 
-export function buildCompletionDetails(result: SubagentResult): SubagentNotifyDetails {
+export function buildCompletionDetails(
+	result: SubagentResult,
+	existsSync: (path: string) => boolean = fs.existsSync,
+): SubagentNotifyDetails {
 	const agent = result.agent ?? "unknown";
 	const summary = typeof result.summary === "string" ? result.summary : "";
 	const paused = !result.success && (
@@ -177,6 +227,7 @@ export function buildCompletionDetails(result: SubagentResult): SubagentNotifyDe
 					: undefined;
 
 	const runId = nonEmptyString(result.runId) ?? nonEmptyString(result.id);
+	const outputPath = resolveOutputPath(result, existsSync);
 	const durationMs = typeof result.durationMs === "number" && Number.isFinite(result.durationMs) ? result.durationMs : undefined;
 	const launchedAt = typeof result.timestamp === "number" && Number.isFinite(result.timestamp)
 		? result.timestamp - (durationMs ?? 0)
@@ -190,7 +241,7 @@ export function buildCompletionDetails(result: SubagentResult): SubagentNotifyDe
 		...(runId ? { runId } : {}),
 		...(nonEmptyString(result.cwd) ? { cwd: nonEmptyString(result.cwd) } : {}),
 		...(launchedAt !== undefined ? { launchedAt } : {}),
-		...(resolveOutputPath(result) ? { outputPath: resolveOutputPath(result) } : {}),
+		...(outputPath ? { outputPath } : {}),
 		...(durationMs !== undefined ? { durationMs } : {}),
 		...(session ? { sessionLabel: session.label, sessionValue: session.value } : {}),
 	};
@@ -228,7 +279,10 @@ export default function registerSubagentNotify(
 	const batchers = new Map<string, CompletionBatcher<SubagentNotifyDetails>>();
 	globalStore[batcherStoreKey] = {
 		dispose() {
-			for (const batcher of batchers.values()) batcher.dispose();
+			for (const batcher of batchers.values()) {
+				batcher.flush();
+				batcher.dispose();
+			}
 			batchers.clear();
 		},
 	};
@@ -241,7 +295,18 @@ export default function registerSubagentNotify(
 		const key = buildCompletionKey(result, "notify");
 		if (markSeenWithTtl(seen, key, now, ttlMs)) return;
 
-		const details = buildCompletionDetails(result);
+		const details = buildCompletionDetails(result, options.existsSync ?? fs.existsSync);
+		switch (result.deliveryState ?? "not_requested") {
+			case "delivered":
+				return;
+			case "timed_out":
+				sendTimedOutCompletion(pi, details);
+				return;
+			case "failed":
+			case "not_requested":
+				break;
+		}
+
 		const batchKey = completionBatchKey(result);
 		let batcher = batchers.get(batchKey);
 		if (!batcher) {

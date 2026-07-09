@@ -47,6 +47,13 @@ interface SubagentParamsSchema {
 				hard?: { minimum?: number };
 			};
 		};
+		maxOutput?: {
+			properties?: {
+				bytes?: { minimum?: number };
+				lines?: { minimum?: number };
+			};
+			additionalProperties?: boolean;
+		};
 		id?: {
 			type?: string;
 			description?: string;
@@ -218,6 +225,25 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		assert.equal(turnBudgetSchema?.properties?.graceTurns?.minimum, 0);
 		assert.equal(toolBudgetSchema?.properties?.soft?.minimum, 1);
 		assert.equal(toolBudgetSchema?.properties?.hard?.minimum, 1);
+	});
+
+	it("exposes positive integer maxOutput overrides", () => {
+		const maxOutputSchema = SubagentParams?.properties?.maxOutput;
+		assert.ok(maxOutputSchema, "maxOutput schema should exist");
+		assert.equal(maxOutputSchema.properties?.bytes?.minimum, 1);
+		assert.equal(maxOutputSchema.properties?.lines?.minimum, 1);
+		assert.equal(maxOutputSchema.additionalProperties, false);
+
+		assert.ok(CompileSchema, "typebox compiler should be available");
+		assert.ok(SubagentParams, "SubagentParams schema should exist");
+		const validator = CompileSchema(SubagentParams);
+		assert.equal(validator.Check({ maxOutput: {} }), true);
+		assert.equal(validator.Check({ maxOutput: { bytes: 1024 } }), true);
+		assert.equal(validator.Check({ maxOutput: { lines: 20 } }), true);
+		assert.equal(validator.Check({ maxOutput: { bytes: 0 } }), false);
+		assert.equal(validator.Check({ maxOutput: { lines: -1 } }), false);
+		assert.equal(validator.Check({ maxOutput: { bytes: 12.5 } }), false);
+		assert.equal(validator.Check({ maxOutput: { unknown: 1 } }), false);
 	});
 
 	it("includes subagent control fields", () => {

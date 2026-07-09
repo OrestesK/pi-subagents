@@ -8,6 +8,7 @@ import registerSubagentNotify, {
 	type RegisterSubagentNotifyOptions,
 	type SubagentNotifyDetails,
 } from "../../src/runs/background/notify.ts";
+import { MODEL_VISIBLE_COMPLETION_BUDGET } from "../../src/shared/completion-output.ts";
 import { SUBAGENT_ASYNC_COMPLETE_EVENT } from "../../src/shared/types.ts";
 
 function createPi(currentSessionId = "session-1", registerOptions: RegisterSubagentNotifyOptions = {}) {
@@ -22,7 +23,12 @@ function createPi(currentSessionId = "session-1", registerOptions: RegisterSubag
 
 	// Formatting-focused tests run with batching disabled so single completions
 	// emit synchronously. Batching behavior is covered by the dedicated suite below.
-	registerSubagentNotify(pi as never, { currentSessionId }, { now: () => 1000, batchConfig: { enabled: false }, ...registerOptions });
+	registerSubagentNotify(pi as never, { currentSessionId }, {
+		now: () => 1000,
+		batchConfig: { enabled: false },
+		existsSync: () => true,
+		...registerOptions,
+	});
 
 	return { events, sent };
 }
@@ -40,6 +46,7 @@ function createBatchingPi(clock: ReturnType<typeof createFakeClock>, currentSess
 		batchConfig: { enabled: true, debounceMs: 150, maxWaitMs: 1000, stragglerDebounceMs: 75, stragglerMaxWaitMs: 400, stragglerWindowMs: 2000 },
 		timers: clock.api,
 		now: clock.now,
+		existsSync: () => true,
 	});
 	return { events, sent };
 }
@@ -256,6 +263,123 @@ describe("registerSubagentNotify", () => {
 		});
 
 		assert.deepEqual(sent, []);
+	});
+
+	it("routes delivered completions to no fallback and failed or unrequested delivery to full fallback", () => {
+		const { events, sent } = createPi("session-a");
+
+		for (const [id, overrides] of [
+			["delivered-success", { success: true, summary: "delivered success summary" }],
+			["delivered-failure", { success: false, exitCode: 1, summary: "delivered failure summary" }],
+			["delivered-paused", { success: false, state: "paused", summary: "delivered paused summary" }],
+		] as const) {
+			events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, completionResult({ id, deliveryState: "delivered", ...overrides }));
+		}
+		assert.equal(sent.length, 0);
+
+		events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, completionResult({
+			id: "failed-success",
+			deliveryState: "failed",
+			summary: "full success fallback",
+		}));
+		events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, completionResult({
+			id: "unrequested-failure",
+			deliveryState: "not_requested",
+			success: false,
+			exitCode: 1,
+			summary: "full failure fallback",
+		}));
+		events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, completionResult({
+			id: "failed-paused",
+			deliveryState: "failed",
+			success: false,
+			state: "paused",
+			summary: "full paused fallback",
+		}));
+
+		assert.equal(sent.length, 3);
+		assert.match((sent[0]!.message as { content: string }).content, /full success fallback/);
+		assert.match((sent[1]!.message as { content: string }).content, /full failure fallback/);
+		assert.match((sent[2]!.message as { content: string }).content, /full paused fallback/);
+	});
+
+	it("does not advertise missing output artifacts", () => {
+		const { events, sent } = createPi("session-a", { existsSync: () => false });
+
+		events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, completionResult({
+			id: "missing-artifact",
+			deliveryState: "failed",
+			success: false,
+			exitCode: 1,
+			summary: "fallback output",
+		}));
+
+		assert.equal(sent.length, 1);
+		const content = (sent[0]!.message as { content: string }).content;
+		assert.match(content, /Output: \(not configured\)/);
+		assert.doesNotMatch(content, /\/tmp\/worker\.md/);
+	});
+
+	it("sends metadata-only retrieval notices for timed-out delivery across completion statuses", () => {
+		const { events, sent } = createPi("session-a");
+
+		for (const [id, overrides] of [
+			["timeout-success", { success: true, summary: "secret success summary" }],
+			["timeout-failure", { success: false, exitCode: 1, summary: "secret failure summary" }],
+			["timeout-paused", { success: false, state: "paused", summary: "secret paused summary" }],
+		] as const) {
+			events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, completionResult({ id, deliveryState: "timed_out", ...overrides }));
+		}
+
+		assert.equal(sent.length, 3);
+		for (const entry of sent) {
+			const content = (entry.message as { content: string }).content;
+			assert.match(content, /intercom delivery timed out/);
+			assert.match(content, /Run: timeout-/);
+			assert.match(content, /Output: \/tmp\/worker\.md/);
+			assert.match(content, /Inspect: subagent\(\{ action: "status", id: "timeout-/);
+			assert.doesNotMatch(content, /secret (success|failure|paused) summary/);
+		}
+	});
+
+	it("bounds full fallback summaries and preserves useful head and tail context", () => {
+		const { events, sent } = createPi("session-a");
+		const summary = `HEAD-SENTINEL\n${"middle line\n".repeat(10_000)}TAIL-SENTINEL`;
+
+		events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, completionResult({
+			id: "bounded-failure",
+			deliveryState: "failed",
+			success: false,
+			exitCode: 1,
+			summary,
+		}));
+
+		assert.equal(sent.length, 1);
+		const content = (sent[0]!.message as { content: string }).content;
+		assert.ok(Buffer.byteLength(content, "utf8") <= MODEL_VISIBLE_COMPLETION_BUDGET.bytes);
+		assert.ok(content.split("\n").length <= MODEL_VISIBLE_COMPLETION_BUDGET.lines);
+		assert.match(content, /HEAD-SENTINEL/);
+		assert.match(content, /TAIL-SENTINEL/);
+		assert.match(content, /TRUNCATED/);
+	});
+
+	it("flushes pending success fallbacks before disposing a stale reload batcher", () => {
+		const clock = createFakeClock();
+		const first = createBatchingPi(clock);
+
+		first.events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, completionResult({
+			id: "reload-held-success",
+			deliveryState: "not_requested",
+			summary: "survives reload",
+		}));
+		assert.equal(first.sent.length, 0);
+
+		createBatchingPi(clock);
+		assert.equal(first.sent.length, 1);
+		assert.match((first.sent[0]!.message as { content: string }).content, /survives reload/);
+
+		clock.advance(1000);
+		assert.equal(first.sent.length, 1);
 	});
 
 	it("emits failed completions immediately even while successes are held", () => {

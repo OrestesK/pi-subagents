@@ -87,6 +87,11 @@ const TurnBudgetOverride = Type.Object({
 	graceTurns: Type.Optional(Type.Integer({ minimum: 0 })),
 }, { additionalProperties: false, description: "Optional assistant-turn budget. At maxTurns the child is asked to wrap up; after graceTurns additional assistant turns it is aborted and partial output is returned." });
 
+const MaxOutputOverride = Type.Object({
+	bytes: Type.Optional(Type.Integer({ minimum: 1 })),
+	lines: Type.Optional(Type.Integer({ minimum: 1 })),
+}, { additionalProperties: false, description: "Optional parent-visible output limits. Omitted fields use the 200 KiB and 5,000-line defaults." });
+
 const ToolBudgetBlock = Type.Unsafe({
 	anyOf: [
 		{ type: "array", minItems: 1, items: { type: "string", minLength: 1 } },
@@ -287,6 +292,7 @@ const SubagentParamsSchema = Type.Object({
 	maxRuntimeMs: Type.Optional(Type.Integer({ minimum: 1, description: "Alias of timeoutMs for optional run-level timeout in foreground and async/background runs." })),
 	turnBudget: Type.Optional(TurnBudgetOverride),
 	toolBudget: Type.Optional(ToolBudgetOverride),
+	maxOutput: Type.Optional(MaxOutputOverride),
 	agentScope: Type.Optional(Type.String({ description: "Agent discovery scope: 'user', 'project', or 'both' (default: 'both'; project wins on name collisions)" })),
 	cwd: Type.Optional(Type.String()),
 	artifacts: Type.Optional(Type.Boolean({ description: "Write debug artifacts (default: true)" })),

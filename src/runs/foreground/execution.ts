@@ -21,11 +21,11 @@ import {
 	type RunSyncOptions,
 	type SingleResult,
 	type Usage,
-	DEFAULT_MAX_OUTPUT,
 	INTERCOM_DETACH_REQUEST_EVENT,
 	INTERCOM_DETACH_RESPONSE_EVENT,
 	type AcceptanceLedger,
 	type ResolvedAcceptanceConfig,
+	resolveMaxOutputConfig,
 	truncateOutput,
 	getSubagentDepthEnv,
 } from "../../shared/types.ts";
@@ -1191,10 +1191,15 @@ export async function runSync(
 	if (transcriptWriter) result.transcriptPath = artifactPathsResult?.transcriptPath;
 	if (transcriptWriter?.getError()) result.transcriptError = transcriptWriter.getError();
 
+	const outputArtifactPath = artifactPathsResult
+		&& options.artifactConfig?.enabled !== false
+		&& options.artifactConfig?.includeOutput !== false
+		? artifactPathsResult.outputPath
+		: undefined;
 	if (artifactPathsResult && options.artifactConfig?.enabled !== false) {
 		result.artifactPaths = artifactPathsResult;
-		if (options.artifactConfig?.includeOutput !== false) {
-			writeArtifact(artifactPathsResult.outputPath, artifactOutputByResult.get(result) ?? result.finalOutput ?? "");
+		if (outputArtifactPath) {
+			writeArtifact(outputArtifactPath, artifactOutputByResult.get(result) ?? result.finalOutput ?? "");
 		}
 		if (options.artifactConfig?.includeMetadata !== false) {
 			writeMetadata(artifactPathsResult.metadataPath, {
@@ -1216,17 +1221,14 @@ export async function runSync(
 				timestamp: Date.now(),
 			});
 		}
-
-		if (options.maxOutput) {
-			const config = { ...DEFAULT_MAX_OUTPUT, ...options.maxOutput };
-			const truncationResult = truncateOutput(result.finalOutput ?? "", config, artifactPathsResult.outputPath);
-			if (truncationResult.truncated) result.truncation = truncationResult;
-		}
-	} else if (options.maxOutput) {
-		const config = { ...DEFAULT_MAX_OUTPUT, ...options.maxOutput };
-		const truncationResult = truncateOutput(result.finalOutput ?? "", config);
-		if (truncationResult.truncated) result.truncation = truncationResult;
 	}
+
+	const truncationResult = truncateOutput(
+		result.finalOutput ?? "",
+		resolveMaxOutputConfig(options.maxOutput),
+		outputArtifactPath,
+	);
+	if (truncationResult.truncated) result.truncation = truncationResult;
 
 	if (options.sessionFile && (existsSync(options.sessionFile) || result.messages?.length)) {
 		result.sessionFile = options.sessionFile;

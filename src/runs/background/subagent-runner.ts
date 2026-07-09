@@ -28,9 +28,9 @@ import {
 	type TurnBudgetState,
 	type Usage,
 	type WorkflowGraphSnapshot,
-	DEFAULT_MAX_OUTPUT,
 	type MaxOutputConfig,
 	SUBAGENT_LIFECYCLE_ARTIFACT_VERSION,
+	resolveMaxOutputConfig,
 	truncateOutput,
 	getSubagentDepthEnv,
 } from "../../shared/types.ts";
@@ -2975,14 +2975,11 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 	let summary = results.map((r) => `${r.agent}:\n${r.output}`).join("\n\n");
 	let truncated = false;
 
-	if (maxOutput) {
-		const config = { ...DEFAULT_MAX_OUTPUT, ...maxOutput };
-		const lastArtifactPath = results[results.length - 1]?.artifactPaths?.outputPath;
-		const truncResult = truncateOutput(summary, config, lastArtifactPath);
-		if (truncResult.truncated) {
-			summary = truncResult.text;
-			truncated = true;
-		}
+	const lastArtifactPath = results[results.length - 1]?.artifactPaths?.outputPath;
+	const truncResult = truncateOutput(summary, resolveMaxOutputConfig(maxOutput), lastArtifactPath);
+	if (truncResult.truncated) {
+		summary = truncResult.text;
+		truncated = true;
 	}
 
 	const resultMode = config.resultMode ?? statusPayload.mode;

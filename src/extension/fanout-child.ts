@@ -88,13 +88,14 @@ function startNestedControlInboxListener(pi: ExtensionAPI, state: SubagentState)
 								} else {
 									const index = control.currentIndex ?? 0;
 									const target = resolveSubagentIntercomTarget(request.targetRunId, control.currentAgent, index);
-									ok = await deliverSubagentIntercomMessageEvent(
+									const deliveryState = await deliverSubagentIntercomMessageEvent(
 										pi.events,
 										target,
 										`Follow-up for nested run ${request.targetRunId} (${control.currentAgent}):\n\n${request.message.trim()}`,
 										500,
 										{ source: "nested-resume", runId: request.targetRunId, agent: control.currentAgent, index },
 									);
+									ok = deliveryState === "delivered";
 									message = ok
 										? `Delivered follow-up to live nested run ${request.targetRunId}.`
 										: `Nested child intercom target is not registered: ${target}`;

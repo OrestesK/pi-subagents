@@ -25,6 +25,7 @@ import {
 	events,
 	tryImport,
 } from "../support/helpers.ts";
+import { MODEL_VISIBLE_COMPLETION_BUDGET } from "../../src/shared/completion-output.ts";
 import { INTERCOM_DETACH_REQUEST_EVENT, INTERCOM_DETACH_RESPONSE_EVENT } from "../../src/shared/types.ts";
 import {
 	SUBAGENT_FANOUT_CHILD_ENV,
@@ -251,6 +252,55 @@ describe("single sync execution", { skip: !available ? "pi packages not availabl
 
 		const output = getFinalOutput(result.messages);
 		assert.equal(output, "Hello from mock agent");
+	});
+
+	it("bounds foreground single output while preserving the full output artifact", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
+		const fullOutput = `HEAD-SINGLE\n${"single output line\n".repeat(15_000)}TAIL-SINGLE`;
+		mockPi.onCall({ output: fullOutput });
+		const executor = makeExecutor([makeAgent("echo")]);
+
+		const result = await executor.execute(
+			"bounded-single",
+			{ agent: "echo", task: "large output" },
+			new AbortController().signal,
+			undefined,
+			makeMinimalCtx(tempDir),
+		);
+
+		const content = result.content[0]?.text ?? "";
+		assert.ok(Buffer.byteLength(content, "utf8") <= MODEL_VISIBLE_COMPLETION_BUDGET.bytes);
+		assert.ok(content.split("\n").length <= MODEL_VISIBLE_COMPLETION_BUDGET.lines);
+		assert.match(content, /HEAD-SINGLE/);
+		assert.match(content, /TAIL-SINGLE/);
+		const details = result.details as { results?: Array<{ artifactPaths?: { outputPath?: string } }> } | undefined;
+		const outputPath = details?.results?.[0]?.artifactPaths?.outputPath;
+		assert.ok(outputPath && fs.existsSync(outputPath));
+		assert.equal(fs.readFileSync(outputPath, "utf8"), fullOutput);
+	});
+
+	it("bounds aggregate foreground parallel output", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
+		mockPi.onCall({ output: `HEAD-ALPHA\n${"alpha line\n".repeat(4_000)}TAIL-ALPHA` });
+		mockPi.onCall({ output: `HEAD-BETA\n${"beta line\n".repeat(4_000)}TAIL-BETA` });
+		const executor = makeExecutor([makeAgent("alpha"), makeAgent("beta")]);
+
+		const result = await executor.execute(
+			"bounded-parallel",
+			{
+				tasks: [
+					{ agent: "alpha", task: "alpha output" },
+					{ agent: "beta", task: "beta output" },
+				],
+			},
+			new AbortController().signal,
+			undefined,
+			makeMinimalCtx(tempDir),
+		);
+
+		const content = result.content[0]?.text ?? "";
+		assert.ok(Buffer.byteLength(content, "utf8") <= MODEL_VISIBLE_COMPLETION_BUDGET.bytes);
+		assert.ok(content.split("\n").length <= MODEL_VISIBLE_COMPLETION_BUDGET.lines);
+		assert.match(content, /HEAD-(?:ALPHA|BETA)/);
+		assert.match(content, /TAIL-(?:ALPHA|BETA)/);
 	});
 
 	it("treats action='single' with execution fields as single execution", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {

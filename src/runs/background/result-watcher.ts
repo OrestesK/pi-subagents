@@ -6,6 +6,7 @@ import {
 	SUBAGENT_ASYNC_COMPLETE_EVENT,
 	type IntercomEventBus,
 	type NestedRunSummary,
+	type SubagentResultDeliveryState,
 	type SubagentResultIntercomChild,
 	type SubagentState,
 } from "../../shared/types.ts";
@@ -154,6 +155,7 @@ export function createResultWatcher(
 					? `${result.error}${hasRealOutput ? `\n\nOutput:\n${baseOutput}` : ""}`
 					: output;
 				const sessionPath = result.sessionFile ?? (resultChildren.length === 1 ? data.sessionFile : undefined);
+				const artifactPath = result.artifactPaths?.outputPath;
 				const childNestedChildren = sanitizeNestedResultChildren(result.children, resultPath, `results[${index}].children`);
 				return {
 					agent: result.agent ?? data.agent ?? `step-${index + 1}`,
@@ -163,13 +165,14 @@ export function createResultWatcher(
 					}),
 					summary,
 					index,
-					artifactPath: result.artifactPaths?.outputPath,
+					...(typeof artifactPath === "string" && fsApi.existsSync(artifactPath) ? { artifactPath } : {}),
 					...(typeof sessionPath === "string" && fsApi.existsSync(sessionPath) ? { sessionPath } : {}),
 					...(result.intercomTarget ? { intercomTarget: result.intercomTarget } : {}),
 					...(childNestedChildren ? { children: childNestedChildren } : {}),
 				};
 			}), nestedChildren);
 
+			let deliveryState: SubagentResultDeliveryState = "not_requested";
 			const intercomTarget = data.intercomTarget?.trim();
 			if (intercomTarget) {
 				const mode = data.mode === "single" || data.mode === "parallel" || data.mode === "chain"
@@ -184,8 +187,8 @@ export function createResultWatcher(
 					asyncId: data.id,
 					asyncDir: data.asyncDir,
 				});
-				const delivered = await deliverSubagentResultIntercomEvent(pi.events, payload);
-				if (!delivered) {
+				deliveryState = await deliverSubagentResultIntercomEvent(pi.events, payload);
+				if (deliveryState !== "delivered") {
 					console.error(`Subagent async grouped result intercom delivery was not acknowledged for '${resultPath}'.`);
 				}
 			}
@@ -193,6 +196,7 @@ export function createResultWatcher(
 			pi.events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, {
 				...data,
 				runId,
+				deliveryState,
 				...(nestedChildren?.length ? { nestedChildren } : {}),
 				...(Array.isArray(data.results) ? {
 					results: hasResultChildren

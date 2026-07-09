@@ -40,7 +40,7 @@ interface AsyncResultPayload {
 	wrapUpRequested?: boolean;
 	totalTokens?: { input: number; output: number; total: number };
 	totalCost?: { inputTokens: number; outputTokens: number; costUsd: number };
-	results: Array<{ output?: string; success?: boolean; error?: string; timedOut?: boolean; turnBudget?: { maxTurns: number; graceTurns: number; outcome: string; turnCount: number; wrapUpRequestedAtTurn?: number; exceededAtTurn?: number }; turnBudgetExceeded?: boolean; wrapUpRequested?: boolean; model?: string; attemptedModels?: string[]; modelAttempts?: Array<{ success?: boolean; error?: string }>; totalCost?: { inputTokens: number; outputTokens: number; costUsd: number }; structuredOutput?: unknown; intercomTarget?: string; acceptance?: { status?: string; childReport?: unknown; reviewResult?: { status?: string } } }>;
+	results: Array<{ output?: string; success?: boolean; error?: string; timedOut?: boolean; turnBudget?: { maxTurns: number; graceTurns: number; outcome: string; turnCount: number; wrapUpRequestedAtTurn?: number; exceededAtTurn?: number }; turnBudgetExceeded?: boolean; wrapUpRequested?: boolean; model?: string; attemptedModels?: string[]; modelAttempts?: Array<{ success?: boolean; error?: string }>; totalCost?: { inputTokens: number; outputTokens: number; costUsd: number }; structuredOutput?: unknown; intercomTarget?: string; artifactPaths?: { outputPath?: string }; acceptance?: { status?: string; childReport?: unknown; reviewResult?: { status?: string } } }>;
 	outputs?: Record<string, { text?: string; structured?: unknown }>;
 	workflowGraph?: { nodes?: Array<{ kind?: string; label?: string; phase?: string; flatIndex?: number; status?: string; error?: string; outputName?: string; structured?: boolean; children?: Array<{ label?: string; outputName?: string; itemKey?: string; status?: string; error?: string }> }> };
 }
@@ -1754,6 +1754,40 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		assert.match(payload.results[0]?.output ?? "", /Output saved to:/);
 		assert.doesNotMatch(payload.results[0]?.output ?? "", /async full output/);
 		assert.equal(fs.readFileSync(outputPath, "utf-8"), "async full output\nwith details");
+	});
+
+	it("applies the default async summary limit while preserving full result and artifact output", { skip: !isAsyncAvailable() ? "jiti not available" : undefined }, async () => {
+		const fullOutput = `HEAD-ASYNC\n${"async output line\n".repeat(15_000)}TAIL-ASYNC`;
+		mockPi.onCall({ output: fullOutput });
+		const id = `async-default-output-limit-${Date.now().toString(36)}`;
+		const artifactsDir = path.join(tempDir, "artifacts");
+		const run = executeAsyncSingle(id, {
+			agent: "worker",
+			task: "Produce large output",
+			agentConfig: makeAgent("worker"),
+			ctx: { pi: { events: { emit() {} } }, cwd: tempDir, currentSessionId: "session-1" },
+			artifactsDir,
+			artifactConfig: {
+				enabled: true,
+				includeInput: false,
+				includeOutput: true,
+				includeJsonl: false,
+				includeTranscript: false,
+				includeMetadata: false,
+				cleanupDays: 7,
+			},
+			shareEnabled: false,
+			maxSubagentDepth: 2,
+		});
+
+		const payload = JSON.parse(fs.readFileSync(await waitForAsyncResultFile(run.details.asyncId!), "utf-8")) as AsyncResultPayload;
+		assert.ok(Buffer.byteLength(payload.summary ?? "", "utf8") <= 200 * 1024);
+		assert.ok((payload.summary ?? "").split("\n").length <= 5_000);
+		assert.match(payload.summary ?? "", /TRUNCATED/);
+		assert.equal(payload.results[0]?.output, fullOutput);
+		const artifactPath = payload.results[0]?.artifactPaths?.outputPath;
+		assert.ok(artifactPath && fs.existsSync(artifactPath));
+		assert.equal(fs.readFileSync(artifactPath, "utf8"), fullOutput);
 	});
 
 	it("background single runs route relative outputs to outputBaseDir", { skip: !isAsyncAvailable() ? "jiti not available" : undefined }, async () => {

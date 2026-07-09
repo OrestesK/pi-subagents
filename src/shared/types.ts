@@ -9,6 +9,13 @@ import type { FSWatcher } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "../agents/agents.ts";
 import type { ModelScopeConfig } from "../runs/shared/model-scope.ts";
+import {
+	MODEL_VISIBLE_COMPLETION_BUDGET,
+	boundCompletionOutput,
+	completionItemBudget,
+} from "./completion-output.ts";
+
+export { MODEL_VISIBLE_COMPLETION_BUDGET, boundCompletionOutput, completionItemBudget };
 
 // ============================================================================
 // Basic Types
@@ -211,6 +218,7 @@ export interface ControlEvent {
 }
 
 export type SubagentResultStatus = "completed" | "failed" | "paused" | "detached";
+export type SubagentResultDeliveryState = "delivered" | "failed" | "timed_out" | "not_requested";
 export type SubagentRunMode = "single" | "parallel" | "chain";
 export const SUBAGENT_LIFECYCLE_ARTIFACT_VERSION = 1;
 export type SubagentLifecycleArtifactVersion = typeof SUBAGENT_LIFECYCLE_ARTIFACT_VERSION;
@@ -264,6 +272,7 @@ export interface SubagentResultIntercomPayload {
 	index?: number;
 	artifactPath?: string;
 	sessionPath?: string;
+	truncated?: boolean;
 }
 
 // ============================================================================
@@ -1229,10 +1238,8 @@ export function resolveMaxSubagentSpawnsPerSession(configMaxSpawns?: number): nu
 // Utility Functions
 // ============================================================================
 
-function formatBytes(bytes: number): string {
-	if (bytes < 1024) return `${bytes}B`;
-	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-	return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+export function resolveMaxOutputConfig(config?: MaxOutputConfig): Required<MaxOutputConfig> {
+	return { ...DEFAULT_MAX_OUTPUT, ...config };
 }
 
 export function truncateOutput(
@@ -1240,41 +1247,16 @@ export function truncateOutput(
 	config: Required<MaxOutputConfig>,
 	artifactPath?: string,
 ): TruncationResult {
-	const lines = output.split("\n");
-	const bytes = Buffer.byteLength(output, "utf-8");
-
-	if (bytes <= config.bytes && lines.length <= config.lines) {
-		return { text: output, truncated: false };
-	}
-
-	let truncatedLines = lines;
-	if (lines.length > config.lines) {
-		truncatedLines = lines.slice(0, config.lines);
-	}
-
-	let result = truncatedLines.join("\n");
-	if (Buffer.byteLength(result, "utf-8") > config.bytes) {
-		let low = 0;
-		let high = result.length;
-		while (low < high) {
-			const mid = Math.floor((low + high + 1) / 2);
-			if (Buffer.byteLength(result.slice(0, mid), "utf-8") <= config.bytes) {
-				low = mid;
-			} else {
-				high = mid - 1;
-			}
-		}
-		result = result.slice(0, low);
-	}
-
-	const keptLines = result.split("\n").length;
-	const marker = `[TRUNCATED: showing first ${keptLines} of ${lines.length} lines, ${formatBytes(Buffer.byteLength(result))} of ${formatBytes(bytes)}${artifactPath ? ` - full output at ${artifactPath}` : ""}]\n`;
-
+	const bounded = boundCompletionOutput(
+		output,
+		config,
+		artifactPath ? `Full output: ${artifactPath}` : undefined,
+	);
+	if (!bounded.truncated) return bounded;
 	return {
-		text: marker + result,
-		truncated: true,
-		originalBytes: bytes,
-		originalLines: lines.length,
+		...bounded,
+		originalBytes: Buffer.byteLength(output, "utf-8"),
+		originalLines: output.split("\n").length,
 		artifactPath,
 	};
 }

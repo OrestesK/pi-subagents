@@ -1,11 +1,17 @@
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import {
+	MODEL_VISIBLE_COMPLETION_BUDGET,
+	boundCompletionOutput,
+	completionItemBudget,
+} from "../shared/completion-output.ts";
+import {
 	type Details,
 	type IntercomEventBus,
 	type NestedRunSummary,
 	type PublicNestedRunSummary,
 	type SingleResult,
+	type SubagentResultDeliveryState,
 	type SubagentResultIntercomChild,
 	type SubagentResultIntercomPayload,
 	type SubagentResultStatus,
@@ -13,6 +19,8 @@ import {
 	SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT,
 	SUBAGENT_RESULT_INTERCOM_EVENT,
 } from "../shared/types.ts";
+
+const NESTED_ERROR_BUDGET = { bytes: 2_048, lines: 20 } as const;
 
 export function resolveSubagentResultStatus(input: {
 	exitCode?: number;
@@ -62,6 +70,11 @@ function resolveGroupedStatus(children: SubagentResultIntercomChild[]): Subagent
 	return "failed";
 }
 
+function compactNestedErrorField(error: string | undefined): { error?: string } {
+	if (!error) return {};
+	return { error: boundCompletionOutput(error, NESTED_ERROR_BUDGET).text };
+}
+
 function compactNestedRun(run: NestedRunSummary | PublicNestedRunSummary, depth = 0): PublicNestedRunSummary {
 	return {
 		id: run.id,
@@ -99,7 +112,7 @@ function compactNestedRun(run: NestedRunSummary | PublicNestedRunSummary, depth 
 		...(run.startedAt !== undefined ? { startedAt: run.startedAt } : {}),
 		...(run.endedAt !== undefined ? { endedAt: run.endedAt } : {}),
 		...(run.lastUpdate !== undefined ? { lastUpdate: run.lastUpdate } : {}),
-		...(run.error ? { error: run.error } : {}),
+		...compactNestedErrorField(run.error),
 		...(run.steps?.length ? { steps: run.steps.slice(0, 12).map((step) => ({
 			agent: step.agent,
 			status: step.status,
@@ -113,7 +126,7 @@ function compactNestedRun(run: NestedRunSummary | PublicNestedRunSummary, depth 
 			...(step.toolCount !== undefined ? { toolCount: step.toolCount } : {}),
 			...(step.startedAt !== undefined ? { startedAt: step.startedAt } : {}),
 			...(step.endedAt !== undefined ? { endedAt: step.endedAt } : {}),
-			...(step.error ? { error: step.error } : {}),
+			...compactNestedErrorField(step.error),
 			...(depth < 2 && step.children?.length ? { children: step.children.slice(0, 8).map((child) => compactNestedRun(child, depth + 1)) } : {}),
 		})) } : {}),
 		...(depth < 2 && run.children?.length ? { children: run.children.slice(0, 8).map((child) => compactNestedRun(child, depth + 1)) } : {}),
@@ -243,11 +256,23 @@ function formatSubagentResultIntercomMessage(input: {
 }
 
 export function buildSubagentResultIntercomPayload(input: GroupedResultIntercomMessageInput): SubagentResultIntercomPayload {
-	const children = input.children.map((child) => ({
-		...child,
-		summary: child.summary.trim() || "(no output)",
-		children: compactNestedResultChildren(child.children),
-	}));
+	const itemBudget = completionItemBudget(input.children.length);
+	let truncated = false;
+	const children = input.children.map((child, index) => {
+		const summary = child.summary.trim() || "(no output)";
+		const recoveryHint = child.artifactPath
+			? `Full output: ${child.artifactPath}`
+			: child.sessionPath
+				? `Session: ${child.sessionPath}`
+				: `Inspect: subagent({ action: "status", id: "${input.runId}", index: ${child.index ?? index} })`;
+		const boundedSummary = boundCompletionOutput(summary, itemBudget, recoveryHint);
+		truncated ||= boundedSummary.truncated;
+		return {
+			...child,
+			summary: boundedSummary.text,
+			children: compactNestedResultChildren(child.children),
+		};
+	});
 	const status = resolveGroupedStatus(children);
 	const summary = formatStatusCounts(countStatuses(children));
 	const firstChild = children[0];
@@ -268,7 +293,13 @@ export function buildSubagentResultIntercomPayload(input: GroupedResultIntercomM
 		...(firstChild?.sessionPath ? { sessionPath: firstChild.sessionPath } : {}),
 		message: "",
 	};
-	payload.message = formatSubagentResultIntercomMessage(payload);
+	const boundedMessage = boundCompletionOutput(
+		formatSubagentResultIntercomMessage(payload),
+		MODEL_VISIBLE_COMPLETION_BUDGET,
+		`Inspect: subagent({ action: "status", id: "${input.runId}" })`,
+	);
+	payload.message = boundedMessage.text;
+	payload.truncated = truncated || boundedMessage.truncated;
 	return payload;
 }
 
@@ -276,7 +307,7 @@ export async function deliverSubagentResultIntercomEvent(
 	events: IntercomEventBus,
 	payload: SubagentResultIntercomPayload,
 	timeoutMs = 500,
-): Promise<boolean> {
+): Promise<SubagentResultDeliveryState> {
 	return deliverSubagentIntercomMessageEvent(events, payload.to, payload.message, timeoutMs, payload as unknown as Record<string, unknown>);
 }
 
@@ -286,31 +317,35 @@ export async function deliverSubagentIntercomMessageEvent(
 	message: string,
 	timeoutMs = 500,
 	extra: Record<string, unknown> = {},
-): Promise<boolean> {
-	if (typeof events.on !== "function" || typeof events.emit !== "function") return false;
+): Promise<SubagentResultDeliveryState> {
+	if (typeof events.on !== "function" || typeof events.emit !== "function") return "not_requested";
 	const requestId = typeof extra.requestId === "string" ? extra.requestId : randomUUID();
 	return new Promise((resolve) => {
 		let settled = false;
 		let unsubscribe: (() => void) | undefined;
 		let timer: ReturnType<typeof setTimeout> | undefined;
-		const finish = (delivered: boolean) => {
+		const finish = (state: SubagentResultDeliveryState) => {
 			if (settled) return;
 			settled = true;
 			if (timer) clearTimeout(timer);
-			unsubscribe?.();
-			resolve(delivered);
+			try {
+				unsubscribe?.();
+			} catch {
+				// Delivery outcome is already known; stale listener cleanup is best effort.
+			}
+			resolve(state);
 		};
-		unsubscribe = events.on(SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT, (data) => {
-			if (!data || typeof data !== "object") return;
-			const delivery = data as { requestId?: unknown; delivered?: unknown };
-			if (delivery.requestId !== requestId) return;
-			finish(delivery.delivered === true);
-		});
-		timer = setTimeout(() => finish(false), timeoutMs);
 		try {
+			unsubscribe = events.on(SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT, (data) => {
+				if (!data || typeof data !== "object") return;
+				const delivery = data as { requestId?: unknown; delivered?: unknown };
+				if (delivery.requestId !== requestId) return;
+				finish(delivery.delivered === true ? "delivered" : "failed");
+			});
+			timer = setTimeout(() => finish("timed_out"), timeoutMs);
 			events.emit(SUBAGENT_RESULT_INTERCOM_EVENT, { ...extra, to, message, requestId });
 		} catch {
-			finish(false);
+			finish("failed");
 		}
 	});
 }
@@ -372,6 +407,8 @@ export function formatSubagentResultReceipt(input: {
 		}
 	}
 
-	lines.push("Full grouped output was sent over intercom.");
+	lines.push(input.payload.truncated
+		? "Bounded grouped output excerpts were sent over intercom; use run status or any listed artifacts and sessions for full output."
+		: "Full grouped output was sent over intercom.");
 	return lines.join("\n");
 }

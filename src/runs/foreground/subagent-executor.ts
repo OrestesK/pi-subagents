@@ -5,6 +5,7 @@ import type { AgentToolResult as CoreAgentToolResult } from "@earendil-works/pi-
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type AgentConfig, type AgentScope } from "../../agents/agents.ts";
 import { getArtifactsDir, getProjectChainRunsDir } from "../../shared/artifacts.ts";
+import { MODEL_VISIBLE_COMPLETION_BUDGET, boundCompletionOutput } from "../../shared/completion-output.ts";
 import { ChainClarifyComponent, type ChainClarifyResult } from "./chain-clarify.ts";
 import { toModelInfo, type ModelInfo } from "../../shared/model-info.ts";
 import { executeChain } from "./chain-execution.ts";
@@ -1040,14 +1041,14 @@ async function resumeAsyncRun(input: {
 				details: { mode: "management", results: [] },
 			};
 		}
-		const delivered = await deliverSubagentIntercomMessageEvent(
+		const deliveryState = await deliverSubagentIntercomMessageEvent(
 			input.deps.pi.events,
 			target.intercomTarget,
 			`Follow-up for async run ${target.runId} (${target.agent}):\n\n${followUp}`,
 			500,
 			{ source: "async-resume", runId: target.runId, agent: target.agent, index: target.index },
 		);
-		if (delivered) {
+		if (deliveryState === "delivered") {
 			return {
 				content: [{ type: "text", text: [`Interrupted live async child, then delivered follow-up.`, `Run: ${target.runId}`, `Intercom target: ${target.intercomTarget}`].join("\n") }],
 				details: { mode: "management", results: [] },
@@ -1267,7 +1268,9 @@ async function emitForegroundResultIntercom(input: {
 		}),
 		summary: resultSummaryForIntercom(result),
 		index,
-		artifactPath: result.artifactPaths?.outputPath,
+		artifactPath: result.artifactPaths?.outputPath && fs.existsSync(result.artifactPaths.outputPath)
+			? result.artifactPaths.outputPath
+			: undefined,
 		sessionPath: result.sessionFile,
 		intercomTarget: resolveSubagentIntercomTarget(input.runId, result.agent, index),
 	}]);
@@ -1281,7 +1284,7 @@ async function emitForegroundResultIntercom(input: {
 		...(typeof input.chainSteps === "number" ? { chainSteps: input.chainSteps } : {}),
 	});
 	const delivered = await deliverSubagentResultIntercomEvent(input.pi.events, payload);
-	if (!delivered) return null;
+	if (delivered !== "delivered") return null;
 	return payload;
 }
 
@@ -2755,9 +2758,14 @@ async function runParallelPath(data: ExecutionContextData, deps: ExecutorDeps): 
 		const fullContent = worktreeSuffix
 			? `${summary}\n\n${aggregatedOutput}\n\n${worktreeSuffix}`
 			: `${summary}\n\n${aggregatedOutput}`;
+		const boundedContent = boundCompletionOutput(
+			fullContent,
+			MODEL_VISIBLE_COMPLETION_BUDGET,
+			`Inspect: subagent({ action: "status", id: "${runId}" })`,
+		);
 
 		return {
-			content: [{ type: "text", text: fullContent }],
+			content: [{ type: "text", text: boundedContent.text }],
 			details,
 		};
 	} finally {
@@ -3079,14 +3087,30 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 		};
 	}
 
-	if (r.exitCode !== 0)
+	const recoveryOutputPath = finalizedOutput.savedPath
+		?? (r.artifactPaths?.outputPath && fs.existsSync(r.artifactPaths.outputPath) ? r.artifactPaths.outputPath : undefined);
+	const recoveryHint = recoveryOutputPath
+		? `Full output: ${recoveryOutputPath}`
+		: `Inspect: subagent({ action: "status", id: "${runId}" })`;
+	if (r.exitCode !== 0) {
+		const failedContent = boundCompletionOutput(
+			formatFailedSingleRunOutput(r, finalizedOutput.displayOutput),
+			MODEL_VISIBLE_COMPLETION_BUDGET,
+			recoveryHint,
+		);
 		return {
-			content: [{ type: "text", text: formatFailedSingleRunOutput(r, finalizedOutput.displayOutput) }],
+			content: [{ type: "text", text: failedContent.text }],
 			details,
 			isError: true,
 		};
+	}
+	const completedContent = boundCompletionOutput(
+		finalizedOutput.displayOutput || "(no output)",
+		MODEL_VISIBLE_COMPLETION_BUDGET,
+		recoveryHint,
+	);
 	return {
-		content: [{ type: "text", text: finalizedOutput.displayOutput || "(no output)" }],
+		content: [{ type: "text", text: completedContent.text }],
 		details,
 	};
 }
