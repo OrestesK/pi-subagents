@@ -3,7 +3,7 @@ name: pi-subagents
 description: |
   Delegate work to builtin or custom subagents with single-agent, chain,
   parallel, async, forked-context, and intercom-coordinated workflows. Use
-  for advisory review, implementation handoffs, and multi-step tasks where a
+  for advisory review, implementation context, exceptional parallel write handoffs, and multi-step tasks where a
   single agent should stay in control while other agents contribute context,
   planning, or execution. Also use when ordinary user language implies a
   workflow such as review this, quality gate, fix-review-fix, argue both
@@ -13,15 +13,25 @@ description: |
 
 # Pi Subagents
 
-This skill is for the main parent orchestrator only. Do not inject or follow it inside spawned child subagents. The parent session owns delegation, orchestration, review fanout, and final fix-worker launches; child subagents should receive concrete role-specific tasks. Ordinary children should not run their own subagent workflows; the explicit exception is a delegated fanout child whose resolved builtin `tools` includes `subagent`, and that child may use `subagent` only for the fanout work the parent assigned.
+This skill is for the main parent orchestrator only. Do not inject or follow it inside spawned child subagents. The parent session owns delegation, orchestration, review fanout, implementation, fixes, integration, and final verification; child subagents should receive concrete role-specific tasks. Ordinary children should not run their own subagent workflows; the explicit exception is a delegated fanout child whose resolved builtin `tools` includes `subagent`, and that child may use `subagent` only for the fanout work the parent assigned.
 
 Use this skill when the parent orchestrator needs to launch a specialized subagent, compose multiple agents into a workflow, or create/edit agents and chains on demand.
+
+## Parent-owned write policy
+
+The parent normally owns implementation and fixes. Use read-only subagents by default for broad reconnaissance, research, planning advice, review, and validation. The parent directly reads the precise files and symbols it edits and every delegated diff.
+
+Use a write-capable child only when at least two independent implementation areas can proceed concurrently in the shared checkout. The parent must own at least one area, and every writer must receive an exclusive, non-overlapping file list. Every write-child dispatch must name the exact files and symbols, required behavior, non-goals, validation commands and evidence, and prohibited product/API/compatibility/scope decisions. The child must stop before touching an unassigned file.
+
+A write child contacts the parent only for a real blocker, discovered file overlap, or an unapproved product/API/compatibility/scope decision. Do not run repository-wide mutating formatters, code generators, migrations, or equivalent commands while concurrent writes are active. The parent inspects, integrates, and verifies every delegated change.
+
+This policy governs every recipe, workflow, role description, and example below. A single worker is not the normal implementation or fix path.
 
 ## When to Use
 
 - **Complex work orchestration**: use Fable mode as the default parent-agent loop for complex work. Complex means the task has multiple moving parts, unclear acceptance, cross-cutting code, meaningful user-visible impact, expensive or irreversible validation, broad review surface, or the user asks for orchestration. Lightweight one-off delegation can stay lightweight.
 - **Advisory review**: use fresh-context `reviewer` agents for adversarial code review, or fork to `oracle` when inherited decisions and drift matter
-- **Implementation handoff**: have `oracle` advise, then `worker` implement only after an approved direction
+- **Implementation**: have `oracle` advise when needed, then the parent implements after an approved direction; use write children only under the parent-owned write policy
 - **Recon and planning**: use `scout` or `context-builder`, then `planner`
 - **Parallel exploration**: run multiple non-conflicting tasks concurrently
 - **Manual skill specialists**: when the parent identifies specific skill perspectives that would materially improve the work, launch a fresh-context fanout sized to those distinct useful perspectives and pass each skill explicitly
@@ -68,7 +78,7 @@ Packaged prompt shortcuts are also available for repeatable workflows. Treat the
 - `/quality-gate` — review gate over a plan, diff, answer, PR, issue, or target, ending in a parent `PASS` / `FAIL` / `INCONCLUSIVE` verdict
 - `/quick-adversarial-check` — lightweight attack on an assumption, plan, claim, or recommendation
 - `/adversarial-debate` — competing positions, attacks, optional repair, and parent synthesis by rubric
-- `/review-loop` — parent-orchestrated worker, fresh-reviewer, and fix-worker cycles until clean or capped
+- `/review-loop` — parent implementation/fixes, fresh read-only reviewers, and parent verification until clean or capped
 - `/parallel-research` — combine `researcher` and `scout` for external evidence plus local code context
 - `/research-decision` — external evidence, local context, tradeoff critique, and recommendation
 - `/generate-filter` — diverse option generation, dedupe/filter, and top-choice synthesis
@@ -94,13 +104,13 @@ Adapt to the user's actual phrasing, including typos, shorthand, and repetition.
 | “review this”, “check this”, “does this look right?” | `review` skill first; use parallel fresh reviewers by default unless an explicit parent-only reason is stronger |
 | “10 review agents”, “different goals”, “validate what the other agents found” | large review matrix with distinct first-pass roles, validators/reducer when needed, and parent synthesis |
 | “before finalizing”, “is this good enough?”, “quality gate this” | quality-gate pattern ending with parent `PASS` / `FAIL` / `INCONCLUSIVE` |
-| “verify your proposal and do it”, “pressure-test this approach, then start”, “if it survives, implement it” | proposal-verification gate first; attack the parent proposal before implementation scouting, worker handoff, or file hunting |
-| “fix, review, fix, review”, “iterate until clean”, “apply the review feedback” | implementation-authorized review/fix loop; one writer at a time, then fresh reviewers |
+| “verify your proposal and do it”, “pressure-test this approach, then start”, “if it survives, implement it” | proposal-verification gate first; attack the parent proposal before implementation scouting, parent implementation, or file hunting |
+| “fix, review, fix, review”, “iterate until clean”, “apply the review feedback” | parent-owned implementation/fix loop with fresh read-only reviewers; qualifying write children only under the parent-owned write policy |
 | “think about the architecture”, “is this the right approach?”, “argue both sides” | adversarial debate or quick adversarial check depending on scope |
 | “research and decide”, “what should we use?”, “look at docs/source and recommend” | research-decision pattern with researcher + scout + tradeoff reviewer |
 | “give me concrete options”, “generate candidates”, “brainstorm test cases/names after scope is clear” | generate-filter shape; diverse generators must feed a mandatory reviewer/filter fan-in |
 | “learn this codebase”, “build context before planning” | parallel context build |
-| “prepare a handoff”, “study this library/reference and make a worker brief” | parallel handoff plan |
+| “prepare a handoff”, “study this library/reference and make an implementation brief” | parallel handoff plan |
 | “clean this up”, “remove slop”, “make it less verbose” | parallel cleanup; ask before edits unless cleanup/fix was already authorized |
 
 Constraints override recipe enthusiasm:
@@ -143,14 +153,14 @@ Correct first actions:
 
 Incorrect first actions:
 - scouting where to implement the proposal before it has survived review;
-- dispatching a planner/worker handoff before a proposal verdict;
+- starting implementation before a proposal verdict;
 - treating implementation feasibility as a substitute for proposal correctness.
 
 The parent must synthesize `PASS` / `FAIL` / `INCONCLUSIVE` before proceeding. Since implementation depends on that verdict, run the gate foreground or wait-and-inspect its artifacts before making the next claim unless there is genuine independent work to do.
 
 ### Parallel review technique
 
-Use this when the user wants adversarial review of a diff, plan, issue, file, or implemented work. Launch fresh-context `reviewer` agents with distinct angles generated from the actual target. Common angles are correctness/regressions, tests/validation, and simplicity/maintainability; adapt for TypeScript, UI, security, docs, or large structural changes. Reviewers should inspect files and diffs directly, return concise evidence-backed findings with file/line references, and avoid edits unless the user explicitly asks for a writer pass. The parent synthesizes fixes worth doing now, optional improvements, and feedback to ignore/defer before applying anything.
+Use this when the user wants adversarial review of a diff, plan, issue, file, or implemented work. Launch fresh-context, read-only `reviewer` agents with distinct angles generated from the actual target. Common angles are correctness/regressions, tests/validation, and simplicity/maintainability; adapt for TypeScript, UI, security, docs, or large structural changes. Reviewers should inspect files and diffs directly, return concise evidence-backed findings with file/line references, and must not edit project/source files. The parent synthesizes fixes worth doing now, optional improvements, and feedback to ignore/defer before editing.
 
 ### Manual skill-specialist technique
 
@@ -159,7 +169,7 @@ Use this when a specific available skill would materially improve the user's tas
 Default guardrails:
 - Scale fanout to the number of distinct useful skill perspectives; do not impose a fixed small default, and do not duplicate a perspective merely because another child is pending.
 - Prefer `context: "fresh"` and include only the files, diff, plan, URL, or request details each child needs. Use forked context only when private/session history is essential and appropriate to share.
-- Use read-only agents for analysis/review unless implementation was explicitly requested; do not create several writers in the same worktree.
+- Use read-only agents for analysis and review. The parent implements; write children are exceptional and must satisfy the parent-owned write policy.
 - Skip skill-specialist fanout for tiny questions, direct commands, highly private requests, or when the user asks not to delegate.
 - Make cost and concurrency visible by using an ordinary `subagent(...)` call rather than hidden/background automation.
 
@@ -178,11 +188,11 @@ subagent({
 
 ### Review-loop technique
 
-Use this when the user wants implementation or current diff review to continue until reviewers stop finding fixes worth doing now. Keep the loop in the parent session: one async `worker` implements or fixes, fresh-context `reviewer` agents inspect the actual repo and diff, the parent synthesizes accepted fixes, and one async forked `worker` applies them. The parent can express the sequence up front as an async/background chain when the workflow is known, or continue with explicit follow-up subagent runs after each async completion. For an initial chain, pass `async: true` so the main chat is unblocked; do not set `clarify: true` unless the user explicitly wants the foreground clarify UI. Treat an async implementation worker handoff as an intermediate state, not final completion, unless the user explicitly asked for worker-only work, review-only output, or to stop after implementation. Stop when reviewers find no blockers or fixes worth doing now, remaining feedback is optional or deferred, an unapproved product/scope/architecture decision appears, or the max review-round cap is reached. Default to 3 review rounds unless the user sets a different cap. Do not loop for optional polish, and do not let children launch subagents or decide the loop outcome.
+Use this when the user wants implementation or current diff review to continue until reviewers stop finding fixes worth doing now. Keep the loop in the parent session: the parent implements and fixes, fresh-context read-only `reviewer` agents inspect the actual repo and diff, and the parent synthesizes and applies accepted fixes. Use write children only when independent implementation or fix areas satisfy the parent-owned write policy. Stop when reviewers find no blockers or fixes worth doing now, remaining feedback is optional or deferred, an unapproved product/scope/architecture decision appears, or the max review-round cap is reached. Default to 3 review rounds unless the user sets a different cap. Do not loop for optional polish, and do not let children launch subagents or decide the loop outcome.
 
 ### Parallel research technique
 
-Use this when the question needs both external evidence and local implications. Combine `researcher` for official docs, specs, ecosystem behavior, recent changes, benchmarks, and primary sources with `scout` for repository files, patterns, constraints, tests, and likely integration points. Give each child a distinct angle: external evidence, local code context, and practical tradeoffs. Ask for source links or file ranges, confidence level, gaps, and decision implications. Do not ask these children to edit unless implementation was explicitly requested.
+Use this when the question needs both external evidence and local implications. Combine `researcher` for official docs, specs, ecosystem behavior, recent changes, benchmarks, and primary sources with `scout` for repository files, patterns, constraints, tests, and likely integration points. Give each child a distinct angle: external evidence, local code context, and practical tradeoffs. Ask for source links or file ranges, confidence level, gaps, and decision implications. These children are read-only; the parent implements any accepted direction.
 
 ### Parallel context-build technique
 
@@ -205,7 +215,7 @@ subagent({
 
 ### Parallel handoff-plan technique
 
-Use this when the user needs a solution brief or implementation-ready handoff from an external reference plus local code context, such as “study this library behavior, inspect our codebase, then produce a worker prompt.” Run a chain with a first parallel group and a second synthesis `context-builder` step. The first group usually includes `researcher` for external projects/docs/prompt guidance and `context-builder` for local code context; add a second `context-builder` for implementation strategy only when the scope is large enough to benefit. Use distinct output paths under `handoff/`, then have the synthesis `context-builder` read those outputs and write `handoff/final-handoff-plan.md` with the recommended approach, likely files, constraints, non-goals, validation, risks, unresolved questions, and final compact implementation-ready meta-prompt.
+Use this when the user needs a solution brief or implementation-ready handoff from an external reference plus local code context, such as “study this library behavior, inspect our codebase, then produce an implementation packet.” Run a chain with a first parallel group and a second synthesis `context-builder` step. The first group usually includes `researcher` for external projects/docs/prompt guidance and `context-builder` for local code context; add a second `context-builder` for implementation strategy only when the scope is large enough to benefit. Use distinct output paths under `handoff/`, then have the synthesis `context-builder` read those outputs and write `handoff/final-handoff-plan.md` with the recommended approach, likely files, constraints, non-goals, validation, risks, unresolved questions, and final compact implementation-ready meta-prompt.
 
 Example shape:
 
@@ -233,36 +243,32 @@ Use this after implementation when the user wants cleanup review or when a final
 
 ### Staged fix orchestration technique
 
-Use this when a broad diff has known reviewer findings across several items and the user wants the parent to “orchestrate subagents like a boss.” Keep the active worktree safe with a three-stage chain:
+Use this when a broad diff has known reviewer findings across several items and the user wants the parent to orchestrate read-only planning and validation around its own edits. Use three parent-owned phases:
 
-1. A parallel read-only planning fanout, one planner/reviewer per issue cluster. Each child inspects the real diff and returns exact files, line refs, proposed fixes, and focused validation. They must not edit.
-2. One writer worker. It receives the planner summaries through `{previous}`, the parent’s accepted scope, stop rules, and verification contract. It is the only child allowed to edit the active worktree.
-3. A parallel read-only validation fanout. Validators inspect the worker diff from fresh context with distinct angles, report pass/fail, remaining blockers, and missing verification.
+1. Launch a parallel read-only planning fanout, one planner/reviewer per issue cluster. Each child inspects the real diff and returns exact files, line refs, proposed fixes, and focused validation. They must not edit project/source files.
+2. The parent synthesizes the findings and applies accepted fixes. Use write children only when at least two independent fix areas satisfy the parent-owned write policy; the parent must own at least one area.
+3. After all writes finish, launch a parallel fresh-context, read-only validation fanout against the resulting diff.
 
-Prefer `async: true`, `context: "fresh"` for planners/validators, `outputMode: "file-only"` for large summaries, and per-stage output names that will not collide. Add `phase` and `label` to make async status readable, and use `as` plus `{outputs.name}` when a later step needs a specific earlier result instead of the whole `{previous}` blob. Use this pattern instead of launching several writer workers into a dirty worktree. Include non-blocking suggestions in the writer prompt only when they are small, safe, and do not expand product scope; otherwise record them as deferred.
+Do not place ordinary implementation inside a subagent chain because the parent owns the normal write path. Run planning fanout, parent implementation or qualifying concurrent writes, and validation fanout as separate phases. Prefer `async: true`, `context: "fresh"`, and distinct output paths for read-only planners and validators. Include non-blocking suggestions in implementation scope only when they are small, safe, and do not expand approved product scope; otherwise defer them.
 
-When the first step can return a structured target list, prefer dynamic fanout instead of hand-authoring a static parallel group. Use `outputSchema` and `as` on the producer, then an `expand` step with `from: { output, path }`, an explicit `maxItems`, one `parallel` child template, and `collect.as`. Item templates may use `{item}` or a named item such as `{target.path}`. Do not use dynamic fanout for prose outputs, nested fanout, dynamic agent selection, reducers, `when` conditions, or arbitrary expressions; `.chain.md` does not support this syntax, so use direct JSON or a saved `.chain.json`.
+Dynamic fanout may expand structured target lists for read-only planning or validation. Do not use it to create write children unless the resulting targets are independently writable, have exclusive file lists, and each dispatch satisfies the complete write contract.
 
-Example shape:
+Example read-only planning phase:
 
 ```typescript
 subagent({
-  async: true,
+  tasks: [
+    { agent: "reviewer", task: "Plan fixes for deploy docs/workflow. Inspect the current diff and return exact files, line refs, proposed fixes, and validation. Do not modify project/source files.", output: false },
+    { agent: "reviewer", task: "Plan fixes for scheduler behavior. Inspect the current diff and return exact files, line refs, proposed fixes, and validation. Do not modify project/source files.", output: false },
+    { agent: "reviewer", task: "Plan fixes for sandbox/security. Inspect the current diff and return exact files, line refs, proposed fixes, and validation. Do not modify project/source files.", output: false }
+  ],
+  concurrency: 3,
   context: "fresh",
-  chain: [
-    { parallel: [
-      { agent: "reviewer", phase: "Planning", label: "Deploy docs", as: "deployPlan", task: "Plan fixes for deploy docs/workflow. Inspect the current diff. Do not modify project/source files; returning findings via the configured output artifact is allowed.", output: "plans/deploy.md", outputMode: "file-only" },
-      { agent: "reviewer", phase: "Planning", label: "Scheduler contract", as: "schedulerPlan", task: "Plan fixes for scheduler contract. Inspect the current diff. Do not modify project/source files; returning findings via the configured output artifact is allowed.", output: "plans/scheduler.md", outputMode: "file-only" },
-      { agent: "reviewer", phase: "Planning", label: "Sandbox/security", as: "sandboxPlan", task: "Plan fixes for sandbox/security. Inspect the current diff. Do not modify project/source files; returning findings via the configured output artifact is allowed.", output: "plans/sandbox.md", outputMode: "file-only" }
-    ], concurrency: 3 },
-    { agent: "worker", phase: "Implementation", label: "Apply accepted fixes", as: "workerResult", task: "Apply only the accepted fixes from these planning summaries. You are the sole writer for the active worktree. Run focused validation and report changed files, commands, failures, and remaining issues.\n\nDeploy plan:\n{outputs.deployPlan}\n\nScheduler plan:\n{outputs.schedulerPlan}\n\nSandbox plan:\n{outputs.sandboxPlan}", output: "worker/fixes.md", outputMode: "file-only", progress: true },
-    { parallel: [
-      { agent: "reviewer", phase: "Validation", label: "Deploy/scheduler validation", task: "Validate the post-worker diff for deploy and scheduler fixes. Start from the worker result: {outputs.workerResult}. Do not modify project/source files; returning findings via the configured output artifact is allowed.", output: "validation/deploy-scheduler.md", outputMode: "file-only" },
-      { agent: "reviewer", phase: "Validation", label: "Sandbox validation", task: "Validate the post-worker diff for sandbox/security fixes. Start from the worker result: {outputs.workerResult}. Do not modify project/source files; returning findings via the configured output artifact is allowed.", output: "validation/sandbox.md", outputMode: "file-only" }
-    ], concurrency: 2 }
-  ]
+  async: true
 })
 ```
+
+The parent then synthesizes and edits. After writes finish, launch a separate read-only validator fanout against the resulting diff.
 
 ## Builtin Agents
 
@@ -273,8 +279,8 @@ and user/project agents override builtins with the same name.
 |-------|---------|-------|------------------------|
 | `scout` | Fast codebase recon | inherits default | Writes `context.md` handoff material |
 | `planner` | Creates implementation plans | inherits default | Writes `plan.md` |
-| `worker` | Implementation and approved oracle handoffs | inherits default | Single-writer implementation with decision escalation |
-| `reviewer` | Review-and-fix specialist | inherits default | Can edit/fix reviewed code |
+| `worker` | Exceptional concurrent implementation area | inherits default | Exact edit packet, exclusive file list, decision escalation, and parent integration |
+| `reviewer` | Read-only review specialist | inherits default | Evidence-backed findings; the parent applies accepted fixes |
 | `context-builder` | Requirements/codebase handoff builder | inherits default | Writes structured context files |
 | `researcher` | Web research brief generator | inherits default | Writes `research.md` |
 | `delegate` | Lightweight generic delegate | inherits default | No fixed output; generic delegated work |
@@ -302,14 +308,14 @@ A strong subagent prompt usually includes:
 - **Goal**: the concrete outcome the child should produce.
 - **Context/evidence**: relevant plan paths, files, diffs, decisions, or user constraints already approved.
 - **Success criteria**: what must be true before the child can finish.
-- **Hard constraints**: true invariants only, such as no edits for review-only tasks, one writer thread, child must not run subagents unless it is an explicitly assigned `tools: subagent` fanout child, or escalation for unapproved decisions.
+- **Hard constraints**: true invariants only, such as no project/source edits for read-only tasks, exclusive file ownership for write children, child must not run subagents unless it is an explicitly assigned `tools: subagent` fanout child, or escalation for an unapproved product/API/compatibility/scope decision.
 - **Validation**: targeted checks to run, or the next-best check when validation is impossible.
 - **Output**: the expected summary shape, artifact path, or finding format.
 - **Stop rules**: when to ask the parent through supervisor coordination, when to stop after enough evidence, and when not to keep searching.
 
 Avoid carrying over old prompt habits that over-specify every step. Use `must`, `always`, and `never` for real invariants; for judgment calls, give decision rules. For example, tell a reviewer to inspect the staged diff directly and report only evidence-backed findings, rather than prescribing every file or command. Tell a researcher the retrieval budget: start with broad targeted searches, fetch only the strongest sources, search again only when a required fact is missing, then stop.
 
-For implementation handoffs, name the approved scope and success criteria more clearly than the process. Good prompts say what to change, what not to change, where the evidence lives, how to validate, and when to escalate. They should not ask the child to create another subagent plan or continue the parent conversation.
+For exceptional write-child handoffs, use the complete contract from **Parent-owned write policy**. Good prompts say exactly what files and symbols may change, required behavior, non-goals, where the evidence lives, how to validate, prohibited decisions, and when to stop and escalate. They should not ask the child to create another subagent plan or continue the parent conversation.
 
 Settings locations:
 - User scope: `~/.pi/agent/settings.json`
@@ -418,10 +424,10 @@ Avoid duplicate output paths in parallel tasks. Concurrent children should not w
 subagent({
   chain: [
     { agent: "scout", task: "Map the auth flow and summarize key files" },
-    { agent: "planner", task: "Create an implementation plan from {previous}" },
-    { agent: "worker", task: "Implement the approved plan based on {previous}" }
+    { agent: "planner", task: "Create an implementation plan from {previous}" }
   ]
 })
+// The parent inspects the plan and implements approved changes.
 ```
 
 Chain steps can use templated variables such as `{task}`, `{previous}`,
@@ -434,9 +440,9 @@ call `structured_output` with schema-valid JSON, or the step fails.
 
 ### Async/background
 
-Prefer async mode for every subagent launch. Set `async: true` no matter the task unless there is a specific reason to opt into a foreground/blocking run. This applies to scouts, researchers, workers, reviewers, validators, oracle checks, one-off delegates, chains, and parallel groups. Keep the write path single-threaded even when the run is async.
+Prefer async mode for every subagent launch. Set `async: true` no matter the task unless there is a specific reason to opt into a foreground/blocking run. This applies to scouts, researchers, reviewers, validators, oracle checks, one-off delegates, chains, parallel groups, and qualifying write children.
 
-Async does not mean parallel writes. Do not edit the same active worktree while an async worker is changing it. Parent-side overlap should be reading, validation prep, synthesis, command planning, or review of unaffected context unless the writer is isolated in a separate worktree.
+Async does not authorize ordinary write delegation. The parent is the normal editor. While qualifying write children run, the parent may edit only its own exclusive file list; otherwise parent-side overlap should be reading, validation preparation, synthesis, command planning, or review of unaffected context. Do not run repository-wide mutating commands until all writers finish.
 
 Do not end your turn immediately after launching an async child if you promised to keep working. Continue the local inspection, synthesis, or validation prep, then check the async run when its result is needed.
 
@@ -446,8 +452,8 @@ Use `wait()` only for non-yielding/run-to-completion flows or a named same-contr
 
 ```typescript
 subagent({
-  agent: "worker",
-  task: "Run the full test suite",
+  agent: "delegate",
+  task: "Run the full test suite and report results without modifying project/source files.",
   async: true
 })
 ```
@@ -539,8 +545,8 @@ Per-run control thresholds can be overridden when a task legitimately runs witho
 
 ```typescript
 subagent({
-  agent: "worker",
-  task: "Run the slow migration test suite",
+  agent: "delegate",
+  task: "Run the slow migration test suite and report results without modifying project/source files.",
   control: {
     needsAttentionAfterMs: 300000,
     notifyOn: ["needs_attention"]
@@ -557,8 +563,8 @@ edit parameters before launch:
 
 ```typescript
 subagent({
-  agent: "worker",
-  task: "Implement feature X",
+  agent: "reviewer",
+  task: "Review feature X for correctness without modifying project/source files.",
   clarify: true
 })
 ```
@@ -569,23 +575,7 @@ For programmatic background launches, use `async: true`. `clarify: true` keeps t
 
 ## Worktree Isolation
 
-When multiple agents might write concurrently, use worktrees instead of letting
-them share one filesystem view.
-
-```typescript
-subagent({
-  tasks: [
-    { agent: "worker", task: "Implement feature A" },
-    { agent: "worker", task: "Implement feature B" }
-  ],
-  worktree: true
-})
-```
-
-`worktree: true` gives each parallel task its own git worktree branched from
-HEAD. This requires a clean git state and is mainly for intentionally parallel
-write workflows. If you want one writer thread and several advisory agents,
-prefer a single-writer pattern instead.
+`worktree: true` remains available when the user explicitly requests isolated workspaces. It creates one git worktree per parallel task and requires a clean git state. Worktree availability does not make a single worker the normal implementation path and does not relax the parent-owned write policy. The default concurrent-write exception uses exclusive, non-overlapping file lists in the shared checkout, with the parent owning at least one area.
 
 ## The Oracle Workflow
 
@@ -594,7 +584,7 @@ The intended oracle loop is:
 2. `oracle` reviews direction, drift, assumptions, and risks
 3. `oracle` can coordinate back through `contact_supervisor` when native supervisor coordination is available
 4. the main agent decides what direction to approve
-5. only then should `worker` implement
+5. only then does the parent implement; qualifying write children remain subject to the parent-owned write policy
 
 ```typescript
 // Advisory review in a branched thread. Oracle defaults to forked context.
@@ -602,19 +592,13 @@ subagent({
   agent: "oracle",
   task: "Review my current direction, challenge assumptions, and propose the best next move."
 })
-
-// Implementation only after explicit approval. Worker defaults to forked context.
-subagent({
-  agent: "worker",
-  task: "Implement the approved approach: ..."
-})
 ```
 
 `oracle` is not a fresh-context reviewer in the Cognition article sense. It is
 a forked advisory thread that inherits the parent session history and uses that
 history as a baseline contract.
 
-Use `oracle` as a smart-friend escalation when the parent needs help with trajectory rather than diff inspection: architectural boundaries, model capability routing, merge conflicts, reviewer disagreement, context drift after long work, a worker about to invent a pattern, or fixes that require product/scope tradeoffs. Ask broad questions when the right concern is unclear, and let `oracle` point out missing context or files the parent should inspect before asking again. Keep `oracle` advisory unless it has been explicitly assigned the single writer role.
+Use `oracle` as a smart-friend escalation when the parent needs help with trajectory rather than diff inspection: architectural boundaries, model capability routing, merge conflicts, reviewer disagreement, context drift after long work, an implementation approach about to invent a pattern, or fixes that require product/scope tradeoffs. Ask broad questions when the right concern is unclear, and let `oracle` point out missing context or files the parent should inspect before asking again. Keep `oracle` advisory; write children must satisfy the parent-owned write policy.
 
 ## Native Supervisor Coordination
 
@@ -773,8 +757,8 @@ The package includes prompt shortcuts for common workflows: `/parallel-review`,
 `/parallel-cleanup`. Use them when the user wants repeatable review,
 review/fix loops, research, context handoff, implementation handoff,
 clarification, or cleanup-review patterns. `/parallel-review autofix` and
-`/parallel-cleanup autofix` synthesize reviewer feedback and then apply only the
-fixes worth doing now. Parent agents can also apply the same recipes directly
+`/parallel-cleanup autofix` synthesize reviewer feedback; the parent then applies
+only the fixes worth doing now. Parent agents can also apply the same recipes directly
 with `subagent(...)` when the user describes the workflow in natural language
 instead of invoking a slash command.
 
@@ -808,15 +792,15 @@ Runtime config can change orchestration behavior. `asyncByDefault` and `forceTop
 
 ### Prefer async orchestration
 
-Launch every subagent asynchronously by default. Use `async: true` for scouts, researchers, workers, reviewers, validators, oracle checks, one-off delegates, chains, and parallel groups unless you intentionally need a foreground/blocking run. The parent should keep moving: inspect code while scouts run, prepare validation while a worker implements, do a local diff pass while reviewers review, and synthesize or verify while a fix worker applies accepted feedback. Async is the default orchestration posture; foreground runs are the explicit opt-out.
+Launch every subagent asynchronously by default. Use `async: true` for scouts, researchers, reviewers, validators, oracle checks, one-off delegates, chains, parallel groups, and qualifying write children unless you intentionally need a foreground/blocking run. The parent should keep moving: inspect precise edit targets while scouts cover broad context, implement while read-only advisors run on unaffected evidence, and do a local diff pass while reviewers review. Async is the default orchestration posture; foreground runs are the explicit opt-out.
 
 ### Use wait only for blocking dependencies
 
 Follow the operational WAIT lifecycle in **Async/background** above. If `config.waitTool` or `PI_SUBAGENT_WAIT_TOOL_ENABLED` disables blocking behavior, the `wait` tool stays registered but returns immediately; never replace it with sleep or status-polling loops.
 
-### Keep writes single-threaded by default
+### Keep the parent as the default writer
 
-A strong pattern is one main decision-maker plus advisory/research/review/validation subagents around it. Use `oracle` for advice and `worker` for the actual write path. Parallelize reading, review, validation, and synthesis support, not normal writes, unless you deliberately isolate writers with worktrees. A child that writes should report what changed, what was left undone, commands run with exit codes, validation evidence, surprises, and any decisions that need parent approval.
+A strong pattern is one parent editor plus advisory/research/review/validation subagents around it. Use `oracle` for advice; the parent owns the normal write path. Use write children only when at least two independent areas can proceed concurrently under the parent-owned write policy. A child that writes must report what changed, what was left undone, commands run with exit codes, validation evidence, surprises, and any unapproved product/API/compatibility/scope decision.
 
 ### Use fork for branched advisory or execution threads
 
@@ -846,16 +830,16 @@ Use `/name` so status, artifacts, and supervisor-visible context remain easy to 
 
 ## Common Workflows
 
-### Recon → Plan → Implement
+### Recon → Plan → Parent implementation
 
 ```typescript
 subagent({
   chain: [
     { agent: "scout", task: "Map the auth flow and summarize relevant files" },
-    { agent: "planner", task: "Plan the migration from {previous}" },
-    { agent: "worker", task: "Implement the approved plan from {previous}" }
+    { agent: "planner", task: "Plan the migration from {previous}" }
   ]
 })
+// The parent inspects the plan and implements approved changes.
 ```
 
 ### Fable mode for complex work
@@ -867,9 +851,9 @@ Run the work through seven gated phases:
 1. **Understand** — use `scout` or `context-builder` fanout for breadth, but the parent personally reads the load-bearing files and lets direct source reading decide disagreements. Gate: the parent can quote the exact code or behavior being changed and knows the repo's verification harness.
 2. **Decide** — separate user-owned decisions from implementation judgments. Use `interview` for product, naming, cost, taste, or risk decisions; decide routine engineering details in the parent and state them. Gate: every user-owned decision needed for design is answered.
 3. **Design** — use `planner`, `context-builder`, or read-only design/review children for parallel perspectives. Before parallel workstreams, write seam contracts: ownership boundaries, composition points, assumptions, and validation handoffs. Gate: one parent-synthesized plan and written seams for parallel work.
-4. **Implement** — capture a baseline first, then launch one async `worker` as the sole writer for the active worktree unless isolated worktrees were intentionally requested. Break large work into serial milestones instead of concurrent writes. Gate: build/typecheck is green and every output or diff delta is characterized as intended or fixed.
+4. **Implement** — capture a baseline first, then the parent implements in the active worktree. Use write children only when at least two independent areas satisfy the parent-owned write policy; the parent must own at least one area. Break large work into serial milestones when the exception does not apply. Gate: build/typecheck is green and every output or diff delta is characterized as intended or fixed.
 5. **Verify** — climb the spend ladder: static checks, free end-to-end/dry-run, cheapest live probe, targeted changed-path live test, then full realistic run when warranted. Observe the artifact itself, not only exit codes or scores, and confirm the changed code actually executed. Gate: the highest necessary rung has directly observed evidence matching intent.
-6. **Iterate** — when a gate or reviewer finds a defect, the parent names the failure class, searches for siblings, synthesizes fixes, and sends exactly one fix worker for accepted changes. For LLM judges, gates, or detectors, trigger on concrete findings rather than scores, record pass/violations/error verdicts, cache nondeterministic verdicts by input hash, budget enough output tokens, and sanitize judge text before reusing it downstream. Gate: the class is fixed or explicitly bounded, and recurrence detection exists when feasible.
+6. **Iterate** — when a gate or reviewer finds a defect, the parent names the failure class, searches for siblings, synthesizes fixes, and applies accepted changes. Use write children only for at least two independent fix areas under the same write policy. For LLM judges, gates, or detectors, trigger on concrete findings rather than scores, record pass/violations/error verdicts, cache nondeterministic verdicts by input hash, budget enough output tokens, and sanitize judge text before reusing it downstream. Gate: the class is fixed or explicitly bounded, and recurrence detection exists when feasible.
 7. **Ship** — run adversarial fresh-context review/validation outside the implementation path, disposition every finding, rerun affected gates, then have the parent inspect the final diff. Commit, push, release, or open PRs only inside user-approved boundaries. Gate: findings are dispositioned, gates re-pass, and the final summary names evidence, artifacts, residual risks, and output paths.
 
 ### Clarify → Plan → Implement → Review (self-orchestrated workflow)
@@ -878,11 +862,11 @@ For straightforward non-trivial work, this sequence is the lightweight version o
 
 Keep builtin agent defaults unless the user explicitly asks for a different model, thinking level, skills, output behavior, context mode, or other override. Do not add overrides just because you are orchestrating; the defaults encode the intended role behavior. In particular, packaged `planner`, `worker`, and `oracle` default to forked context.
 
-When the user approves launching a subagent to carry out a plan or workflow, treat that as approval to generate a proper role-specific meta prompt for that subagent. Include the approved plan path or summary, clarified requirements, non-goals, relevant context, role boundaries, files or areas to inspect, acceptance criteria, expected output, and validation expectations. Do not pass vague instructions like “implement the plan fully” or “review this” by themselves.
+When launching a subagent for an approved plan or workflow, generate a proper role-specific prompt. Include the approved plan path or summary, clarified requirements, non-goals, relevant context, role boundaries, files or areas to inspect, acceptance criteria, expected output, and validation expectations. A write-child prompt must also satisfy the complete parent-owned write policy; approval to use subagents does not by itself authorize a write child. Do not pass vague instructions like “implement the plan fully” or “review this” by themselves.
 
 - `/gather-context-and-clarify` maps to: launch `scout` and, when needed, `researcher`; synthesize findings; then use `interview` to ask every clarification question needed for shared understanding.
 - `/parallel-review` maps to: launch fresh-context `reviewer` agents with distinct review angles; synthesize the feedback before applying anything.
-- `/review-loop` maps to: keep the parent in charge of worker → fresh reviewers → synthesized fix worker cycles until no fixes worth doing now remain, an unapproved decision appears, or the review-round cap is reached.
+- `/review-loop` maps to: keep the parent in charge of parent implementation/fixes → fresh read-only reviewer cycles until no fixes worth doing now remain, an unapproved product/API/compatibility/scope decision appears, or the review-round cap is reached.
 - `/parallel-research` maps to: combine local `scout` context with external `researcher` evidence when current docs, ecosystem behavior, or API details matter.
 - `/parallel-context-build` maps to: run a chain-mode parallel group of `context-builder` agents with distinct temp output paths, then synthesize their context and meta-prompt sections.
 - `/parallel-handoff-plan` maps to: run external `researcher` plus local/strategy `context-builder` passes, then a synthesis `context-builder` that writes an implementation handoff plan and implementation-ready meta-prompt.
@@ -891,55 +875,55 @@ When the user approves launching a subagent to carry out a plan or workflow, tre
 For feature work, use this sequence as scaffolding for parent-agent behavior:
 
 ```text
-clarify → validation contract → planner → async worker → parallel async fresh-context reviewers/validators → async fix worker → follow-up review when warranted → parent review
+clarify → validation contract → read-only planning/context → parent implementation → parallel async fresh-context reviewers/validators → parent fixes → follow-up review when warranted → parent verification
 ```
 
-The validation contract defines acceptance before code is written: expected behavior, acceptance checks, commands or user flows to exercise, and evidence the worker should return. Keep it lightweight for small tasks, but make it explicit enough that reviewers and validators are checking the intended outcome rather than the worker’s own assumptions.
+The validation contract defines acceptance before code is written: expected behavior, acceptance checks, commands or user flows to exercise, and evidence the implementation must produce. Keep it lightweight for small tasks, but make it explicit enough that reviewers and validators check the intended outcome rather than the implementation author’s assumptions.
 
 Use the structured `acceptance` field when the run should carry an explicit acceptance contract. If omitted, subagents infer an effective acceptance policy from role, mode, and risk. Use `level: "checked"` for ordinary writer evidence gates, `level: "verified"` when the runtime should run explicit validation commands, and `level: "reviewed"` only when an independent reviewer result is expected. Do not call a run reviewed just because the worker says it is done; reviewed means a reviewer gate returned a result. Child-reported command success is evidence, not runtime verification.
 
-The first `worker` implements the approved plan. The parent continues with independent inspection or validation prep while it runs, not parallel edits to the same worktree. When the async worker completes, treat its handoff as the transition into review, not as final completion, unless the user explicitly asked for worker-only work, review-only output, or to stop after implementation. Parallel reviewers inspect the resulting diff from fresh context. Validators check behavior with the best available evidence: commands, tests, browser/CLI interaction, screenshots, logs, or manual reproduction notes. The final `worker` applies synthesized review fixes in forked context, then the parent looks over the final diff before completing. The parent may launch these steps as an initial async chain when the workflow is already clear, or as follow-up subagent runs after each async completion. Initial chains should pass `async: true` so the main chat is unblocked; avoid `clarify: true` unless the user asked for foreground clarification. Do not stop after parallel review unless the user explicitly asked for review-only output or the review surfaced a decision that needs approval first.
+The parent implements the approved plan and reads the precise files and symbols it edits. Qualifying write children may edit additional independent areas concurrently under exclusive file ownership. After all writes finish, parallel fresh-context reviewers inspect the resulting diff and validators check behavior using the best available evidence: commands, tests, browser/CLI interaction, screenshots, logs, or manual reproduction notes. The parent synthesizes findings, applies accepted fixes, and inspects the final diff before completing. Do not stop after parallel review unless the user explicitly asked for review-only output or the review surfaced a decision that needs approval first.
 
-For complex work, risky changes, broad refactors, or many changed lines, increase review and validation fanout rather than trusting one reviewer. Use distinct angles such as correctness/regressions, tests/validation, simplicity/maintainability, security/privacy, performance, docs/API contracts, and user-flow behavior. When reviewers find non-trivial issues or the fix worker touches many lines, run another focused review round before final validation.
+For complex work, risky changes, broad refactors, or many changed lines, increase read-only review and validation fanout rather than trusting one reviewer. Use distinct angles such as correctness/regressions, tests/validation, simplicity/maintainability, security/privacy, performance, docs/API contracts, and user-flow behavior. When reviewers find non-trivial issues or the parent applies substantial fixes, run another focused review round before final validation.
 
-When review has already produced concrete findings across several independent areas, use staged fix orchestration: parallel read-only planners for each issue cluster, one sole writer worker for the active worktree, then parallel fresh-context validators. This is the safest way to handle a dirty worktree with many prior changes because it parallelizes judgment without parallelizing writes. Non-blocking suggestions may go into the writer prompt only if they are small, safe, and inside the approved scope; otherwise defer them explicitly.
+When review has already produced concrete findings across several areas, use staged fix orchestration: parallel read-only planners for each issue cluster, parent synthesis and fixes, then parallel fresh-context validators. Use write children only when at least two accepted fix clusters are independently writable under the parent-owned write policy. Non-blocking suggestions may enter implementation scope only when small, safe, and inside the approved scope; otherwise defer them explicitly.
 
-For very large work, split into serial milestones instead of launching a swarm of writers. Each milestone gets one writer, a validation contract, fresh-context review/validation, a fix pass, and parent acceptance before the next milestone starts. Use parallel subagents inside a milestone for read-only context, research, review, and validation only.
+For very large work, split implementation into serial milestones. The parent implements and fixes each milestone, with a validation contract, fresh-context review/validation, and parent acceptance before the next milestone. Use write children only for qualifying independent areas inside a milestone.
 
 Keep orchestration authority in the parent session. Child subagents should not launch more subagents, read this skill, or run their own orchestration loops unless the parent intentionally selected a fanout agent whose builtin `tools` includes `subagent`. Spawned subagents do not receive the `pi-subagents` skill, parent-only status/control/slash messages, or prior parent `subagent` tool-call/tool-result artifacts. Ordinary children also do not receive the `subagent` extension tool. Child context filtering strips old hidden orchestration-instruction messages when they appear in inherited history. Every child receives a boundary instruction: ordinary children are told the parent owns orchestration and they must not propose or run subagents; explicit fanout children are told to use `subagent` only for the assigned fanout work, with `maxSubagentDepth` still enforced. Implementation children must call real edit/write tools instead of printing pseudo tool calls. Pass children concrete role-specific work instead.
 
-1. Clarify first. This is mandatory. Gather code context with `scout` or `context-builder`, add `researcher` only when external evidence matters, then ask the user clarifying questions with `interview` until scope, acceptance criteria, constraints, and non-goals are clear.
-2. Define the validation contract. State acceptance before implementation: expected behavior, checks to run, user flows to exercise, and evidence required in the worker handoff. For UI, CLI, integration, or workflow changes, include at least one validator angle that uses the product the way a user would rather than only reading code.
-3. Plan when useful. For complex work, call `planner` or write a plan doc yourself and get approval before implementation. For simple work, confirm shared understanding and explicitly note why planning is skipped.
-4. Implement with one writer. After approval, launch `worker` asynchronously with a proper meta prompt that includes clarified requirements, relevant context, plan path or summary, the validation contract, and output expectations. Packaged `worker` defaults to forked context; pass `context: "fresh"` only when you intentionally want a fresh child. While it runs, prepare validation or inspect adjacent code instead of editing the same worktree.
-5. Require a useful worker handoff. Ask the worker to report changed files, what was implemented, what was left undone, commands run with exit codes, validation evidence, surprises or new risks, decisions made inside approved scope, and decisions needing parent approval.
-6. Review after implementation. After the worker completes, launch parallel async fresh-context `reviewer` agents for correctness/regressions, tests/validation, and simplicity/maintainability. Add security, performance, docs/API, domain-specific, or user-flow validators for complex work, risky changes, broad refactors, or many changed lines. Use `output: false` unless review artifacts are explicitly needed.
-7. Synthesize, then run the fix worker. Separate blockers, fixes worth doing now, optional improvements, and feedback to ignore/defer, then launch an async forked `worker` to apply fixes worth doing now when the workflow is implementation-authorized. If reviewers found scope/product/architecture choices that were not approved, ask the user first instead of applying them.
-8. Review again when warranted. If the fix worker made substantial changes or addressed non-trivial findings, run another focused parallel review round before final validation.
-9. Validate and complete. After the fix worker and any follow-up review return, inspect the final diff yourself, run or confirm focused validation, update docs/changelog when relevant, and summarize what changed and why.
+1. Clarify first. Gather broad code context with `scout` or `context-builder`, add `researcher` only when external evidence matters, then ask the user focused questions until scope, acceptance criteria, constraints, and non-goals are clear.
+2. Define the validation contract before implementation: expected behavior, checks to run, user flows to exercise, and evidence the implementation must produce. For UI, CLI, integration, or workflow changes, include at least one validator angle that uses the product as a user would.
+3. Plan when useful. For complex work, call a read-only `planner` or write a plan in the parent and get approval before implementation. For simple work, confirm shared understanding and note why planning is skipped.
+4. Implement in the parent. The parent directly reads the precise files and symbols it edits, applies the approved changes, and runs focused checks.
+5. Use write children only for qualifying parallel areas. At least two independent areas must proceed concurrently in the shared checkout, the parent must own at least one, and every writer must receive an exclusive file list and the complete edit contract. Each write child reports changed files, work completed and omitted, commands with exit codes, validation evidence, surprises, and any unapproved product/API/compatibility/scope decision.
+6. Review after implementation. After all writes finish, launch parallel async fresh-context, read-only `reviewer` agents for correctness/regressions, tests/validation, and simplicity/maintainability. Add security, performance, docs/API, domain-specific, or user-flow validators when relevant.
+7. Synthesize and fix in the parent. Separate blockers, fixes worth doing now, optional improvements, and feedback to ignore/defer. Ask before unapproved product, scope, architecture, compatibility, or API decisions. The parent applies accepted fixes; write children remain limited to qualifying independent fix areas.
+8. Review again when warranted. If fixes materially change the diff or address non-trivial findings, run another focused read-only review round.
+9. Validate and complete. Inspect the final diff, run or confirm focused validation, update affected docs when relevant, and summarize changes, evidence, and residual risks.
 
-Example implementation handoff after clarification and optional planning:
+Example exceptional concurrent write dispatch while the parent edits a separate area:
 
 ```typescript
 subagent({
   agent: "worker",
-  task: "Implement the approved feature.\n\nClarified requirements:\n- ...\n\nPlan: see ~/Documents/docs/...-plan.md\n\nValidation contract:\n- ...\n\nReturn a handoff with changed files, what was implemented, what was left undone, commands run with exit codes, validation evidence, surprises/new risks, and decisions needing parent approval.",
+  task: "Implement concurrent area B only.\n\nParent-owned concurrent area:\n- Files: src/area-a.ts, test/area-a.test.ts\n\nYour exclusive file list:\n- src/area-b.ts\n- test/area-b.test.ts\n\nAllowed symbols:\n- buildAreaB\n- area B tests\n\nRequired behavior:\n- Implement the approved area B behavior from the attached plan.\n\nNon-goals:\n- Do not modify area A, shared interfaces, dependencies, or configuration.\n\nValidation:\n- Run the focused area B test command from the plan and report its exit code and evidence.\n\nProhibited decisions:\n- Do not decide product, API, compatibility, or scope changes.\n\nStop rules:\n- Stop before touching any unassigned file. Contact the parent only for a real blocker, discovered file overlap, or an unapproved product/API/compatibility/scope decision.\n\nReturn changed files, completed and omitted work, commands with exit codes, validation evidence, surprises, and any unapproved product/API/compatibility/scope decision.",
   acceptance: {
     level: "checked",
-    evidence: ["changed-files", "tests-added", "commands-run", "residual-risks", "no-staged-files"]
+    evidence: ["changed-files", "commands-run", "validation", "residual-risks"]
   },
   async: true
 })
 ```
 
-Example review pass after implementation:
+Example read-only review pass after implementation:
 
 ```typescript
 subagent({
   tasks: [
-    { agent: "reviewer", task: "Review the current diff for correctness and regressions. Inspect changed files directly; do not rely on the worker's reasoning.", output: false },
-    { agent: "reviewer", task: "Review the current diff for tests and validation quality against the validation contract. Inspect changed files directly.", output: false },
-    { agent: "reviewer", task: "Review the current diff for simplicity and maintainability. Inspect changed files directly.", output: false }
+    { agent: "reviewer", task: "Review the current diff for correctness and regressions. Inspect changed files directly; do not rely on the implementation author's reasoning. Do not modify project/source files.", output: false },
+    { agent: "reviewer", task: "Review the current diff for tests and validation quality against the validation contract. Do not modify project/source files.", output: false },
+    { agent: "reviewer", task: "Review the current diff for simplicity and maintainability. Do not modify project/source files.", output: false }
   ],
   concurrency: 3,
   context: "fresh",
@@ -947,23 +931,13 @@ subagent({
 })
 ```
 
-Example fix worker after parallel reviews:
-
-```typescript
-subagent({
-  agent: "worker",
-  task: "Apply the synthesized reviewer feedback below. Only apply fixes worth doing now; preserve user-approved scope; ask before unapproved product or architecture changes. Run focused validation and summarize what changed.\n\nReviewer synthesis:\n...",
-  async: true
-})
-```
+The parent applies synthesized reviewer fixes. Use concurrent fix children only when at least two independent fix areas satisfy the same exclusive-file and exact-contract requirements.
 
 ### Review loop
 
-Do not treat review as the final step for implementation work. Run reviewers and validators, synthesize their findings against user scope and the validation contract, then launch one `worker` for accepted fixes when implementation is authorized.
+Do not treat review as the final step for implementation work. Run read-only reviewers and validators, synthesize their findings against user scope and the validation contract, then have the parent apply accepted fixes.
 
-When an async implementation worker completes, treat the worker handoff as an intermediate state. The next parent action is review fanout, then synthesis, then a fix worker if reviewers found fixes worth doing now. This can be planned as an initial async chain when the whole workflow is known, or continued as follow-up subagent runs when the parent only launched the first worker initially. Initial chains should pass `async: true` so the main chat is unblocked; `clarify: true` is the explicit foreground opt-in.
-
-For explicit review-loop requests, repeat worker → fresh-reviewer → synthesized-fix-worker cycles until reviewers find no blockers or fixes worth doing now, remaining feedback is optional or intentionally deferred, an unapproved product/scope/architecture decision needs the user, or the max review-round cap is reached. Default to 3 review rounds unless the user sets a different cap. For complex work, many changed lines, or any fix pass that materially changes the diff, run another focused review round before the parent’s final look; otherwise stop instead of chasing optional polish.
+For explicit review-loop requests, repeat parent implementation/fix → fresh read-only review → parent synthesis until reviewers find no blockers or fixes worth doing now, remaining feedback is optional or intentionally deferred, an unapproved product/scope/architecture decision needs the user, or the max review-round cap is reached. Default to 3 review rounds. Use write children only for qualifying independent areas, and run another focused review round after material fixes.
 
 ### Parallel non-conflicting analysis
 
