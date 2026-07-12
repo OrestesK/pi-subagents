@@ -3386,7 +3386,6 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 			normalizedParams,
 			depth,
 			deps.config.forceTopLevelAsync === true,
-			expandedWorkflow,
 		);
 		const foregroundTimeout = resolveForegroundTimeout(effectiveParams);
 		if (foregroundTimeout.error) return buildRequestedModeError(effectiveParams, foregroundTimeout.error);

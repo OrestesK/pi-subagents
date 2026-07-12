@@ -80,21 +80,25 @@ describe("resolveSingleOutputPath", () => {
 });
 
 describe("injectSingleOutputInstruction", () => {
-	it("appends output instruction with resolved path", () => {
+	it("tells the child to return normally for runtime-owned persistence", () => {
 		const output = injectSingleOutputInstruction("Analyze this", "/tmp/report.md");
-		assert.match(output, /Write your findings to exactly this path: \/tmp\/report.md/);
+		assert.match(output, /Return your findings normally in your final response\./);
+		assert.match(output, /The runtime will save that response to exactly this path: \/tmp\/report\.md/);
 		assert.match(output, /This path is authoritative for this run\./);
 		assert.match(output, /Ignore any other output filename or output path mentioned elsewhere/);
+		assert.doesNotMatch(output, /Write your findings to exactly this path/);
 	});
 });
 
 describe("injectOutputPathSystemPrompt", () => {
-	it("adds the authoritative runtime output path to the system prompt", () => {
+	it("adds runtime-owned persistence with the authoritative output path", () => {
 		const output = injectOutputPathSystemPrompt("Output format (`old.md`):", "/tmp/new.md");
 		assert.match(output, /^Output format \(`old\.md`\):/);
 		assert.match(output, /Runtime output path override:/);
-		assert.match(output, /Write your findings to exactly this path: \/tmp\/new\.md/);
+		assert.match(output, /Return your findings normally in your final response\./);
+		assert.match(output, /The runtime will save that response to exactly this path: \/tmp\/new\.md/);
 		assert.match(output, /Ignore any other output filename or output path mentioned elsewhere/);
+		assert.doesNotMatch(output, /Write your findings to exactly this path/);
 	});
 
 	it("leaves prompts unchanged when no output path is active", () => {

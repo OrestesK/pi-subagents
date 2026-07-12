@@ -660,6 +660,8 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 			assert.match(message, /completion notifications resume persistent interactive parents/i);
 			assert.match(message, /without another user prompt/i);
 			assert.match(message, /inspect relevant completed outputs before dependent decisions or final claims/i);
+			assert.match(message, /known immediate dependency[\s\S]*completion notification/i);
+			assert.doesNotMatch(message, /use foreground execution/i);
 			assert.doesNotMatch(message, /\bwait\(\)/i);
 			assert.doesNotMatch(message, /\bwait tool\b/i);
 		};
@@ -776,7 +778,8 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		const progressPath = path.join(tempDir, ".pi-subagents", "artifacts", "progress", asyncId, "progress.md");
 		assert.ok(taskArg.includes(`[Read from: ${path.join(tempDir, "input.md")}]`));
 		assert.ok(taskArg.includes(`Update progress at: ${progressPath}`));
-		assert.ok(taskArg.includes(`Write your findings to exactly this path: ${outputPath}`));
+		assert.ok(taskArg.includes(`The runtime will save that response to exactly this path: ${outputPath}`));
+		assert.doesNotMatch(taskArg, /Write your findings to exactly this path/);
 		assert.equal(fs.existsSync(progressPath), true);
 		assert.equal(fs.existsSync(path.join(tempDir, "progress.md")), false);
 	});
@@ -1351,7 +1354,7 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 			const args = await waitForMockPiArgs(mockPi, 0);
 			const taskArg = lastItem(args) ?? "";
 			assert.ok(taskArg.includes(`[Read from: ${path.join(worktreeCwd, "input.md")}]`));
-			assert.ok(taskArg.includes(`Write your findings to exactly this path: ${path.join(repoDir, ".pi-subagents", "artifacts", "outputs", asyncId, "report.md")}`));
+			assert.ok(taskArg.includes(`The runtime will save that response to exactly this path: ${path.join(repoDir, ".pi-subagents", "artifacts", "outputs", asyncId, "report.md")}`));
 			await waitForAsyncResultFile(asyncId, 90_000);
 		} finally {
 			removeTempDir(repoDir);
@@ -1817,7 +1820,8 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		const outputPath = path.join(outputBaseDir, "context.md");
 		const call = await waitForMockPiCall(mockPi, 0);
 		const taskArg = lastItem(call.args) ?? "";
-		assert.match(taskArg, new RegExp(`Write your findings to exactly this path: ${escapeRegExp(outputPath)}`));
+		assert.match(taskArg, new RegExp(`The runtime will save that response to exactly this path: ${escapeRegExp(outputPath)}`));
+		assert.doesNotMatch(taskArg, /Write your findings to exactly this path/);
 		const resultPath = await waitForAsyncResultFile(id);
 		const payload = JSON.parse(fs.readFileSync(resultPath, "utf-8")) as AsyncResultPayload;
 		assert.equal(payload.success, true);
@@ -1855,10 +1859,11 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		const call = await waitForMockPiCall(mockPi, 0);
 		const taskArg = lastItem(call.args) ?? "";
 		const systemPrompt = call.systemPrompts[0]?.text ?? "";
-		assert.match(taskArg, new RegExp(`Write your findings to exactly this path: ${escapeRegExp(outputPath)}`));
+		assert.match(taskArg, new RegExp(`The runtime will save that response to exactly this path: ${escapeRegExp(outputPath)}`));
+		assert.doesNotMatch(taskArg, /Write your findings to exactly this path/);
 		assert.match(systemPrompt, /Output format \(`default-report\.md`\):/);
 		assert.match(systemPrompt, /Runtime output path override:/);
-		assert.match(systemPrompt, new RegExp(`Write your findings to exactly this path: ${escapeRegExp(outputPath)}`));
+		assert.match(systemPrompt, new RegExp(`The runtime will save that response to exactly this path: ${escapeRegExp(outputPath)}`));
 		assert.match(systemPrompt, /Ignore any other output filename or output path mentioned elsewhere/);
 		await waitForAsyncResultFile(id);
 	});

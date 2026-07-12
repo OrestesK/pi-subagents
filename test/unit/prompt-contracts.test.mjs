@@ -16,6 +16,26 @@ function readRepoFile(relativePath) {
   );
 }
 
+test("root dependent workflows are async and notification-driven", () => {
+  const rootAgents = readRepoFile("AGENTS.md");
+  const skill = readPackageFile("skills/pi-subagents/SKILL.md");
+  const prompts = [
+    readPackageFile("prompts/quality-gate.md"),
+    readPackageFile("prompts/research-decision.md"),
+    readPackageFile("prompts/generate-filter.md"),
+  ];
+
+  assert.match(rootAgents, /top-level.*async/i);
+  assert.doesNotMatch(rootAgents, /include `async: false`/i);
+  assert.match(skill, /known immediate dependency[^\n]*completion notification/i);
+  assert.doesNotMatch(skill, /known immediate dependency[^\n]*foreground run/i);
+  for (const prompt of prompts) {
+    assert.match(prompt, /async: true/);
+    assert.match(prompt, /completion notification/i);
+    assert.doesNotMatch(prompt, /async: false/);
+  }
+});
+
 test("root prompt keeps sectioned-swarm details in the pi-subagents skill", () => {
   const rootAgents = readRepoFile("AGENTS.md");
 
@@ -27,7 +47,7 @@ test("root prompt keeps sectioned-swarm details in the pi-subagents skill", () =
   assert.match(rootAgents, /do not grant write authority/i);
   assert.match(rootAgents, /no-artifact/i);
   assert.match(rootAgents, /no-live(?:-probe)?/i);
-  assert.match(rootAgents, /async: false/i);
+  assert.match(rootAgents, /async: true/i);
   assert.match(rootAgents, /inspect actual returned inline text/i);
   assert.match(rootAgents, /file-only pointers are not evidence/i);
 });
@@ -50,7 +70,7 @@ test("pi-subagents skill owns sectioned swarm routing protocol", () => {
   assert.match(skill, /private MCP/i);
   assert.match(skill, /cloud|database|live/i);
   assert.match(skill, /parent.*synthesis|synthesis.*parent/i);
-  assert.match(skill, /set `async: false` explicitly/i);
+  assert.match(skill, /Prefer async orchestration/i);
   assert.match(skill, /unresolved material async work.*INCONCLUSIVE/i);
   assert.match(skill, /Evidence visibility controls the output policy/i);
   assert.match(skill, /returned inline child text/i);
@@ -92,7 +112,7 @@ test("recipe prompts point to sectioned swarm protocol without replacing their l
 
   assert.match(qualityGate, /PASS \| FAIL \| INCONCLUSIVE/);
   assert.match(qualityGate, /sectioned-swarm protocol/i);
-  assert.match(qualityGate, /async: false/);
+  assert.match(qualityGate, /async: true/);
   assert.match(qualityGate, /missing evidence|INCONCLUSIVE/i);
   assert.match(qualityGate, /parent synthesis is mandatory/i);
   assert.match(qualityGate, /actual returned inline reviewer text/i);
@@ -103,7 +123,7 @@ test("recipe prompts point to sectioned swarm protocol without replacing their l
   assert.match(generateFilter, /delegate` or `researcher` children/i);
   assert.match(generateFilter, /reviewer\/filter pass/i);
   assert.match(generateFilter, /reviewer\/filter fan-in is mandatory/i);
-  assert.match(generateFilter, /async: false/);
+  assert.match(generateFilter, /async: true/);
   assert.match(generateFilter, /downstream reducer receives file-only references/i);
   assert.match(generateFilter, /read those referenced artifact paths/i);
   assert.match(generateFilter, /blocked or `INCONCLUSIVE`/i);
@@ -111,7 +131,7 @@ test("recipe prompts point to sectioned swarm protocol without replacing their l
   assert.match(generateFilter, /sectioned-swarm protocol/i);
   assert.doesNotMatch(generateFilter, /unless the parent/i);
 
-  assert.match(researchDecision, /async: false/);
+  assert.match(researchDecision, /async: true/);
   assert.match(researchDecision, /Never synthesize a recommendation from compact receipts/i);
   assert.match(researchDecision, /read each referenced saved artifact/i);
   for (const researchPrompt of [parallelResearch, researchDecision, generateFilter]) {

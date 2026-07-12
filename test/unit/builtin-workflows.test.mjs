@@ -175,40 +175,37 @@ test("workflow schema exposes only documented builtin ids as deprecated compatib
 	assert.match(SubagentParams.properties.workflow.description, /Prefer prompt shortcuts or explicit tasks\/chain/);
 });
 
-test("expanded workflows bypass forced top-level async override", () => {
-	const workflowExpansion = expandBuiltinWorkflowParams({
-		workflow: "builtin.quality-gate",
-		task: "verify this claim",
-	});
-	assert.equal(workflowExpansion.error, undefined);
-	assert.equal(workflowExpansion.expanded, true);
-	assert.equal(workflowExpansion.params?.async, false);
+test("expanded workflows respect the forced top-level async boundary", () => {
+	for (const workflow of [
+		"builtin.quality-gate",
+		"builtin.research-decision",
+		"builtin.generate-filter",
+	]) {
+		const workflowExpansion = expandBuiltinWorkflowParams({
+			workflow,
+			task: "verify this claim",
+		});
+		assert.equal(workflowExpansion.error, undefined);
+		assert.equal(workflowExpansion.expanded, true);
+		assert.equal(workflowExpansion.params?.async, false);
 
-	assert.equal(
-		applyForceTopLevelAsyncOverrideForExecution(
-			workflowExpansion.params ?? {},
-			0,
+		assert.equal(
+			applyForceTopLevelAsyncOverrideForExecution(
+				workflowExpansion.params ?? {},
+				1,
+				true,
+			),
+			workflowExpansion.params,
+		);
+		assert.equal(
+			applyForceTopLevelAsyncOverrideForExecution(
+				workflowExpansion.params ?? {},
+				0,
+				true,
+			).async,
 			true,
-			workflowExpansion,
-		),
-		workflowExpansion.params,
-	);
-
-	const plainExpansion = expandBuiltinWorkflowParams({
-		agent: "reviewer",
-		task: "review this",
-		async: false,
-		clarify: true,
-	});
-	assert.deepEqual(
-		applyForceTopLevelAsyncOverrideForExecution(
-			plainExpansion.params ?? {},
-			0,
-			true,
-			plainExpansion,
-		),
-		{ agent: "reviewer", task: "review this", async: true, clarify: false },
-	);
+		);
+	}
 });
 
 test("workflow requires task and rejects async or fork context", () => {

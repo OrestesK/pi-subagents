@@ -34,7 +34,7 @@ As of 2026-07-08, the local stack contains these concerns:
 - Explicit `reads` are a launch contract: single, parallel, chain, async, and worktree paths fail before child launch when user-specified read files are missing after path resolution. This local overlay needs that behavior because parent prompts rely on explicit `reads` as required child inputs, while upstream treats reads primarily as best-effort prompt hints. Agent `defaultReads` remain best-effort so missing local workflow defaults do not block unrelated runs.
 - Background completion notifications include run id, role, cwd when present, launch time, and output path when configured, and suppress stale completions older than the notification dedupe TTL. This prevents ambiguous/stale messages such as bare worker/root-output completions from being treated as current work.
 - Model-facing async launch, subagent-tool, skill, and global-agent guidance treats persistent interactive completion as notification-driven without naming the optional `wait` tool; the enabled tool's own description owns its usage rules, and disabling `waitTool` omits it entirely. README documentation still covers both configurations.
-- Top-level `workflow: "builtin.*"` remains accepted as a deprecated compatibility alias for now. First-party guidance should prefer prompt shortcuts or explicit `tasks`/`chain` shapes before eventual removal.
+- Top-level `workflow: "builtin.*"` remains accepted as a deprecated compatibility alias for now. When `forceTopLevelAsync` is enabled, these expanded aliases follow the same depth-0 async override as explicit single, parallel, and chain calls. First-party guidance should prefer prompt shortcuts or explicit `tasks`/`chain` shapes before eventual removal.
 
 ## Setup
 

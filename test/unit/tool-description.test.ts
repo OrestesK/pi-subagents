@@ -243,6 +243,8 @@ describe("registered subagent tool description", () => {
 
 		assert.match(description, /finish or need attention/i);
 		assertAsyncLifecycleGuidance(description);
+		assert.match(description, /persistent interactive parents keep top-level dependencies async/i);
+		assert.match(description, /nested run-to-completion children may use foreground execution/i);
 	});
 
 	it("registers full, compact, custom, and fallback descriptions from extension config", () => {

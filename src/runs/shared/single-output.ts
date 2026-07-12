@@ -35,7 +35,8 @@ export function resolveSingleOutputPath(
 
 function formatOutputPathInstruction(outputPath: string): string {
 	return [
-		`Write your findings to exactly this path: ${outputPath}`,
+		"Return your findings normally in your final response.",
+		`The runtime will save that response to exactly this path: ${outputPath}`,
 		"This path is authoritative for this run.",
 		"Ignore any other output filename or output path mentioned elsewhere, including output destinations in the base agent prompt, system prompt, or task instructions.",
 	].join("\n");

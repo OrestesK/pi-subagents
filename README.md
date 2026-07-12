@@ -540,7 +540,7 @@ You can combine them in either order:
 
 Background runs are detached. Persistent interactive parents should continue useful work. During waits, they may do independent reflection or permitted internal-state maintenance, but only when this work cannot delay required work. When no useful work, independent reflection, or permitted maintenance remains, yield; completion notifications resume them without another user prompt. Inspect relevant completed outputs before dependent decisions or final claims. Do not run sleep or status-polling loops, and do not call `wait` solely to receive persistent-session completion.
 
-Use `wait` only for a non-yielding/run-to-completion flow or a named same-control-flow dependency. It returns when the next active run finishes or needs attention; use `wait({ all: true })` to drain every active run, `wait({ id })` for one run, and `wait({ timeoutMs })` to cap the block. Prefer foreground execution when a known immediate dependency requires child output.
+Use `wait` only for a non-yielding/run-to-completion flow or a named same-control-flow dependency. It returns when the next active run finishes or needs attention; use `wait({ all: true })` to drain every active run, `wait({ id })` for one run, and `wait({ timeoutMs })` to cap the block. Persistent interactive parents keep top-level dependencies async and yield until completion notifications arrive; nested run-to-completion children may use foreground execution for immediate dependencies.
 
 The `oracle` and `worker` builtins are designed for an explicit decision loop. A typical pattern is to ask `oracle` for diagnosis and a recommended execution prompt, then only run `worker` after the main agent approves that direction.
 
@@ -1173,7 +1173,7 @@ Keeps the `wait` tool registered but makes it return immediately instead of bloc
 { "forceTopLevelAsync": true }
 ```
 
-Forces depth-0 single, parallel, and chain runs into background mode and bypasses clarify UI by forcing `clarify: false`. Nested calls keep their own inherited settings.
+Forces every depth-0 execution into background mode—including expanded deprecated `workflow: "builtin.*"` aliases—and bypasses clarify UI by forcing `clarify: false`. Nested calls keep their own inherited settings.
 
 ### `globalConcurrencyLimit`
 

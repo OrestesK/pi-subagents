@@ -16,8 +16,6 @@ export function applyForceTopLevelAsyncOverrideForExecution<T extends AsyncOverr
 	params: T,
 	depth: number,
 	forceTopLevelAsync: boolean,
-	workflowExpansion?: { expanded?: boolean },
 ): T {
-	if (workflowExpansion?.expanded) return params;
 	return applyForceTopLevelAsyncOverride(params, depth, forceTopLevelAsync);
 }

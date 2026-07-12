@@ -14,7 +14,8 @@ Runtime policy:
 
 - Use the `subagent` tool with a mix of `researcher`, `scout`, and `reviewer` depending on the question.
 - Prefer three or four strong children when the decision involves external evidence plus local implementation consequences.
-- Set `async: false` because the parent recommendation depends on child outputs.
+- Set `async: true`, retain the run ID, and yield after any qualifying parent work; the completion notification resumes the parent.
+- Do not synthesize the recommendation until completion and direct inspection of the child outputs.
 - Do not ask children to edit files.
 - Use `output: false` and `progress: false` only for concise advisory passes whose returned inline text the parent will inspect before recommending.
 - If the user says `no repo artifacts`, `no project artifacts`, or `don't write .scratch files`, also set top-level `artifacts: false`.
@@ -71,11 +72,11 @@ subagent({
   ],
   concurrency: 3,
   context: "fresh",
-  async: false,
+  async: true,
 });
 ```
 
-After children return, read every saved file-only artifact referenced by the subagent results before synthesizing. Then synthesize:
+After the completion notification, inspect the child results and read every referenced saved file-only artifact before synthesizing. Then synthesize:
 
 - recommendation;
 - strongest counterargument;

@@ -15,7 +15,8 @@ Entry guard: if the request is still a vague idea, new behavior, design/placemen
 Runtime policy:
 
 - Use the `subagent` tool with fresh context unless I explicitly ask for forked context.
-- Set `async: false` because parent filtering and recommendation depend on child outputs.
+- Set `async: true`, retain the run ID, and yield after any qualifying parent work; the completion notification resumes the parent.
+- Do not synthesize the recommendation until the chain completes and its final outputs are inspected.
 - Before launching children, hydrate the request: read/fetch any referenced file, diff, URL, issue, PR, plan, log, screenshot, or quoted claim enough to name the concrete scope.
 - Include that concrete scope and any relevant paths/links in every child task.
 - Do not ask children to edit files.
@@ -82,7 +83,7 @@ subagent({
     },
   ],
   context: "fresh",
-  async: false,
+  async: true,
 });
 ```
 
@@ -92,7 +93,7 @@ Adapt agents to the request:
 - Use `scout` when options depend on local repository structure, tests, or implementation constraints.
 - Use `reviewer` for critique, rubric building, dedupe, and ranking.
 
-Before parent synthesis, read every saved file-only artifact referenced by the subagent results. Parent synthesis must include:
+After the completion notification, inspect the final chain result and read every referenced saved file-only artifact before parent synthesis. Parent synthesis must include:
 
 - rubric used;
 - top 3-5 options only unless I ask for more;

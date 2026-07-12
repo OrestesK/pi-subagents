@@ -15,14 +15,21 @@ import {
 	tryImport,
 } from "../support/helpers.ts";
 
+interface ExecutorProgressUpdate {
+	details?: {
+		progress?: Array<{ currentTool?: string }>;
+	};
+}
+
 interface ExecutorResult {
 	content: Array<{ text?: string }>;
 	isError?: boolean;
 	details?: {
 		mode?: string;
 		runId?: string;
-		results?: Array<{ agent?: string; finalOutput?: string }>;
+		results?: Array<{ agent?: string; finalOutput?: string; sessionFile?: string }>;
 		asyncId?: string;
+		asyncDir?: string;
 	};
 }
 
@@ -32,7 +39,7 @@ interface ExecutorModule {
 			id: string,
 			params: Record<string, unknown>,
 			signal: AbortSignal,
-			onUpdate: ((result: unknown) => void) | undefined,
+			onUpdate: ((result: ExecutorProgressUpdate) => void) | undefined,
 			ctx: unknown,
 		) => Promise<ExecutorResult>;
 	};
@@ -566,7 +573,8 @@ describe("intercom result delivery cutover", { skip: !available ? "executor not 
 			assert.equal(result.isError, undefined);
 			assert.match(result.content[0]?.text ?? "", /Revived async subagent from/);
 			assert.match(result.content[0]?.text ?? "", /Do not run sleep timers or polling loops/);
-			assert.match(result.content[0]?.text ?? "", /call wait\(\)/);
+			assert.match(result.content[0]?.text ?? "", /retain the async run ID[\s\S]*completion notification/i);
+			assert.doesNotMatch(result.content[0]?.text ?? "", /call wait\(\)/);
 			assert.match(result.content[0]?.text ?? "", /Status if needed: subagent\(\{ action: "status"/);
 			assert.doesNotMatch(result.content[0]?.text ?? "", /Follow:/);
 			const revivedId = result.details?.asyncId;

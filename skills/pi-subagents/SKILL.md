@@ -446,7 +446,9 @@ Async does not authorize ordinary write delegation. The parent is the normal edi
 
 Do not end your turn immediately after launching an async child if you promised to keep working. Continue the local inspection, synthesis, or validation prep, then check the async run when its result is needed.
 
-Persistent interactive parents should continue useful work. During waits, they may do independent reflection or permitted internal-state maintenance, but only when this work cannot delay required work. When no useful work, independent reflection, or permitted maintenance remains, yield. Completion notifications resume them without another user prompt. Inspect relevant completed outputs before dependent decisions or final claims. When a known immediate dependency requires child output, prefer a foreground run instead of launching it asynchronously.
+Persistent interactive parents should continue useful work. During waits, they may do independent reflection or permitted internal-state maintenance, but only when this work cannot delay required work. When no useful work, independent reflection, or permitted maintenance remains, yield. Completion notifications resume them without another user prompt. Inspect relevant completed outputs before dependent decisions or final claims. When a known immediate dependency requires child output, retain the async run ID and yield after qualifying work until its completion notification arrives.
+
+Nested run-to-completion children may use a foreground run for an immediate dependency.
 
 ```typescript
 subagent({

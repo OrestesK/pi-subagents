@@ -13,7 +13,8 @@ This workflow is quality-first. Do not avoid useful reviewers merely to save cos
 Runtime policy:
 
 - Use the `subagent` tool with parallel fresh-context reviewers.
-- Set `async: false` because the parent verdict depends on child output.
+- Set `async: true`, retain the run ID, and yield after any qualifying parent work; the completion notification resumes the parent.
+- Do not emit the verdict until completion and direct inspection of the reviewer outputs.
 - If the user says `no repo artifacts`, `no project artifacts`, or `don't write .scratch files`, also set top-level `artifacts: false` and keep every child `output: false` and `progress: false`.
 - If the user says strict `do not write artifacts`, `no files`, or `inline only`, do not launch subagents; gate parent-only or ask to relax that constraint.
 - Prefer three strong reviewers for normal work and add a fourth or fifth when the target is large, security-sensitive, ops-heavy, architecture-heavy, or ambiguous.
@@ -71,11 +72,11 @@ subagent({
   ],
   concurrency: 3,
   context: "fresh",
-  async: false,
+  async: true,
 });
 ```
 
-After reviewers return, parent synthesis is mandatory. Do not outsource the final decision to a child. Classify feedback as:
+After the completion notification, inspect the reviewer outputs and perform the mandatory parent synthesis. Do not outsource the final decision to a child. Classify feedback as:
 
 - must-fix now;
 - should-fix now;

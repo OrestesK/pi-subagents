@@ -1240,7 +1240,8 @@ Inspect context`));
 
 		const taskArg = lastItem(readCallArgs()) ?? "";
 		assert.equal(result.isError, undefined);
-		assert.match(taskArg, new RegExp(`Write your findings to exactly this path: ${escapeRegExp(path.join(tempDir, ".pi-subagents", "artifacts", "outputs"))}.*context\\.md`));
+		assert.match(taskArg, new RegExp(`The runtime will save that response to exactly this path: ${escapeRegExp(path.join(tempDir, ".pi-subagents", "artifacts", "outputs"))}.*context\\.md`));
+		assert.doesNotMatch(taskArg, /Write your findings to exactly this path/);
 		assert.equal(fs.existsSync(path.join(tempDir, "context.md")), false);
 	});
 
@@ -1263,7 +1264,8 @@ Inspect context`));
 		const expectedOutputPath = path.join(configuredBase, "context.md");
 		const taskArg = lastItem(readCallArgs()) ?? "";
 		assert.equal(result.isError, undefined);
-		assert.match(taskArg, new RegExp(`Write your findings to exactly this path: ${escapeRegExp(expectedOutputPath)}`));
+		assert.match(taskArg, new RegExp(`The runtime will save that response to exactly this path: ${escapeRegExp(expectedOutputPath)}`));
+		assert.doesNotMatch(taskArg, /Write your findings to exactly this path/);
 		assert.equal(fs.readFileSync(expectedOutputPath, "utf-8"), "configured report");
 		assert.equal(fs.existsSync(path.join(tempDir, "context.md")), false);
 	});
@@ -1290,10 +1292,11 @@ Inspect context`));
 		const taskArg = lastItem(call.args) ?? "";
 		const systemPrompt = call.systemPrompts[0]?.text ?? "";
 		assert.equal(result.isError, undefined);
-		assert.match(taskArg, new RegExp(`Write your findings to exactly this path: ${escapeRegExp(overridePath)}`));
+		assert.match(taskArg, new RegExp(`The runtime will save that response to exactly this path: ${escapeRegExp(overridePath)}`));
+		assert.doesNotMatch(taskArg, /Write your findings to exactly this path/);
 		assert.match(systemPrompt, /Output format \(`default-report\.md`\):/);
 		assert.match(systemPrompt, /Runtime output path override:/);
-		assert.match(systemPrompt, new RegExp(`Write your findings to exactly this path: ${escapeRegExp(overridePath)}`));
+		assert.match(systemPrompt, new RegExp(`The runtime will save that response to exactly this path: ${escapeRegExp(overridePath)}`));
 		assert.match(systemPrompt, /Ignore any other output filename or output path mentioned elsewhere/);
 	});
 

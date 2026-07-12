@@ -227,7 +227,7 @@ export function formatAsyncStartedMessage(headline: string): string {
 		"The async run is detached. Do not run sleep timers or polling loops just to wait for it.",
 		"Persistent interactive parents should continue useful work. During waits, they may do independent reflection or permitted internal-state maintenance, but only when this work cannot delay required work. When no useful work, independent reflection, or permitted maintenance remains, yield. Completion notifications resume persistent interactive parents without another user prompt.",
 		"Inspect relevant completed outputs before dependent decisions or final claims.",
-		"When a known immediate dependency requires child output, use foreground execution instead of launching it asynchronously. Use subagent({ action: \"status\", id: \"...\" }) only for a one-shot inspection of a blocked or stale run.",
+		"When a known immediate dependency requires child output, retain the async run ID and yield after qualifying work until its completion notification arrives. Use subagent({ action: \"status\", id: \"...\" }) only for a one-shot inspection of a blocked or stale run.",
 	].join("\n");
 }
 
