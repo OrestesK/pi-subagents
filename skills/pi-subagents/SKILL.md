@@ -49,7 +49,7 @@ Use this protocol for long-running async runs:
 - Give each long-running child an explicit progress file path under `.scratch/` whenever phase checkpoints materially improve parent visibility or recovery.
 - Ask children to update progress after meaningful phases, not every few seconds.
 - Ask children to contact the parent only when blocked, when scope changes, when a must-fix/high-risk finding appears, or when a meaningful progress update changes the plan.
-- Do not poll constantly. Persistent interactive parents should continue useful work. During waits, they may do independent reflection or permitted internal-state maintenance, but only when this work cannot delay required work. When no useful work, independent reflection, or permitted maintenance remains, yield and let completion notifications resume them; use `wait()` only for a non-yielding/run-to-completion flow or a named same-control-flow dependency.
+- Do not poll constantly. Persistent interactive parents should continue useful work. During waits, they may do independent reflection or permitted internal-state maintenance, but only when this work cannot delay required work. When no useful work, independent reflection, or permitted maintenance remains, yield and let completion notifications resume them.
 - Before dependent decisions or final completion, inspect relevant async outputs; do not rely on completion notifications alone.
 
 For short reviewer/scout runs expected under a few minutes, a final saved output is enough. For deeper audits, use both `output` and a progress file, and ask the child to write concise phase checkpoints.
@@ -347,7 +347,7 @@ If a provider rejects model IDs with thinking suffixes, use
 builtin thinking defaults globally. A higher-precedence per-agent `thinking`
 override can opt one builtin back in.
 
-Tool description modes live in `~/.pi/agent/extensions/subagent/config.json`, not `subagents` settings. Set `toolDescriptionMode` to `compact` to reduce tool-description prompt cost while keeping the execution, async/wait, child-safety, one-writer, management/action, and artifact/status guardrails. Set it to `custom` to read `subagent-tool-description.md` from the project config dir or agent dir; invalid custom files fall back to full mode and the safety guidance is still appended.
+Tool description modes live in `~/.pi/agent/extensions/subagent/config.json`, not `subagents` settings. Set `toolDescriptionMode` to `compact` to reduce tool-description prompt cost while keeping the execution, async-lifecycle, child-safety, one-writer, management/action, and artifact/status guardrails. Set it to `custom` to read `subagent-tool-description.md` from the project config dir or agent dir; invalid custom files fall back to full mode and the safety guidance is still appended.
 
 ## Discovery and Scope Rules
 
@@ -446,9 +446,7 @@ Async does not authorize ordinary write delegation. The parent is the normal edi
 
 Do not end your turn immediately after launching an async child if you promised to keep working. Continue the local inspection, synthesis, or validation prep, then check the async run when its result is needed.
 
-Persistent interactive parents should continue useful work. During waits, they may do independent reflection or permitted internal-state maintenance, but only when this work cannot delay required work. When no useful work, independent reflection, or permitted maintenance remains, yield. Completion notifications resume them without another user prompt; do not call `wait()` solely to receive persistent-session completion. Inspect relevant completed outputs before dependent decisions or final claims.
-
-Use `wait()` only for non-yielding/run-to-completion flows or a named same-control-flow dependency. It returns when the next active run finishes or needs attention and keeps that turn alive; use `wait({ all: true })` to drain every active run, `wait({ id: "..." })` for one run, and `wait({ timeoutMs })` to cap the block. When a known immediate dependency requires child output, prefer a foreground run instead of launching async and immediately waiting.
+Persistent interactive parents should continue useful work. During waits, they may do independent reflection or permitted internal-state maintenance, but only when this work cannot delay required work. When no useful work, independent reflection, or permitted maintenance remains, yield. Completion notifications resume them without another user prompt. Inspect relevant completed outputs before dependent decisions or final claims. When a known immediate dependency requires child output, prefer a foreground run instead of launching it asynchronously.
 
 ```typescript
 subagent({
@@ -514,7 +512,7 @@ subagent({ action: "schedule-status", id: "ab12" })
 subagent({ action: "schedule-cancel", id: "ab12" })
 ```
 
-`schedule` accepts the same execution fields as a normal async run (`agent`/`tasks`/`chain`, `cwd`, `model`, `output`, `reads`, `progress`, `acceptance`, `timeoutMs`) plus `schedule` (a relative delay like `+10m`/`+2h`/`+1d` or a future ISO timestamp with a timezone such as `2030-01-01T09:00:00Z`) and an optional `scheduleName`. Scheduled runs always launch async with fresh context; `context: "fork"`, `async: false`, and `clarify: true` are rejected. Once the timer fires, the run becomes a normal tracked async run: it appears in the async widget, is inspectable with `subagent({ action: "status" })`, can be awaited with `wait()`, and delivers the normal completion notification.
+`schedule` accepts the same execution fields as a normal async run (`agent`/`tasks`/`chain`, `cwd`, `model`, `output`, `reads`, `progress`, `acceptance`, `timeoutMs`) plus `schedule` (a relative delay like `+10m`/`+2h`/`+1d` or a future ISO timestamp with a timezone such as `2030-01-01T09:00:00Z`) and an optional `scheduleName`. Scheduled runs always launch async with fresh context; `context: "fork"`, `async: false`, and `clarify: true` are rejected. Once the timer fires, the run becomes a normal tracked async run: it appears in the async widget, is inspectable with `subagent({ action: "status" })`, delivers the normal completion notification.
 
 Schedules are persisted per session and restored after a Pi restart. A job whose scheduled time passed by more than `scheduledRuns.maxLatenessMs` (default 5 minutes) while Pi was unavailable is marked `missed` instead of firing late. `scheduledRuns.maxPending` (default 20) caps pending or running scheduled jobs per session.
 
@@ -786,7 +784,7 @@ Methods: `ping`, `status`, `spawn`, `interrupt`, and `stop`. `spawn` is async-on
 - **Keep conversational authority clear.** Advisory subagents should not silently
   become second decision-makers.
 
-Runtime config can change orchestration behavior. `asyncByDefault` and `forceTopLevelAsync` affect whether launches detach; `waitTool` can make `wait()` return immediately; `globalConcurrencyLimit` and `maxSubagentSpawnsPerSession` bound fanout; `singleRunOutputBaseDir` and `worktreeBaseDir` route outputs and worktrees; `completionBatch` groups async notifications. Per-run `artifacts: false` disables artifact capture for that launch. Async status and result artifacts are versioned with fields such as `lifecycleArtifactVersion`, `workflowGraph`, `steps`, `results`, `totalTokens`, `totalCost`, `turnCount`, `toolCount`, and nested `children`. Prefer these artifacts and `status` views over scraping terminal output.
+Runtime config can change orchestration behavior. `asyncByDefault` and `forceTopLevelAsync` affect whether launches detach; `globalConcurrencyLimit` and `maxSubagentSpawnsPerSession` bound fanout; `singleRunOutputBaseDir` and `worktreeBaseDir` route outputs and worktrees; `completionBatch` groups async notifications. Per-run `artifacts: false` disables artifact capture for that launch. Async status and result artifacts are versioned with fields such as `lifecycleArtifactVersion`, `workflowGraph`, `steps`, `results`, `totalTokens`, `totalCost`, `turnCount`, `toolCount`, and nested `children`. Prefer these artifacts and `status` views over scraping terminal output.
 
 ## Best Practices
 
@@ -794,9 +792,9 @@ Runtime config can change orchestration behavior. `asyncByDefault` and `forceTop
 
 Launch every subagent asynchronously by default. Use `async: true` for scouts, researchers, reviewers, validators, oracle checks, one-off delegates, chains, parallel groups, and qualifying write children unless you intentionally need a foreground/blocking run. The parent should keep moving: inspect precise edit targets while scouts cover broad context, implement while read-only advisors run on unaffected evidence, and do a local diff pass while reviewers review. Async is the default orchestration posture; foreground runs are the explicit opt-out.
 
-### Use wait only for blocking dependencies
+### Let notifications resume persistent parents
 
-Follow the operational WAIT lifecycle in **Async/background** above. If `config.waitTool` or `PI_SUBAGENT_WAIT_TOOL_ENABLED` disables blocking behavior, the `wait` tool stays registered but returns immediately; never replace it with sleep or status-polling loops.
+Do not replace event-driven completion with sleep or status-polling loops. Continue useful work, then yield when no independent work remains.
 
 ### Keep the parent as the default writer
 
@@ -844,7 +842,7 @@ subagent({
 
 ### Fable mode for complex work
 
-Fable mode is the default orchestration posture for complex work. It is not a separate runtime mode; it is how the parent session uses `subagent`, `interview`, `wait`, acceptance contracts, artifacts, and fresh-context review when the work has real complexity. Use it for complex features, broad refactors, migrations, ambiguous goals, multi-system changes, expensive validation, user-visible behavior changes, or any request to plan/orchestrate end to end. Do not force it onto tiny one-shot delegation.
+Fable mode is the default orchestration posture for complex work. It is not a separate runtime mode; it is how the parent session uses `subagent`, `interview`, completion notifications, acceptance contracts, artifacts, and fresh-context review when the work has real complexity. Use it for complex features, broad refactors, migrations, ambiguous goals, multi-system changes, expensive validation, user-visible behavior changes, or any request to plan/orchestrate end to end. Do not force it onto tiny one-shot delegation.
 
 Run the work through seven gated phases:
 

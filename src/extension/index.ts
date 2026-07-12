@@ -511,10 +511,11 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 
 	pi.registerTool(tool);
 
-	const waitTool: ToolDefinition<typeof WaitParams, Details> = {
-		name: "wait",
-		label: "Wait",
-		description: `Block until background (async) subagent runs started in this session finish or need attention, then return.
+	if (waitToolConfig.enabled) {
+		const waitTool: ToolDefinition<typeof WaitParams, Details> = {
+			name: "wait",
+			label: "Wait",
+			description: `Block until background (async) subagent runs started in this session finish or need attention, then return.
 
 Use wait only for non-yielding/run-to-completion flows or a named same-control-flow dependency. Persistent interactive parents should continue useful work. During waits, they may do independent reflection or permitted internal-state maintenance, but only when this work cannot delay required work. When no useful work, independent reflection, or permitted maintenance remains, yield. Completion notifications resume them without another user prompt. Inspect relevant completed outputs before dependent decisions or final claims. Prefer foreground execution when a known immediate dependency requires child output.
 
@@ -523,13 +524,14 @@ Use wait only for non-yielding/run-to-completion flows or a named same-control-f
 • { id: "..." } — wait for one specific run (id or prefix) to finish.
 • { timeoutMs: 600000 } — stop waiting after N ms (the runs keep going regardless; default 30 min)
 
-wait also returns when a run needs attention (a child that went idle or blocked for a decision), not only on completion — so a stuck child never stalls the loop; the summary names the run(s) to inspect/nudge/resume/interrupt. It wakes the instant a completion or control event arrives (subscribed to Pi's event bus, with a poll fallback that reconciles crashed runners), keeps the turn alive for normal notification delivery, and resolves early if the turn is aborted.${waitToolConfig.enabled ? "" : "\n\nConfigured behavior: wait is disabled by config.waitTool or PI_SUBAGENT_WAIT_TOOL_ENABLED and returns immediately without blocking."}`,
-		parameters: WaitParams,
-		execute(_id, params, signal, _onUpdate, _ctx) {
-			return waitForSubagents(params, signal, { state, events: pi.events, enabled: waitToolConfig.enabled });
-		},
-	};
-	pi.registerTool(waitTool);
+wait also returns when a run needs attention (a child that went idle or blocked for a decision), not only on completion — so a stuck child never stalls the loop; the summary names the run(s) to inspect/nudge/resume/interrupt. It wakes the instant a completion or control event arrives (subscribed to Pi's event bus, with a poll fallback that reconciles crashed runners), keeps the turn alive for normal notification delivery, and resolves early if the turn is aborted.`,
+			parameters: WaitParams,
+			execute(_id, params, signal, _onUpdate, _ctx) {
+				return waitForSubagents(params, signal, { state, events: pi.events, enabled: true });
+			},
+		};
+		pi.registerTool(waitTool);
+	}
 
 	registerSlashCommands(pi, state);
 

@@ -115,20 +115,19 @@ describe("subagent extension child mode", () => {
 		);
 	});
 
-	it("honors waitTool disabled config for the registered wait tool", () => {
+	it("registers the wait tool according to resolved config and environment", () => {
 		const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-wait-tool-config-"));
 		try {
 			const configDir = path.join(agentDir, "extensions", "subagent");
 			fs.mkdirSync(configDir, { recursive: true });
-			fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({ waitTool: { enabled: false } }), "utf-8");
 
 			const script = String.raw`
 				import registerSubagentExtension from "./src/extension/index.ts";
 				const events = { on() { return () => {}; }, emit() {} };
-				let waitTool;
+				const registeredToolNames = [];
 				const fakePi = new Proxy({
 					events,
-					registerTool(tool) { if (tool.name === "wait") waitTool = tool; },
+					registerTool(tool) { registeredToolNames.push(tool.name); },
 					registerCommand() {},
 					registerShortcut() {},
 					registerMessageRenderer() {},
@@ -141,32 +140,37 @@ describe("subagent extension child mode", () => {
 					},
 				});
 				registerSubagentExtension(fakePi);
-				if (!waitTool) throw new Error("wait tool not registered");
-				const result = await waitTool.execute("wait-disabled", {}, new AbortController().signal, undefined, {});
-				process.stdout.write(JSON.stringify({ description: waitTool.description, result: result.content[0].text }));
+				process.stdout.write(JSON.stringify(registeredToolNames));
 			`;
 
-			const env = parentToolEnv();
-			env.PI_CODING_AGENT_DIR = agentDir;
-			const output = execFileSync(
-				process.execPath,
-				[
-					"--experimental-strip-types",
-					"--import",
-					"./test/support/register-loader.mjs",
-					"--input-type=module",
-					"--eval",
-					script,
-				],
-				{ cwd: projectRoot, env, encoding: "utf-8" },
-			);
-			const registered = JSON.parse(output) as { description: string; result: string };
-			assert.match(registered.result, /disabled/i);
-			assert.match(registered.description, /non-yielding\/run-to-completion/i);
-			assert.match(registered.description, /named same-control-flow dependency/i);
-			assert.match(registered.description, /persistent interactive parents/i);
-			assert.match(registered.description, /completion notifications resume/i);
-			assert.doesNotMatch(registered.description, /nothing left to do/i);
+			const cases = [
+				{ label: "boolean config disables", waitTool: false, expected: false },
+				{ label: "object config disables", waitTool: { enabled: false }, expected: false },
+				{ label: "environment disables enabled config", waitTool: true, envValue: "off", expected: false },
+				{ label: "environment enables disabled config", waitTool: false, envValue: "true", expected: true },
+			];
+
+			for (const testCase of cases) {
+				fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({ waitTool: testCase.waitTool }), "utf-8");
+				const env = parentToolEnv();
+				env.PI_CODING_AGENT_DIR = agentDir;
+				if (testCase.envValue) env[WAIT_TOOL_ENABLED_ENV] = testCase.envValue;
+				const output = execFileSync(
+					process.execPath,
+					[
+						"--experimental-strip-types",
+						"--import",
+						"./test/support/register-loader.mjs",
+						"--input-type=module",
+						"--eval",
+						script,
+					],
+					{ cwd: projectRoot, env, encoding: "utf-8" },
+				);
+				const registeredToolNames = JSON.parse(output) as string[];
+				assert.equal(registeredToolNames.includes("subagent"), true, testCase.label);
+				assert.equal(registeredToolNames.includes("wait"), testCase.expected, testCase.label);
+			}
 		} finally {
 			fs.rmSync(agentDir, { recursive: true, force: true });
 		}

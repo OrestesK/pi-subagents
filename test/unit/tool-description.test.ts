@@ -36,12 +36,20 @@ function assertAsyncLifecycleGuidance(description: string): void {
 	assert.match(description, /completion notifications resume/i);
 	assert.match(description, /without another user prompt/i);
 	assert.match(description, /inspect relevant completed outputs before dependent decisions or final claims/i);
-	assert.match(description, /non-yielding\/run-to-completion/i);
-	assert.match(description, /named same-control-flow dependency/i);
-	assert.doesNotMatch(description, /call wait.*nothing left/i);
+	assert.doesNotMatch(description, /\bwait\(\)/i);
+	assert.doesNotMatch(description, /\bwait tool\b/i);
 }
 
 describe("registered subagent tool description", () => {
+	it("keeps model-facing orchestration guidance free of optional wait tool references", () => {
+		const skill = fs.readFileSync(path.join(projectRoot, "skills", "pi-subagents", "SKILL.md"), "utf-8");
+		const rootAgents = fs.readFileSync(path.resolve(projectRoot, "..", "..", "AGENTS.md"), "utf-8");
+		const optionalWaitToolReference = /`wait(?:\(\))?`|\bwait tool\b|async\/wait|targeted wait/i;
+
+		assert.doesNotMatch(skill, optionalWaitToolReference);
+		assert.doesNotMatch(rootAgents, optionalWaitToolReference);
+	});
+
 	it("keeps full mode safe and free of hardcoded builtin agent names", () => {
 		const description = buildSubagentToolDescription();
 
@@ -82,7 +90,7 @@ describe("registered subagent tool description", () => {
 		assert.match(description, /PARALLEL/);
 		assert.match(description, /CHAIN/);
 		assert.match(description, /action without execution fields/i);
-		assert.match(description, /wait tool/i);
+		assert.doesNotMatch(description, /wait tool/i);
 		assert.match(description, /Do not sleep or poll/i);
 		assertAsyncLifecycleGuidance(description);
 		assert.match(description, /ordinary child subagents are not orchestrators/i);

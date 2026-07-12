@@ -26,7 +26,7 @@ const ctx = {
 };
 
 describe("async runner execution", () => {
-	it("guides async parents through persistent and run-to-completion lifecycles", () => {
+	it("guides async parents to yield for completion notifications", () => {
 		const message = formatAsyncStartedMessage("Async: worker [run-1]");
 
 		assert.match(message, /Do not run sleep timers or polling loops/i);
@@ -37,9 +37,8 @@ describe("async runner execution", () => {
 		assert.match(message, /completion notifications resume persistent interactive parents/i);
 		assert.match(message, /without another user prompt/i);
 		assert.match(message, /inspect relevant completed outputs before dependent decisions or final claims/i);
-		assert.match(message, /non-yielding\/run-to-completion/i);
-		assert.match(message, /named same-control-flow dependency/i);
-		assert.doesNotMatch(message, /call wait\(\).*nothing left/i);
+		assert.doesNotMatch(message, /\bwait\(\)/i);
+		assert.doesNotMatch(message, /\bwait tool\b/i);
 	});
 
 	it("places detached runner stdio logs in the async run directory", () => {
