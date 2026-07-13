@@ -7,6 +7,7 @@ import {
 	evaluateCompletionMutationGuard,
 	expectsImplementationMutation,
 	hasMutationToolCall,
+	runMonitorCompletionError,
 } from "../../src/runs/shared/completion-guard.ts";
 
 function assistantToolCall(name: string, args: Record<string, unknown> = {}): Message {
@@ -182,4 +183,48 @@ test("implementation task with mutation attempts does not trigger", () => {
 	});
 
 	assert.equal(result.triggered, false);
+});
+
+test("run-monitor completion rejects nonterminal final status", () => {
+	const output = [
+		"# Run Monitor Status",
+		"- state: running",
+		"- next_parent_action: continue_waiting",
+	].join("\n");
+
+	assert.match(runMonitorCompletionError("run-monitor", output) ?? "", /nonterminal state 'running'/i);
+	assert.equal(runMonitorCompletionError("worker", output), undefined);
+});
+
+test("run-monitor completion recognizes bold status labels", () => {
+	const output = [
+		"# Run Monitor Status",
+		"- **state:** running",
+		"- **next_parent_action:** continue_waiting",
+	].join("\n");
+
+	assert.match(runMonitorCompletionError("run-monitor", output) ?? "", /nonterminal state 'running'/i);
+});
+
+test("run-monitor completion fails closed for blocked, unknown, or missing final state", () => {
+	assert.match(runMonitorCompletionError("run-monitor", "- state: blocked\n- next_parent_action: inspect_status") ?? "", /nonterminal state 'blocked'/i);
+	assert.match(runMonitorCompletionError("run-monitor", "- state: unknown\n- next_parent_action: inspect_status") ?? "", /nonterminal state 'unknown'/i);
+	assert.match(runMonitorCompletionError("run-monitor", "Monitor remains active; continue waiting.") ?? "", /without the required final state/i);
+});
+
+test("run-monitor completion rejects continue-waiting after a terminal state", () => {
+	const output = "- state: completed\n- next_parent_action: continue_waiting";
+	assert.match(runMonitorCompletionError("run-monitor", output) ?? "", /nonterminal next_parent_action 'continue_waiting'/i);
+});
+
+test("run-monitor completion accepts every documented terminal final status", () => {
+	for (const state of ["completed", "failed", "missing", "stuck", "timed_out"]) {
+		const output = [
+			"# Run Monitor Status",
+			`- **Final state:** ${state}`,
+			"- next_parent_action: no_action",
+		].join("\n");
+
+		assert.equal(runMonitorCompletionError("run-monitor", output), undefined, state);
+	}
 });

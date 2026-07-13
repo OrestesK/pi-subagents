@@ -130,7 +130,7 @@ export function formatGroupedCompletion(details: SubagentNotifyDetails[]): strin
 	return blocks.join("\n").trimEnd();
 }
 
-function sendNotification(pi: Pick<ExtensionAPI, "sendMessage">, content: string): void {
+function sendNotification(pi: Pick<ExtensionAPI, "sendMessage">, content: string, display = true): void {
 	const bounded = boundCompletionOutput(
 		content,
 		MODEL_VISIBLE_COMPLETION_BUDGET,
@@ -140,9 +140,9 @@ function sendNotification(pi: Pick<ExtensionAPI, "sendMessage">, content: string
 		{
 			customType: "subagent-notify",
 			content: bounded.text,
-			display: true,
+			display,
 		},
-		{ triggerTurn: true },
+		{ triggerTurn: true, deliverAs: "followUp" },
 	);
 }
 
@@ -153,7 +153,7 @@ function completionRecoveryHint(details: SubagentNotifyDetails): string | undefi
 	return undefined;
 }
 
-function sendCompletion(pi: Pick<ExtensionAPI, "sendMessage">, details: SubagentNotifyDetails[]): void {
+function sendCompletion(pi: Pick<ExtensionAPI, "sendMessage">, details: SubagentNotifyDetails[], display = true): void {
 	if (details.length === 0) return;
 	const itemBudget = completionItemBudget(details.length);
 	const boundedDetails = details.map((detail) => ({
@@ -163,7 +163,7 @@ function sendCompletion(pi: Pick<ExtensionAPI, "sendMessage">, details: Subagent
 	const content = boundedDetails.length === 1
 		? formatSingleCompletion(boundedDetails[0]!)
 		: formatGroupedCompletion(boundedDetails);
-	sendNotification(pi, content);
+	sendNotification(pi, content, display);
 }
 
 function sendTimedOutCompletion(pi: Pick<ExtensionAPI, "sendMessage">, details: SubagentNotifyDetails): void {
@@ -298,6 +298,7 @@ export default function registerSubagentNotify(
 		const details = buildCompletionDetails(result, options.existsSync ?? fs.existsSync);
 		switch (result.deliveryState ?? "not_requested") {
 			case "delivered":
+				sendCompletion(pi, [details], false);
 				return;
 			case "timed_out":
 				sendTimedOutCompletion(pi, details);

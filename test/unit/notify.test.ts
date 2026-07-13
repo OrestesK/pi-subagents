@@ -132,7 +132,7 @@ describe("registerSubagentNotify", () => {
 				].join("\n"),
 				display: true,
 			},
-			options: { triggerTurn: true },
+			options: { triggerTurn: true, deliverAs: "followUp" },
 		});
 	});
 
@@ -167,7 +167,7 @@ describe("registerSubagentNotify", () => {
 				].join("\n"),
 				display: true,
 			},
-			options: { triggerTurn: true },
+			options: { triggerTurn: true, deliverAs: "followUp" },
 		});
 	});
 
@@ -206,7 +206,7 @@ describe("registerSubagentNotify", () => {
 				].join("\n"),
 				display: true,
 			},
-			options: { triggerTurn: true },
+			options: { triggerTurn: true, deliverAs: "followUp" },
 		}]);
 	});
 
@@ -238,7 +238,7 @@ describe("registerSubagentNotify", () => {
 				].join("\n"),
 				display: true,
 			},
-			options: { triggerTurn: true },
+			options: { triggerTurn: true, deliverAs: "followUp" },
 		});
 	});
 
@@ -265,7 +265,7 @@ describe("registerSubagentNotify", () => {
 		assert.deepEqual(sent, []);
 	});
 
-	it("routes delivered completions to no fallback and failed or unrequested delivery to full fallback", () => {
+	it("queues hidden native follow-ups for delivered intercom completions and visible fallbacks otherwise", () => {
 		const { events, sent } = createPi("session-a");
 
 		for (const [id, overrides] of [
@@ -275,7 +275,14 @@ describe("registerSubagentNotify", () => {
 		] as const) {
 			events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, completionResult({ id, deliveryState: "delivered", ...overrides }));
 		}
-		assert.equal(sent.length, 0);
+		assert.equal(sent.length, 3);
+		for (const entry of sent) {
+			assert.equal((entry.message as { display: boolean }).display, false);
+			assert.deepEqual(entry.options, { triggerTurn: true, deliverAs: "followUp" });
+		}
+		assert.match((sent[0]!.message as { content: string }).content, /delivered success summary/);
+		assert.match((sent[1]!.message as { content: string }).content, /delivered failure summary/);
+		assert.match((sent[2]!.message as { content: string }).content, /delivered paused summary/);
 
 		events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, completionResult({
 			id: "failed-success",
@@ -297,10 +304,14 @@ describe("registerSubagentNotify", () => {
 			summary: "full paused fallback",
 		}));
 
-		assert.equal(sent.length, 3);
-		assert.match((sent[0]!.message as { content: string }).content, /full success fallback/);
-		assert.match((sent[1]!.message as { content: string }).content, /full failure fallback/);
-		assert.match((sent[2]!.message as { content: string }).content, /full paused fallback/);
+		assert.equal(sent.length, 6);
+		for (const entry of sent.slice(3)) {
+			assert.equal((entry.message as { display: boolean }).display, true);
+			assert.deepEqual(entry.options, { triggerTurn: true, deliverAs: "followUp" });
+		}
+		assert.match((sent[3]!.message as { content: string }).content, /full success fallback/);
+		assert.match((sent[4]!.message as { content: string }).content, /full failure fallback/);
+		assert.match((sent[5]!.message as { content: string }).content, /full paused fallback/);
 	});
 
 	it("does not advertise missing output artifacts", () => {
@@ -415,7 +426,7 @@ describe("registerSubagentNotify", () => {
 		assert.match(content, /^Background tasks completed \(3\): \*\*alpha\*\*, \*\*beta\*\*, \*\*gamma\*\*/);
 		assert.match(content, /1\. alpha\nRun: g-1[\s\S]*alpha done/);
 		assert.match(content, /3\. gamma\nRun: g-3[\s\S]*gamma done/);
-		assert.deepEqual(sent[0]!.options, { triggerTurn: true });
+		assert.deepEqual(sent[0]!.options, { triggerTurn: true, deliverAs: "followUp" });
 	});
 
 	it("ignores successes from other sessions instead of grouping them", () => {

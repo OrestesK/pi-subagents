@@ -62,7 +62,7 @@ import { nestedSummaryFromAsyncStatus, projectNestedEvents, resolveNestedAsyncDi
 import { formatModelAttemptNote, isRetryableModelFailure } from "../shared/model-fallback.ts";
 import { attachPostExitStdioGuard, trySignalChild } from "../../shared/post-exit-stdio-guard.ts";
 import { detectSubagentError, extractTextFromContent, extractToolArgsPreview, getFinalOutput, readStatus } from "../../shared/utils.ts";
-import { evaluateCompletionMutationGuard } from "../shared/completion-guard.ts";
+import { evaluateCompletionMutationGuard, runMonitorCompletionError } from "../shared/completion-guard.ts";
 import {
 	createMutatingFailureState,
 	didMutatingToolFail,
@@ -1033,9 +1033,12 @@ async function runSingleStep(
 		const completionGuardError = completionGuardTriggered
 			? "Subagent completed without making edits for an implementation task.\nIt appears to have returned planning or scratchpad output instead of applying changes."
 			: undefined;
+		const monitorCompletionError = run.exitCode === 0 && !run.error && !run.interrupted && !hiddenError?.hasError && !emptyOutputError && !structuredError
+			? runMonitorCompletionError(step.agent, run.finalOutput)
+			: undefined;
 		const effectiveExitCode = completionGuardTriggered
 			? 1
-			: structuredError
+			: structuredError || monitorCompletionError
 				? 1
 				: hiddenError?.hasError
 				? (hiddenError.exitCode ?? 1)
@@ -1046,6 +1049,7 @@ async function runSingleStep(
 						: run.exitCode;
 		const error = completionGuardError
 			?? structuredError
+			?? monitorCompletionError
 			?? (hiddenError?.hasError
 				? hiddenError.details
 					? `${hiddenError.errorType} failed (exit ${effectiveExitCode}): ${hiddenError.details}`

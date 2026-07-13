@@ -84,6 +84,8 @@ const READ_ONLY_BUILTIN_TOOLS = new Set([
 	"contact_supervisor",
 ]);
 
+const RUN_MONITOR_TERMINAL_STATES = new Set(["completed", "failed", "missing", "stuck", "timed_out"]);
+
 interface CompletionMutationGuardInput {
 	agent: string;
 	task: string;
@@ -168,6 +170,30 @@ export function hasMutationToolCall(messages: Message[]): boolean {
 		}
 	}
 	return false;
+}
+
+export function runMonitorCompletionError(agent: string, output: string): string | undefined {
+	if (agent !== "run-monitor") return undefined;
+
+	let state: string | undefined;
+	let nextParentAction: string | undefined;
+	for (const match of output.matchAll(/^\s*-\s*(?:\*\*)?(state|final[ _]state|next_parent_action)(?::)?(?:\*\*)?:?\s*(?:\*\*|`)?([a-z_]+)(?:\*\*|`)?\s*$/gim)) {
+		const field = match[1]?.toLowerCase().replace(" ", "_");
+		const value = match[2]?.toLowerCase();
+		if (field === "state" || field === "final_state") state = value;
+		else nextParentAction = value;
+	}
+
+	if (!state) {
+		return "Run-monitor exited without the required final state. It must report a documented terminal state.";
+	}
+	if (!RUN_MONITOR_TERMINAL_STATES.has(state)) {
+		return `Run-monitor exited with nonterminal state '${state}'. It must continue until the target reaches a terminal state.`;
+	}
+	if (nextParentAction === "continue_waiting") {
+		return "Run-monitor exited with nonterminal next_parent_action 'continue_waiting'. It must continue until no further monitoring is required.";
+	}
+	return undefined;
 }
 
 export function evaluateCompletionMutationGuard(input: CompletionMutationGuardInput): CompletionMutationGuardResult {

@@ -1615,6 +1615,49 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		assert.match(statusPayload.steps?.[0]?.error ?? "", /429 quota exceeded/);
 	});
 
+	it("fails a run-monitor that exits with a nonterminal final status", { skip: !isAsyncAvailable() ? "jiti not available" : undefined }, async () => {
+		mockPi.onCall({
+			output: [
+				"# Run Monitor Status",
+				"",
+				"- target: deploy-session",
+				"- **Final state:** running",
+				"- last_check: 2026-07-12T20:42:24Z",
+				"- evidence: /tmp/deploy.log",
+				"- **next_parent_action:** continue_waiting",
+			].join("\n"),
+		});
+		const id = `async-nonterminal-run-monitor-${Date.now().toString(36)}`;
+		const asyncDir = path.join(ASYNC_DIR, id);
+		executeAsyncSingle(id, {
+			agent: "run-monitor",
+			task: "Monitor deploy-session until it reaches a terminal state",
+			agentConfig: makeAgent("run-monitor", { model: "openai/gpt-5-mini" }),
+			ctx: { pi: { events: { emit() {} } }, cwd: tempDir, currentSessionId: "session-1" },
+			artifactConfig: {
+				enabled: false,
+				includeInput: false,
+				includeOutput: false,
+				includeJsonl: false,
+				includeMetadata: false,
+				cleanupDays: 7,
+			},
+			shareEnabled: false,
+			maxSubagentDepth: 2,
+		});
+
+		const resultPath = await waitForAsyncResultFile(id);
+		const payload = JSON.parse(fs.readFileSync(resultPath, "utf-8")) as AsyncResultPayload;
+		assert.equal(payload.success, false);
+		assert.equal(payload.state, "failed");
+		assert.equal(payload.exitCode, 1);
+		assert.equal(payload.results[0]?.success, false);
+		assert.match(payload.results[0]?.error ?? "", /run-monitor exited with nonterminal state/i);
+		const statusPayload = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf-8")) as AsyncStatusPayload;
+		assert.equal(statusPayload.state, "failed");
+		assert.equal(statusPayload.steps?.[0]?.status, "failed");
+	});
+
 	it("background runs treat recovered child errors as successful", { skip: !isAsyncAvailable() ? "jiti not available" : undefined }, async () => {
 		mockPi.onCall({
 			jsonl: [
