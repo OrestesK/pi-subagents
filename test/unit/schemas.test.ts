@@ -117,22 +117,37 @@ function missingPackageName(error: unknown): string | undefined {
 function anyOfBranches(schema: JsonSchemaNode | undefined): JsonSchemaNode[] {
 	const anyOf = schema?.anyOf;
 	if (!Array.isArray(anyOf)) return [];
-	return anyOf.filter((branch): branch is JsonSchemaNode => !!branch && typeof branch === "object");
+	return anyOf.filter(
+		(branch): branch is JsonSchemaNode =>
+			!!branch && typeof branch === "object",
+	);
 }
 
-function hasAnyOfType(schema: JsonSchemaNode | undefined, type: string): boolean {
+function hasAnyOfType(
+	schema: JsonSchemaNode | undefined,
+	type: string,
+): boolean {
 	return anyOfBranches(schema).some((branch) => branch.type === type);
 }
 
-function hasAnyOfArrayWithStringItems(schema: JsonSchemaNode | undefined): boolean {
+function hasAnyOfArrayWithStringItems(
+	schema: JsonSchemaNode | undefined,
+): boolean {
 	return anyOfBranches(schema).some((branch) => {
 		if (branch.type !== "array") return false;
 		const items = branch.items;
-		return !!items && typeof items === "object" && (items as JsonSchemaNode).type === "string";
+		return (
+			!!items &&
+			typeof items === "object" &&
+			(items as JsonSchemaNode).type === "string"
+		);
 	});
 }
 
-function getPropertySchema(schema: JsonSchemaNode | undefined, path: string[]): JsonSchemaNode | undefined {
+function getPropertySchema(
+	schema: JsonSchemaNode | undefined,
+	path: string[],
+): JsonSchemaNode | undefined {
 	let current: unknown = schema;
 	for (const key of path) {
 		if (!current || typeof current !== "object") return undefined;
@@ -140,29 +155,42 @@ function getPropertySchema(schema: JsonSchemaNode | undefined, path: string[]): 
 		if (!current || typeof current !== "object") return undefined;
 		current = (current as Record<string, unknown>)[key];
 	}
-	return current && typeof current === "object" ? current as JsonSchemaNode : undefined;
+	return current && typeof current === "object"
+		? (current as JsonSchemaNode)
+		: undefined;
 }
 
 let schemas: Record<string, JsonSchemaNode> = {};
 let SubagentParams: SubagentParamsSchema | undefined;
 let schemasAvailable = true;
 try {
-	schemas = await import("../../src/extension/schemas.ts") as unknown as Record<string, JsonSchemaNode>;
+	schemas = (await import(
+		"../../src/extension/schemas.ts"
+	)) as unknown as Record<string, JsonSchemaNode>;
 	SubagentParams = schemas.SubagentParams as SubagentParamsSchema;
 } catch (error) {
 	if (missingPackageName(error) !== "typebox") throw error;
 	schemasAvailable = false;
 }
-let CompileSchema: ((schema: unknown) => { Check(value: unknown): boolean; Errors(value: unknown): Iterable<{ message: string }> }) | undefined;
+let CompileSchema:
+	| ((schema: unknown) => {
+			Check(value: unknown): boolean;
+			Errors(value: unknown): Iterable<{ message: string }>;
+	  })
+	| undefined;
 try {
-	const compileModule = await import("typebox/compile") as { Compile: typeof CompileSchema };
+	const compileModule = (await import("typebox/compile")) as {
+		Compile: typeof CompileSchema;
+	};
 	CompileSchema = compileModule.Compile;
 } catch (error) {
 	if (missingPackageName(error) !== "typebox") throw error;
 	// The structural schema assertions below do not need the optional compiler package.
 }
 
-describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not available" : undefined }, () => {
+describe("SubagentParams schema", {
+	skip: !schemasAvailable ? "typebox not available" : undefined,
+}, () => {
 	it("includes context field for fresh/fork execution mode", () => {
 		const contextSchema = SubagentParams?.properties?.context;
 		assert.ok(contextSchema, "context schema should exist");
@@ -208,7 +236,7 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		assert.doesNotMatch(description, /orchestration\./);
 	});
 
-	it("includes foreground timeout aliases and turn budget", () => {
+	it("includes foreground timeout aliases and tool budget without exposing turn budget", () => {
 		const timeoutSchema = SubagentParams?.properties?.timeoutMs;
 		const maxRuntimeSchema = SubagentParams?.properties?.maxRuntimeMs;
 		const turnBudgetSchema = SubagentParams?.properties?.turnBudget;
@@ -217,12 +245,20 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		assert.ok(maxRuntimeSchema, "maxRuntimeMs schema should exist");
 		assert.equal(timeoutSchema.minimum, 1);
 		assert.equal(maxRuntimeSchema.minimum, 1);
-		assert.match(String(timeoutSchema.description ?? ""), /foreground and async\/background/i);
-		assert.doesNotMatch(String(timeoutSchema.description ?? ""), /foreground-only/i);
+		assert.match(
+			String(timeoutSchema.description ?? ""),
+			/foreground and async\/background/i,
+		);
+		assert.doesNotMatch(
+			String(timeoutSchema.description ?? ""),
+			/foreground-only/i,
+		);
 		assert.match(String(maxRuntimeSchema.description ?? ""), /timeoutMs/i);
-		assert.match(String(maxRuntimeSchema.description ?? ""), /foreground and async\/background/i);
-		assert.equal(turnBudgetSchema?.properties?.maxTurns?.minimum, 1);
-		assert.equal(turnBudgetSchema?.properties?.graceTurns?.minimum, 0);
+		assert.match(
+			String(maxRuntimeSchema.description ?? ""),
+			/foreground and async\/background/i,
+		);
+		assert.equal(turnBudgetSchema, undefined);
 		assert.equal(toolBudgetSchema?.properties?.soft?.minimum, 1);
 		assert.equal(toolBudgetSchema?.properties?.hard?.minimum, 1);
 	});
@@ -293,9 +329,19 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		assert.equal(controlSchema.properties?.activeNoticeAfterMs?.minimum, 1);
 		assert.equal(controlSchema.properties?.activeNoticeAfterTurns?.minimum, 1);
 		assert.equal(controlSchema.properties?.activeNoticeAfterTokens?.minimum, 1);
-		assert.equal(controlSchema.properties?.failedToolAttemptsBeforeAttention?.minimum, 1);
-		assert.deepEqual(controlSchema.properties?.notifyOn?.items?.enum, ["active_long_running", "needs_attention"]);
-		assert.deepEqual(controlSchema.properties?.notifyChannels?.items?.enum, ["event", "async", "intercom"]);
+		assert.equal(
+			controlSchema.properties?.failedToolAttemptsBeforeAttention?.minimum,
+			1,
+		);
+		assert.deepEqual(controlSchema.properties?.notifyOn?.items?.enum, [
+			"active_long_running",
+			"needs_attention",
+		]);
+		assert.deepEqual(controlSchema.properties?.notifyChannels?.items?.enum, [
+			"event",
+			"async",
+			"intercom",
+		]);
 	});
 
 	it("accepts non-negative integer offsets and rejects invalid offsets", () => {
@@ -312,18 +358,26 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		const descriptionOnlyPaths: string[] = [];
 
 		for (const [name, schema] of Object.entries(schemas)) {
-			const stack: Array<{ path: string; value: unknown }> = [{ path: name, value: schema }];
+			const stack: Array<{ path: string; value: unknown }> = [
+				{ path: name, value: schema },
+			];
 			while (stack.length > 0) {
 				const current = stack.pop()!;
 				if (!current.value || typeof current.value !== "object") continue;
 
 				const node = current.value as JsonSchemaNode;
-				if (Object.prototype.hasOwnProperty.call(node, "description") && !Object.prototype.hasOwnProperty.call(node, "type") && !Object.prototype.hasOwnProperty.call(node, "anyOf")) {
+				if (
+					Object.prototype.hasOwnProperty.call(node, "description") &&
+					!Object.prototype.hasOwnProperty.call(node, "type") &&
+					!Object.prototype.hasOwnProperty.call(node, "anyOf")
+				) {
 					descriptionOnlyPaths.push(current.path);
 				}
 
 				if (Array.isArray(current.value)) {
-					current.value.forEach((value, index) => stack.push({ path: `${current.path}[${index}]`, value }));
+					current.value.forEach((value, index) =>
+						stack.push({ path: `${current.path}[${index}]`, value }),
+					);
 					continue;
 				}
 
@@ -340,18 +394,25 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		const missingItemsPaths: string[] = [];
 
 		for (const [name, schema] of Object.entries(schemas)) {
-			const stack: Array<{ path: string; value: unknown }> = [{ path: name, value: schema }];
+			const stack: Array<{ path: string; value: unknown }> = [
+				{ path: name, value: schema },
+			];
 			while (stack.length > 0) {
 				const current = stack.pop()!;
 				if (!current.value || typeof current.value !== "object") continue;
 
 				const node = current.value as JsonSchemaNode;
-				if (node.type === "array" && !Object.prototype.hasOwnProperty.call(node, "items")) {
+				if (
+					node.type === "array" &&
+					!Object.prototype.hasOwnProperty.call(node, "items")
+				) {
 					missingItemsPaths.push(current.path);
 				}
 
 				if (Array.isArray(current.value)) {
-					current.value.forEach((value, index) => stack.push({ path: `${current.path}[${index}]`, value }));
+					current.value.forEach((value, index) =>
+						stack.push({ path: `${current.path}[${index}]`, value }),
+					);
 					continue;
 				}
 
@@ -368,26 +429,50 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		assert.ok(SubagentParams, "SubagentParams schema should exist");
 		const schema = SubagentParams as unknown as JsonSchemaNode;
 		const serialized = JSON.stringify(schema);
-		assert.ok(serialized.length < 15_000, `expected compact schema under 15k chars, got ${serialized.length}`);
+		assert.ok(
+			serialized.length < 15_000,
+			`expected compact schema under 15k chars, got ${serialized.length}`,
+		);
 		assert.equal(serialized.includes('"$ref"'), false);
 		assert.equal(serialized.includes('"$defs"'), false);
 		assert.equal(serialized.split("Optional acceptance policy.").length - 1, 1);
-		assert.match(String((schema.properties as Record<string, JsonSchemaNode> | undefined)?.agent?.description ?? ""), /SINGLE mode/);
-		assert.match(String((schema.properties as Record<string, JsonSchemaNode> | undefined)?.acceptance?.description ?? ""), /acceptance policy/);
+		assert.match(
+			String(
+				(schema.properties as Record<string, JsonSchemaNode> | undefined)?.agent
+					?.description ?? "",
+			),
+			/SINGLE mode/,
+		);
+		assert.match(
+			String(
+				(schema.properties as Record<string, JsonSchemaNode> | undefined)
+					?.acceptance?.description ?? "",
+			),
+			/acceptance policy/,
+		);
 
 		const nestedDescriptionPaths: string[] = [];
-		const stack: Array<{ path: string; value: unknown }> = [{ path: "SubagentParams", value: schema }];
+		const stack: Array<{ path: string; value: unknown }> = [
+			{ path: "SubagentParams", value: schema },
+		];
 		while (stack.length > 0) {
 			const current = stack.pop()!;
 			if (!current.value || typeof current.value !== "object") continue;
 			const node = current.value as JsonSchemaNode;
 			const pathParts = current.path.split(".");
-			const isTopLevelParameter = pathParts.length === 3 && pathParts[0] === "SubagentParams" && pathParts[1] === "properties";
-			if (typeof node.description === "string" && !isTopLevelParameter) nestedDescriptionPaths.push(`${current.path}.description`);
+			const isTopLevelParameter =
+				pathParts.length === 3 &&
+				pathParts[0] === "SubagentParams" &&
+				pathParts[1] === "properties";
+			if (typeof node.description === "string" && !isTopLevelParameter)
+				nestedDescriptionPaths.push(`${current.path}.description`);
 			if (Array.isArray(current.value)) {
-				current.value.forEach((value, index) => stack.push({ path: `${current.path}[${index}]`, value }));
+				current.value.forEach((value, index) =>
+					stack.push({ path: `${current.path}[${index}]`, value }),
+				);
 			} else {
-				for (const [key, value] of Object.entries(node)) stack.push({ path: `${current.path}.${key}`, value });
+				for (const [key, value] of Object.entries(node))
+					stack.push({ path: `${current.path}.${key}`, value });
 			}
 		}
 		assert.deepEqual(nestedDescriptionPaths, []);
@@ -401,16 +486,34 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		assert.equal(rootKind?.enumerable, false);
 
 		const agentSchema = getPropertySchema(schema, ["agent"]);
-		assert.equal(Object.getOwnPropertyDescriptor(agentSchema, "~kind")?.enumerable, false);
-		assert.equal(Object.getOwnPropertyDescriptor(agentSchema, "~optional")?.value, true);
-		assert.equal(Object.getOwnPropertyDescriptor(agentSchema, "~optional")?.enumerable, false);
+		assert.equal(
+			Object.getOwnPropertyDescriptor(agentSchema, "~kind")?.enumerable,
+			false,
+		);
+		assert.equal(
+			Object.getOwnPropertyDescriptor(agentSchema, "~optional")?.value,
+			true,
+		);
+		assert.equal(
+			Object.getOwnPropertyDescriptor(agentSchema, "~optional")?.enumerable,
+			false,
+		);
 
 		const tasksSchema = getPropertySchema(schema, ["tasks"]);
 		const taskItemsSchema = tasksSchema?.items as JsonSchemaNode | undefined;
 		const taskCountSchema = getPropertySchema(taskItemsSchema, ["count"]);
-		assert.equal(Object.getOwnPropertyDescriptor(taskCountSchema, "~kind")?.enumerable, false);
-		assert.equal(Object.getOwnPropertyDescriptor(taskCountSchema, "~optional")?.value, true);
-		assert.equal(Object.getOwnPropertyDescriptor(taskCountSchema, "~optional")?.enumerable, false);
+		assert.equal(
+			Object.getOwnPropertyDescriptor(taskCountSchema, "~kind")?.enumerable,
+			false,
+		);
+		assert.equal(
+			Object.getOwnPropertyDescriptor(taskCountSchema, "~optional")?.value,
+			true,
+		);
+		assert.equal(
+			Object.getOwnPropertyDescriptor(taskCountSchema, "~optional")?.enumerable,
+			false,
+		);
 	});
 
 	it("does not emit provider-rejected schema shapes", () => {
@@ -418,7 +521,9 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		const rejectedKeywords = ["allOf", "const", "if", "then", "not"];
 
 		for (const [name, schema] of Object.entries(schemas)) {
-			const stack: Array<{ path: string; value: unknown }> = [{ path: name, value: schema }];
+			const stack: Array<{ path: string; value: unknown }> = [
+				{ path: name, value: schema },
+			];
 			while (stack.length > 0) {
 				const current = stack.pop()!;
 				if (!current.value || typeof current.value !== "object") continue;
@@ -427,15 +532,21 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 				if (Array.isArray(node.type)) {
 					rejectedPaths.push(`${current.path}.type`);
 				}
-				if (Object.prototype.hasOwnProperty.call(node, "anyOf") && Object.prototype.hasOwnProperty.call(node, "type")) {
+				if (
+					Object.prototype.hasOwnProperty.call(node, "anyOf") &&
+					Object.prototype.hasOwnProperty.call(node, "type")
+				) {
 					rejectedPaths.push(`${current.path}.type+anyOf`);
 				}
 				for (const keyword of rejectedKeywords) {
-					if (Object.prototype.hasOwnProperty.call(node, keyword)) rejectedPaths.push(`${current.path}.${keyword}`);
+					if (Object.prototype.hasOwnProperty.call(node, keyword))
+						rejectedPaths.push(`${current.path}.${keyword}`);
 				}
 
 				if (Array.isArray(current.value)) {
-					current.value.forEach((value, index) => stack.push({ path: `${current.path}[${index}]`, value }));
+					current.value.forEach((value, index) =>
+						stack.push({ path: `${current.path}[${index}]`, value }),
+					);
 					continue;
 				}
 
@@ -465,7 +576,13 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		const configSchema = SubagentParams?.properties?.config;
 		assert.ok(configSchema, "config schema should exist");
 		assert.equal(configSchema.type, undefined);
-		assert.equal(anyOfBranches(configSchema).some((branch) => branch.type === "object" && branch.additionalProperties === true), true);
+		assert.equal(
+			anyOfBranches(configSchema).some(
+				(branch) =>
+					branch.type === "object" && branch.additionalProperties === true,
+			),
+			true,
+		);
 		assert.equal(hasAnyOfType(configSchema, "string"), true);
 
 		const acceptanceSchema = SubagentParams?.properties?.acceptance;
@@ -473,10 +590,18 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		assert.equal(acceptanceSchema.type, undefined);
 		assert.equal(hasAnyOfType(acceptanceSchema, "string"), true);
 		assert.equal(hasAnyOfType(acceptanceSchema, "boolean"), true);
-		const acceptanceObjectBranch = anyOfBranches(acceptanceSchema).find((branch) => branch.type === "object");
-		assert.ok(acceptanceObjectBranch, "acceptance should support object config");
+		const acceptanceObjectBranch = anyOfBranches(acceptanceSchema).find(
+			(branch) => branch.type === "object",
+		);
+		assert.ok(
+			acceptanceObjectBranch,
+			"acceptance should support object config",
+		);
 		assert.equal(acceptanceObjectBranch.additionalProperties, true);
-		assert.equal(JSON.stringify(acceptanceObjectBranch).includes('"anyOf"'), false);
+		assert.equal(
+			JSON.stringify(acceptanceObjectBranch).includes('"anyOf"'),
+			false,
+		);
 
 		const chainItem = SubagentParams?.properties?.chain?.items;
 		assert.ok(chainItem, "chain item schema should exist");
@@ -492,11 +617,25 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		assert.equal(chainItem.properties?.outputSchema?.type, "object");
 		assert.equal(chainItem.properties?.parallel?.type, undefined);
 		const parallelBranches = anyOfBranches(chainItem.properties?.parallel);
-		const staticParallelBranch = parallelBranches.find((branch) => branch.type === "array");
-		const dynamicParallelBranch = parallelBranches.find((branch) => branch.type === "object");
-		assert.ok(staticParallelBranch, "parallel should support static task arrays");
-		assert.ok(dynamicParallelBranch, "parallel should support a dynamic task template object");
-		const chainParallelTask = (staticParallelBranch.items as { properties?: Record<string, JsonSchemaNode> } | undefined)?.properties;
+		const staticParallelBranch = parallelBranches.find(
+			(branch) => branch.type === "array",
+		);
+		const dynamicParallelBranch = parallelBranches.find(
+			(branch) => branch.type === "object",
+		);
+		assert.ok(
+			staticParallelBranch,
+			"parallel should support static task arrays",
+		);
+		assert.ok(
+			dynamicParallelBranch,
+			"parallel should support a dynamic task template object",
+		);
+		const chainParallelTask = (
+			staticParallelBranch.items as
+				| { properties?: Record<string, JsonSchemaNode> }
+				| undefined
+		)?.properties;
 		assert.equal(chainParallelTask?.agent?.type, "string");
 		assert.equal(chainParallelTask?.phase?.type, "string");
 		assert.equal(chainParallelTask?.label?.type, "string");
@@ -517,17 +656,23 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		assert.equal(hasAnyOfArrayWithStringItems(chainParallelSkillSchema), true);
 		assert.equal(hasAnyOfType(chainParallelSkillSchema, "boolean"), true);
 		assert.equal(hasAnyOfType(chainParallelSkillSchema, "string"), true);
-		const chainOutputSchema = chainItem.properties?.output as JsonSchemaNode | undefined;
+		const chainOutputSchema = chainItem.properties?.output as
+			| JsonSchemaNode
+			| undefined;
 		assert.equal(chainOutputSchema?.type, undefined);
 		assert.equal(hasAnyOfType(chainOutputSchema, "string"), true);
 		assert.equal(hasAnyOfType(chainOutputSchema, "boolean"), true);
-		const chainReadsSchema = chainItem.properties?.reads as JsonSchemaNode | undefined;
+		const chainReadsSchema = chainItem.properties?.reads as
+			| JsonSchemaNode
+			| undefined;
 		assert.equal(chainReadsSchema?.type, undefined);
 		assert.equal(hasAnyOfArrayWithStringItems(chainReadsSchema), true);
 		assert.equal(hasAnyOfType(chainReadsSchema, "boolean"), true);
 	});
 
-	it("validates representative flexible field values with TypeBox compiler", { skip: !CompileSchema ? "typebox compiler not available" : undefined }, () => {
+	it("validates representative flexible field values with TypeBox compiler", {
+		skip: !CompileSchema ? "typebox compiler not available" : undefined,
+	}, () => {
 		assert.ok(SubagentParams, "SubagentParams schema should exist");
 		assert.ok(CompileSchema, "TypeBox compiler should exist");
 		const validator = CompileSchema(SubagentParams);
@@ -537,15 +682,83 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 			{ tasks: [{ agent: "reviewer", task: "check this", reads: false }] },
 			{ tasks: [{ agent: "reviewer", task: "check this", skill: "review" }] },
 			{ tasks: [{ agent: "reviewer", task: "check this", skill: false }] },
-			{ tasks: [{ agent: "reviewer", task: "check this", output: "review.md", reads: ["input.md"], progress: true }] },
+			{
+				tasks: [
+					{
+						agent: "reviewer",
+						task: "check this",
+						output: "review.md",
+						reads: ["input.md"],
+						progress: true,
+					},
+				],
+			},
 			{ chain: [{ agent: "reviewer", reads: false }] },
-			{ chain: [{ agent: "reviewer", phase: "Review", label: "Correctness", as: "findings", outputSchema: { type: "object" } }] },
+			{
+				chain: [
+					{
+						agent: "reviewer",
+						phase: "Review",
+						label: "Correctness",
+						as: "findings",
+						outputSchema: { type: "object" },
+					},
+				],
+			},
 			{ chain: [{ agent: "reviewer", skill: "review" }] },
 			{ chain: [{ agent: "reviewer", skill: false }] },
-			{ chain: [{ parallel: [{ agent: "reviewer", reads: false, skill: false }] }] },
-			{ chain: [{ parallel: [{ agent: "reviewer", phase: "Review", label: "Security", as: "security", outputSchema: { type: "object" } }] }] },
-			{ chain: [{ parallel: [{ agent: "reviewer", output: "review.md", reads: ["input.md"], skill: "review" }] }] },
-			{ chain: [{ expand: { from: { output: "targets", path: "/items" }, item: "target", key: "/path", maxItems: 4 }, parallel: { agent: "reviewer", task: "Review {target.path}", outputSchema: { type: "object" } }, collect: { as: "reviews" } }] },
+			{
+				chain: [
+					{ parallel: [{ agent: "reviewer", reads: false, skill: false }] },
+				],
+			},
+			{
+				chain: [
+					{
+						parallel: [
+							{
+								agent: "reviewer",
+								phase: "Review",
+								label: "Security",
+								as: "security",
+								outputSchema: { type: "object" },
+							},
+						],
+					},
+				],
+			},
+			{
+				chain: [
+					{
+						parallel: [
+							{
+								agent: "reviewer",
+								output: "review.md",
+								reads: ["input.md"],
+								skill: "review",
+							},
+						],
+					},
+				],
+			},
+			{
+				chain: [
+					{
+						expand: {
+							from: { output: "targets", path: "/items" },
+							item: "target",
+							key: "/path",
+							maxItems: 4,
+						},
+						parallel: {
+							agent: "reviewer",
+							task: "Review {target.path}",
+							outputSchema: { type: "object" },
+						},
+						collect: { as: "reviews" },
+					},
+				],
+			},
 			{ agent: "worker", task: "Fix", acceptance: false },
 			{ agent: "worker", task: "Fix", timeoutMs: 1000 },
 			{ action: "steer", id: "run-1", message: "focus on tests" },
@@ -554,19 +767,61 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 			{ action: "PARALLEL", tasks: [{ agent: "worker", task: "Fix" }] },
 			{ action: "not-a-real-action" },
 			{ tasks: [{ agent: "worker", task: "Fix" }], maxRuntimeMs: 1000 },
-			{ chain: [{ agent: "worker", task: "Fix" }], timeoutMs: 1000, maxRuntimeMs: 1000 },
+			{
+				chain: [{ agent: "worker", task: "Fix" }],
+				timeoutMs: 1000,
+				maxRuntimeMs: 1000,
+			},
 			{ agent: "worker", task: "Fix", acceptance: "checked" },
-			{ agent: "worker", task: "Fix", acceptance: { level: "checked", review: false } },
+			{
+				agent: "worker",
+				task: "Fix",
+				acceptance: { level: "checked", review: false },
+			},
 			{ tasks: [{ agent: "worker", task: "Fix", acceptance: false }] },
 			{ chain: [{ agent: "worker", acceptance: { level: "checked" } }] },
-			{ chain: [{ parallel: [{ agent: "worker", acceptance: { level: "verified", verify: [{ id: "unit", command: "npm test" }] } }] }] },
-			{ chain: [{ expand: { from: { output: "targets", path: "/items" }, maxItems: 4 }, parallel: { agent: "worker", acceptance: { level: "checked", review: false } }, collect: { as: "reviews" } }] },
+			{
+				chain: [
+					{
+						parallel: [
+							{
+								agent: "worker",
+								acceptance: {
+									level: "verified",
+									verify: [{ id: "unit", command: "npm test" }],
+								},
+							},
+						],
+					},
+				],
+			},
+			{
+				chain: [
+					{
+						expand: {
+							from: { output: "targets", path: "/items" },
+							maxItems: 4,
+						},
+						parallel: {
+							agent: "worker",
+							acceptance: { level: "checked", review: false },
+						},
+						collect: { as: "reviews" },
+					},
+				],
+			},
 			{ config: { name: "reviewer", description: "Review things" } },
-			{ config: JSON.stringify({ name: "reviewer", description: "Review things" }) },
-			{ agent: "worker", task: "Fix", turnBudget: { maxTurns: 5, graceTurns: 1 } },
-			{ agent: "worker", task: "Fix", turnBudget: { maxTurns: 1 } },
-			{ agent: "worker", task: "Fix", turnBudget: { maxTurns: 3, graceTurns: 0 } },
-			{ agent: "worker", task: "Fix", toolBudget: { soft: 5, hard: 8, block: ["read", "grep"] } },
+			{
+				config: JSON.stringify({
+					name: "reviewer",
+					description: "Review things",
+				}),
+			},
+			{
+				agent: "worker",
+				task: "Fix",
+				toolBudget: { soft: 5, hard: 8, block: ["read", "grep"] },
+			},
 			{ agent: "worker", task: "Fix", toolBudget: { hard: 8, block: "*" } },
 			{ tasks: [{ agent: "worker", task: "Fix", toolBudget: { hard: 3 } }] },
 			{ chain: [{ agent: "worker", toolBudget: { hard: 3 } }] },
@@ -583,20 +838,65 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 			{ chain: [{ parallel: [{ agent: "reviewer", reads: "input.md" }] }] },
 			{ chain: [{ parallel: [{ agent: "reviewer", skill: 123 }] }] },
 			{ chain: [{ agent: "reviewer", outputSchema: "schema.json" }] },
-			{ chain: [{ parallel: [{ agent: "reviewer", outputSchema: "schema.json" }] }] },
-			{ chain: [{ expand: { from: { output: "targets", path: "/items" }, maxItems: 4, expression: "items" }, parallel: { agent: "reviewer" }, collect: { as: "reviews" } }] },
-			{ chain: [{ expand: { from: { output: "targets", path: "/items" }, maxItems: 4 }, parallel: { agent: "reviewer", as: "child" }, collect: { as: "reviews" } }] },
-			{ chain: [{ expand: { from: { output: "targets", path: "/items" }, maxItems: 4 }, parallel: { agent: "reviewer" }, collect: { as: "reviews" }, when: "later" }] },
+			{
+				chain: [
+					{ parallel: [{ agent: "reviewer", outputSchema: "schema.json" }] },
+				],
+			},
+			{
+				chain: [
+					{
+						expand: {
+							from: { output: "targets", path: "/items" },
+							maxItems: 4,
+							expression: "items",
+						},
+						parallel: { agent: "reviewer" },
+						collect: { as: "reviews" },
+					},
+				],
+			},
+			{
+				chain: [
+					{
+						expand: {
+							from: { output: "targets", path: "/items" },
+							maxItems: 4,
+						},
+						parallel: { agent: "reviewer", as: "child" },
+						collect: { as: "reviews" },
+					},
+				],
+			},
+			{
+				chain: [
+					{
+						expand: {
+							from: { output: "targets", path: "/items" },
+							maxItems: 4,
+						},
+						parallel: { agent: "reviewer" },
+						collect: { as: "reviews" },
+						when: "later",
+					},
+				],
+			},
 			{ agent: "worker", task: "Fix", acceptance: true },
 			{ tasks: [{ agent: "worker", task: "Fix", acceptance: true }] },
-			{ chain: [{ expand: { from: { output: "targets", path: "/items" }, maxItems: 4 }, parallel: { agent: "worker", acceptance: true }, collect: { as: "reviews" } }] },
+			{
+				chain: [
+					{
+						expand: {
+							from: { output: "targets", path: "/items" },
+							maxItems: 4,
+						},
+						parallel: { agent: "worker", acceptance: true },
+						collect: { as: "reviews" },
+					},
+				],
+			},
 			{ config: [] },
 			{ config: null },
-			{ agent: "worker", task: "Fix", turnBudget: { maxTurns: 0 } },
-			{ agent: "worker", task: "Fix", turnBudget: { maxTurns: 5, graceTurns: -1 } },
-			{ agent: "worker", task: "Fix", turnBudget: { maxTurns: 1.5 } },
-			{ agent: "worker", task: "Fix", turnBudget: { graceTurns: 1 } },
-			{ agent: "worker", task: "Fix", turnBudget: { maxTurns: 5, graceTurns: 1, extra: true } },
 			{ agent: "worker", task: "Fix", toolBudget: { hard: 0 } },
 			{ agent: "worker", task: "Fix", toolBudget: { hard: 3, soft: 0 } },
 			{ agent: "worker", task: "Fix", toolBudget: { hard: 3, block: [123] } },
@@ -605,7 +905,10 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		];
 
 		for (const value of validValues) {
-			assert.doesNotThrow(() => validator.Check(value), `validator should not throw for ${JSON.stringify(value)}`);
+			assert.doesNotThrow(
+				() => validator.Check(value),
+				`validator should not throw for ${JSON.stringify(value)}`,
+			);
 			assert.equal(
 				validator.Check(value),
 				true,
@@ -613,7 +916,11 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 			);
 		}
 		for (const value of invalidValues) {
-			assert.equal(validator.Check(value), false, `${JSON.stringify(value)} should not validate`);
+			assert.equal(
+				validator.Check(value),
+				false,
+				`${JSON.stringify(value)} should not validate`,
+			);
 		}
 	});
 });

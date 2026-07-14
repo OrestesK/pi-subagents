@@ -36,6 +36,7 @@ As of 2026-07-08, the local stack contains these concerns:
 - `run-monitor` normal exits fail closed unless final output declares a documented terminal state (`completed`, `failed`, `missing`, `stuck`, or `timed_out`). Canonical, bold Markdown, and `Final state` labels are accepted; `running`, `blocked`, unknown/missing states, and `continue_waiting` are rejected. Runtime interruption bypasses this semantic final-output guard.
 - Model-facing async launch, subagent-tool, skill, and global-agent guidance treats persistent interactive completion as notification-driven without naming the optional `wait` tool; the enabled tool's own description owns its usage rules, and disabling `waitTool` omits it entirely. README documentation still covers both configurations.
 - Top-level `workflow: "builtin.*"` remains accepted as a deprecated compatibility alias for now. When `forceTopLevelAsync` is enabled, these expanded aliases follow the same depth-0 async override as explicit single, parallel, and chain calls. First-party guidance should prefer prompt shortcuts or explicit `tasks`/`chain` shapes before eventual removal.
+- Removed subagent turn limit
 
 ## Setup
 

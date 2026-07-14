@@ -3,19 +3,18 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Compile } from "typebox/compile";
 
 import { loadTs } from "../support/load-ts.mjs";
 
 const { SubagentParams } = await loadTs("../../src/extension/schemas.ts");
 const { ASYNC_DIR, RESULTS_DIR } = await loadTs("../../src/shared/types.ts");
-const { executeAsyncSingle } = await loadTs("../../src/runs/background/async-execution.ts");
+const { executeAsyncSingle } = await loadTs(
+	"../../src/runs/background/async-execution.ts",
+);
 const { runSync } = await loadTs("../../src/runs/foreground/execution.ts");
-const {
-	appendTurnBudgetSystemPrompt,
-	shouldAbortForTurnBudget,
-	validateTurnBudgetConfig,
-} = await loadTs("../../src/runs/shared/turn-budget.ts");
+const { appendTurnBudgetSystemPrompt, shouldAbortForTurnBudget } = await loadTs(
+	"../../src/runs/shared/turn-budget.ts",
+);
 
 async function waitFor(predicate, timeoutMs = 5000) {
 	const deadline = Date.now() + timeoutMs;
@@ -41,7 +40,9 @@ function makeAgent() {
 }
 
 function makeTwoTurnFakePi(delayMs = 500) {
-	const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-turn-budget-pi-"));
+	const tmp = fs.mkdtempSync(
+		path.join(os.tmpdir(), "pi-subagents-turn-budget-pi-"),
+	);
 	const bin = path.join(tmp, "pi");
 	fs.writeFileSync(
 		bin,
@@ -56,17 +57,11 @@ setTimeout(() => {
 	return tmp;
 }
 
-test("turn budget validates explicit config only", () => {
-	assert.deepEqual(validateTurnBudgetConfig(undefined), {});
-	assert.deepEqual(validateTurnBudgetConfig({ maxTurns: 2 }), { budget: { maxTurns: 2, graceTurns: 1 } });
-	assert.deepEqual(validateTurnBudgetConfig({ maxTurns: 2, graceTurns: 0 }), { budget: { maxTurns: 2, graceTurns: 0 } });
-	assert.match(validateTurnBudgetConfig({}).error, /maxTurns/);
-	assert.match(validateTurnBudgetConfig({ maxTurns: 0 }).error, /integer >= 1/);
-	assert.match(validateTurnBudgetConfig({ maxTurns: 1, graceTurns: -1 }).error, /graceTurns/);
-});
-
 test("turn budget prompt asks the child to wrap up", () => {
-	const prompt = appendTurnBudgetSystemPrompt("Base prompt", { maxTurns: 2, graceTurns: 0 });
+	const prompt = appendTurnBudgetSystemPrompt("Base prompt", {
+		maxTurns: 2,
+		graceTurns: 0,
+	});
 
 	assert.match(prompt, /Base prompt/);
 	assert.match(prompt, /Turn budget/);
@@ -83,13 +78,8 @@ test("turn budget abort decision distinguishes terminal final stop", () => {
 	assert.equal(shouldAbortForTurnBudget(budget, 3, true), true);
 });
 
-test("public schema exposes turnBudget and validates values", () => {
-	const validator = Compile(SubagentParams);
-
-	assert.equal(validator.Check({ agent: "delegate", task: "x", turnBudget: { maxTurns: 2 } }), true);
-	assert.equal(validator.Check({ agent: "delegate", task: "x", turnBudget: { maxTurns: 2, graceTurns: 0 } }), true);
-	assert.equal(validator.Check({ agent: "delegate", task: "x", turnBudget: { maxTurns: 0 } }), false);
-	assert.equal(validator.Check({ agent: "delegate", task: "x", turnBudget: { maxTurns: 1, extra: true } }), false);
+test("public schema does not expose turnBudget", () => {
+	assert.equal(SubagentParams.properties.turnBudget, undefined);
 });
 
 test("async single aborts a nonterminal child when turn budget is exceeded", async () => {
@@ -105,12 +95,26 @@ test("async single aborts a nonterminal child when turn budget is exceeded", asy
 			task: "Keep working",
 			agentConfig: makeAgent(),
 			ctx: {
-				pi: { events: { emit() {}, on() { return () => {}; } } },
+				pi: {
+					events: {
+						emit() {},
+						on() {
+							return () => {};
+						},
+					},
+				},
 				cwd: fakePiDir,
 				currentSessionId: "turn-budget-session",
 			},
 			cwd: fakePiDir,
-			artifactConfig: { enabled: false, includeInput: false, includeOutput: false, includeJsonl: false, includeMetadata: false, cleanupDays: 1 },
+			artifactConfig: {
+				enabled: false,
+				includeInput: false,
+				includeOutput: false,
+				includeJsonl: false,
+				includeMetadata: false,
+				cleanupDays: 1,
+			},
 			shareEnabled: false,
 			maxSubagentDepth: 0,
 			turnBudget: { maxTurns: 1, graceTurns: 0 },
@@ -140,18 +144,27 @@ test("runSync aborts a nonterminal child when turn budget is exceeded", async ()
 	const oldPath = process.env.PATH;
 	process.env.PATH = `${fakePiDir}${path.delimiter}${oldPath ?? ""}`;
 	try {
-		const result = await runSync(fakePiDir, [makeAgent()], "delegate", "Keep working", {
-			runId: "turn-budget-run",
-			index: 0,
-			turnBudget: { maxTurns: 1, graceTurns: 0 },
-		});
+		const result = await runSync(
+			fakePiDir,
+			[makeAgent()],
+			"delegate",
+			"Keep working",
+			{
+				runId: "turn-budget-run",
+				index: 0,
+				turnBudget: { maxTurns: 1, graceTurns: 0 },
+			},
+		);
 
 		assert.equal(result.exitCode, 1);
 		assert.equal(result.turnBudgetExceeded, true);
 		assert.equal(result.turnBudget?.outcome, "exceeded");
 		assert.match(result.error ?? "", /turn budget/i);
 		assert.match(result.finalOutput ?? "", /first turn/);
-		assert.match(result.finalOutput ?? "", /Partial output before turn-budget abort/);
+		assert.match(
+			result.finalOutput ?? "",
+			/Partial output before turn-budget abort/,
+		);
 		assert.equal(result.progress?.status, "failed");
 	} finally {
 		process.env.PATH = oldPath;
