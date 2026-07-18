@@ -117,7 +117,7 @@ describe("builtin agent overrides", () => {
 		assert.equal(agents.find((agent) => agent.name === "scout-copy")?.model, "deepseek-v4-flash");
 	});
 
-	it("applies user settings overrides to builtin agents", () => {
+	it("applies non-capability user settings overrides", () => {
 		writeJson(path.join(tempHome, ".pi", "agent", "settings.json"), {
 			subagents: {
 				agentOverrides: {
@@ -127,7 +127,6 @@ describe("builtin agent overrides", () => {
 						systemPromptMode: "replace",
 						inheritProjectContext: true,
 						inheritSkills: true,
-						subagentOnlyExtensions: ["./tools/child-review.ts"],
 						completionGuard: false,
 					},
 				},
@@ -142,7 +141,6 @@ describe("builtin agent overrides", () => {
 		assert.equal(reviewer.systemPromptMode, "replace");
 		assert.equal(reviewer.inheritProjectContext, true);
 		assert.equal(reviewer.inheritSkills, true);
-		assert.deepEqual(reviewer.subagentOnlyExtensions, ["./tools/child-review.ts"]);
 		assert.equal(reviewer.completionGuard, false);
 		assert.equal(reviewer.override?.scope, "user");
 		assert.equal(reviewer.override?.path, path.join(tempHome, ".pi", "agent", "settings.json"));
@@ -302,6 +300,27 @@ describe("builtin agent overrides", () => {
 		assert.equal(reviewer.override?.scope, "project");
 	});
 
+	it("rejects capability fields in settings overrides", () => {
+		const settingsPath = path.join(tempProject, ".pi", "settings.json");
+		fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+		for (const [field, value] of [
+			["tools", ["read"]],
+			["subagentOnlyExtensions", ["./tools/child.ts"]],
+		] as const) {
+			writeJson(settingsPath, {
+				subagents: { agentOverrides: { reviewer: { [field]: value } } },
+			});
+			assert.throws(
+				() => discoverAgents(tempProject, "both"),
+				(error: unknown) => error instanceof Error
+					&& error.message.includes(settingsPath)
+					&& error.message.includes("reviewer")
+					&& error.message.includes(field)
+					&& error.message.includes("agent Markdown"),
+			);
+		}
+	});
+
 	it("frontmatter wins per-field over agentOverrides for a shadowing project agent", () => {
 		fs.mkdirSync(path.join(tempProject, ".pi"), { recursive: true });
 		writeJson(path.join(tempProject, ".pi", "settings.json"), {
@@ -329,15 +348,13 @@ describe("builtin agent overrides", () => {
 						inheritProjectContext: true,
 						inheritSkills: true,
 						defaultContext: "fork",
-						tools: ["bash", "mcp:xcodebuild_list_sims"],
 						skills: ["tdd"],
-						subagentOnlyExtensions: ["./tools/child-review.ts"],
 						completionGuard: false,
 					},
 				},
 			},
 		});
-		writeProjectAgent(tempProject, "implementer", `---\nname: implementer\ndescription: TDD implementer\n---\n\nDrive the failing test first.\n`);
+		writeProjectAgent(tempProject, "implementer", `---\nname: implementer\ndescription: TDD implementer\ntools: bash, mcp:xcodebuild_list_sims\nsubagentOnlyExtensions: ./tools/child-review.ts\n---\n\nDrive the failing test first.\n`);
 
 		const implementer = discoverAgents(tempProject, "both").agents.find((agent) => agent.name === "implementer");
 		assert.ok(implementer);
@@ -408,7 +425,6 @@ describe("builtin agent overrides", () => {
 					implementer: {
 						model: "anthropic/claude-sonnet-4-6",
 						thinking: "high",
-						tools: ["bash"],
 						skills: ["override-skill"],
 						inheritProjectContext: true,
 						defaultContext: "fork",
@@ -541,9 +557,6 @@ describe("builtin agent overrides", () => {
 				defaultContext: "fork",
 				systemPrompt: "Base prompt",
 				skills: ["safe-bash"],
-				tools: ["bash"],
-				mcpDirectTools: ["xcodebuild_list_sims"],
-				subagentOnlyExtensions: ["./tools/base-child.ts"],
 				completionGuard: false,
 			},
 			{
@@ -556,9 +569,6 @@ describe("builtin agent overrides", () => {
 				defaultContext: undefined,
 				systemPrompt: "Base prompt",
 				skills: undefined,
-				tools: undefined,
-				mcpDirectTools: undefined,
-				subagentOnlyExtensions: undefined,
 				completionGuard: true,
 			},
 		);
@@ -571,8 +581,6 @@ describe("builtin agent overrides", () => {
 			inheritProjectContext: false,
 			defaultContext: false,
 			skills: false,
-			tools: false,
-			subagentOnlyExtensions: false,
 			completionGuard: true,
 		});
 	});

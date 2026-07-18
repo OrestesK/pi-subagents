@@ -86,7 +86,7 @@ bash:
   "git *": allow`);
 
 		const serialized = serializeAgent(worker!);
-		assert.match(serialized, /^permission:\n  "\*": ask\n  read: allow\n  bash:\n    "\*": ask\n    "git \*": allow$/m);
+		assert.match(serialized, /^permission:\n {2}"\*": ask\n {2}read: allow\n {2}bash:\n {4}"\*": ask\n {4}"git \*": allow$/m);
 	});
 });
 
@@ -720,13 +720,13 @@ describe("agent frontmatter subagentOnlyExtensions", () => {
 		assert.match(serialized, /subagentOnlyExtensions: \.\/tools\/child-search\.ts, \/opt\/pi\/child-only\.ts/);
 	});
 
-	it("parses subagentOnlyExtensions from discovered agent frontmatter", () => {
+	it("parses subagentOnlyExtensions from unprotected agent frontmatter", () => {
 		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-agent-child-ext-"));
 		tempDirs.push(dir);
 		const agentsDir = path.join(dir, ".pi", "agents");
 		fs.mkdirSync(agentsDir, { recursive: true });
-		fs.writeFileSync(path.join(agentsDir, "worker.md"), `---
-name: worker
+		fs.writeFileSync(path.join(agentsDir, "custom-worker.md"), `---
+name: custom-worker
 description: Worker
 subagentOnlyExtensions: ./tools/child-search.ts, /opt/pi/child-only.ts
 ---
@@ -735,7 +735,7 @@ Do work
 `, "utf-8");
 
 		const result = discoverAgents(dir, "project");
-		const worker = result.agents.find((agent) => agent.name === "worker");
+		const worker = result.agents.find((agent) => agent.name === "custom-worker");
 		assert.deepEqual(worker?.subagentOnlyExtensions, ["./tools/child-search.ts", "/opt/pi/child-only.ts"]);
 	});
 });
@@ -788,7 +788,7 @@ Do work
 		}
 	});
 
-	it("bundled agents all have explicit tool allowlists", () => {
+	it("bundled agents declare tool authority in frontmatter", () => {
 		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-builtin-tools-"));
 		const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-builtin-tools-home-"));
 		tempDirs.push(dir);
@@ -802,7 +802,7 @@ Do work
 			const builtins = discoverAgentsAll(dir).builtin;
 			assert.ok(builtins.length > 0);
 			for (const agent of builtins) {
-				assert.ok(agent.tools && agent.tools.length > 0, `${agent.name} should have explicit tools frontmatter`);
+				assert.ok(agent.tools && agent.tools.length > 0, `${agent.name} should declare tools frontmatter`);
 			}
 		} finally {
 			if (previousHome === undefined) delete process.env.HOME;
@@ -823,7 +823,7 @@ Do work
 		try {
 			process.env.HOME = homeDir;
 			process.env.USERPROFILE = homeDir;
-			const agents = discoverAgentsAll(dir).builtin;
+			const agents = discoverAgents(dir, "both").agents;
 			for (const name of ["worker", "delegate"]) {
 				const agent = agents.find((candidate) => candidate.name === name);
 				assert.ok(agent, `${name} builtin should be discovered`);

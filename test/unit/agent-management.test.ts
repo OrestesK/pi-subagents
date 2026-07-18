@@ -259,6 +259,8 @@ Inspect
 		fs.writeFileSync(agentPath, `---
 name: implementer
 description: TDD implementer
+tools: read, mcp:local/read
+subagentOnlyExtensions: ./tools/child.ts
 ---
 
 Drive the failing test first.
@@ -284,6 +286,8 @@ Drive the failing test first.
 		assert.doesNotMatch(content, /^systemPromptMode:/m);
 		assert.doesNotMatch(content, /^inheritProjectContext:/m);
 		assert.doesNotMatch(content, /^inheritSkills:/m);
+		assert.match(content, /^tools: read, mcp:local\/read$/m);
+		assert.match(content, /^subagentOnlyExtensions: \.\/tools\/child\.ts$/m);
 
 		const gotAfter = handleManagementAction("get", { agent: "implementer" }, ctx);
 		assert.equal(resultIsError(gotAfter), false);
@@ -305,7 +309,6 @@ Drive the failing test first.
 					implementer: {
 						thinking: "high",
 						fallbackModels: ["openai/gpt-5-mini"],
-						tools: ["bash"],
 						skills: ["override-skill"],
 						defaultContext: "fork",
 						completionGuard: false,

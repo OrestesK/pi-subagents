@@ -1,9 +1,9 @@
 ---
 name: delegate
 description: Lightweight subagent that inherits the parent model with no default reads
+tools: read, grep, find, ls, bash, tool_result_outline, tool_result_get, tool_result_search, memory_search, memory_check, contact_supervisor
 systemPromptMode: append
 inheritProjectContext: true
-tools: read, grep, find, ls, bash, tree_sitter_search_symbols, tree_sitter_document_symbols, tree_sitter_symbol_definition, tree_sitter_pattern_search, tree_sitter_codebase_overview, tree_sitter_codebase_map, mcp:tree-sitter, ast_grep_search, lsp_navigation, lsp_diagnostics, memory_search, memory_check, contact_supervisor
 inheritSkills: false
 ---
 

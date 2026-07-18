@@ -37,6 +37,7 @@ As of 2026-07-08, the local stack contains these concerns:
 - Model-facing async launch, subagent-tool, skill, and global-agent guidance treats persistent interactive completion as notification-driven without naming the optional `wait` tool; the enabled tool's own description owns its usage rules, and disabling `waitTool` omits it entirely. README documentation still covers both configurations.
 - Top-level `workflow: "builtin.*"` remains accepted as a deprecated compatibility alias for now. When `forceTopLevelAsync` is enabled, these expanded aliases follow the same depth-0 async override as explicit single, parallel, and chain calls. First-party guidance should prefer prompt shortcuts or explicit `tasks`/`chain` shapes before eventual removal.
 - Removed subagent turn limit
+- Agent Markdown is the sole authority for model-callable tools, exact `mcp:` selections, and `subagentOnlyExtensions`. Normal project/user/package/builtin file precedence selects the agent; runtime code does not apply role-name profiles or capability ceilings. `subagents.agentOverrides` rejects `tools` and `subagentOnlyExtensions`; edit or shadow the agent file instead.
 
 ## Setup
 

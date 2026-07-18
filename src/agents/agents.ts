@@ -83,8 +83,6 @@ interface BuiltinAgentOverrideConfig {
 	disabled?: boolean;
 	systemPrompt?: string;
 	skills?: string[] | false;
-	tools?: string[] | false;
-	subagentOnlyExtensions?: string[] | false;
 	completionGuard?: boolean;
 	toolBudget?: ToolBudgetConfig | false;
 }
@@ -451,30 +449,6 @@ function collectPackageSubagentPaths(cwd: string, options: { includeUser: boolea
 	return { agents, chains };
 }
 
-function splitToolList(rawTools: string[] | undefined): { tools?: string[]; mcpDirectTools?: string[] } {
-	const mcpDirectTools: string[] = [];
-	const tools: string[] = [];
-	for (const tool of rawTools ?? []) {
-		if (tool.startsWith("mcp:")) {
-			mcpDirectTools.push(tool.slice(4));
-		} else {
-			tools.push(tool);
-		}
-	}
-	return {
-		...(tools.length > 0 ? { tools } : {}),
-		...(mcpDirectTools.length > 0 ? { mcpDirectTools } : {}),
-	};
-}
-
-function joinToolList(config: Pick<AgentConfig, "tools" | "mcpDirectTools">): string[] | undefined {
-	const joined = [
-		...(config.tools ?? []),
-		...(config.mcpDirectTools ?? []).map((tool) => `mcp:${tool}`),
-	];
-	return joined.length > 0 ? joined : undefined;
-}
-
 function arraysEqual(a: string[] | undefined, b: string[] | undefined): boolean {
 	if (!a && !b) return true;
 	if (!a || !b) return false;
@@ -519,8 +493,6 @@ function cloneOverrideValue(override: BuiltinAgentOverrideConfig): BuiltinAgentO
 		...(override.disabled !== undefined ? { disabled: override.disabled } : {}),
 		...(override.systemPrompt !== undefined ? { systemPrompt: override.systemPrompt } : {}),
 		...(override.skills !== undefined ? { skills: override.skills === false ? false : [...override.skills] } : {}),
-		...(override.tools !== undefined ? { tools: override.tools === false ? false : [...override.tools] } : {}),
-		...(override.subagentOnlyExtensions !== undefined ? { subagentOnlyExtensions: override.subagentOnlyExtensions === false ? false : [...override.subagentOnlyExtensions] } : {}),
 		...(override.completionGuard !== undefined ? { completionGuard: override.completionGuard } : {}),
 		...(override.toolBudget !== undefined ? { toolBudget: override.toolBudget === false ? false : { ...override.toolBudget, ...(Array.isArray(override.toolBudget.block) ? { block: [...override.toolBudget.block] } : {}) } } : {}),
 	};
@@ -609,6 +581,14 @@ function parseBuiltinOverrideEntry(
 	const input = value as Record<string, unknown>;
 	const override: BuiltinAgentOverrideConfig = {};
 
+	for (const field of ["tools", "subagentOnlyExtensions"] as const) {
+		if (field in input) {
+			throw new Error(
+				`Builtin override '${name}' in '${filePath}' cannot set '${field}'; configure capabilities in the selected agent Markdown.`,
+			);
+		}
+	}
+
 	if ("model" in input) {
 		if (typeof input.model === "string" || input.model === false) override.model = input.model;
 		else throw new Error(`Builtin override '${name}' in '${filePath}' has invalid 'model'; expected a string or false.`);
@@ -687,12 +667,6 @@ function parseBuiltinOverrideEntry(
 
 	const skills = parseOverrideStringArrayOrFalse(input.skills, { filePath, name, field: "skills" });
 	if (skills !== undefined) override.skills = skills;
-
-	const tools = parseOverrideStringArrayOrFalse(input.tools, { filePath, name, field: "tools" });
-	if (tools !== undefined) override.tools = tools;
-
-	const subagentOnlyExtensions = parseOverrideStringArrayOrFalse(input.subagentOnlyExtensions, { filePath, name, field: "subagentOnlyExtensions" });
-	if (subagentOnlyExtensions !== undefined) override.subagentOnlyExtensions = subagentOnlyExtensions;
 
 	return Object.keys(override).length > 0 ? override : undefined;
 }
@@ -789,14 +763,6 @@ function applyBuiltinOverride(
 	if (override.disabled !== undefined) next.disabled = override.disabled;
 	if (override.systemPrompt !== undefined) next.systemPrompt = override.systemPrompt;
 	if (override.skills !== undefined) next.skills = override.skills === false ? undefined : [...override.skills];
-	if (override.tools !== undefined) {
-		const { tools, mcpDirectTools } = splitToolList(override.tools === false ? [] : override.tools);
-		next.tools = tools;
-		next.mcpDirectTools = mcpDirectTools;
-	}
-	if (override.subagentOnlyExtensions !== undefined) {
-		next.subagentOnlyExtensions = override.subagentOnlyExtensions === false ? undefined : [...override.subagentOnlyExtensions];
-	}
 	if (override.completionGuard !== undefined) next.completionGuard = override.completionGuard;
 	if (override.toolBudget !== undefined) next.toolBudget = override.toolBudget === false ? undefined : override.toolBudget;
 
@@ -927,20 +893,6 @@ function applyCustomAgentOverride(
 	if (override.skills !== undefined) {
 		fill("skills", ["skill", "skills"], override.skills === false ? undefined : [...override.skills]);
 	}
-	if (override.tools !== undefined && !customAgentHasFrontmatterField(agent, "tools")) {
-		const { tools, mcpDirectTools } = splitToolList(override.tools === false ? [] : override.tools);
-		const target = mutable();
-		target.tools = tools;
-		target.mcpDirectTools = mcpDirectTools;
-		anyFilled = true;
-	}
-	if (override.subagentOnlyExtensions !== undefined) {
-		fill(
-			"subagentOnlyExtensions",
-			["subagentOnlyExtensions"],
-			override.subagentOnlyExtensions === false ? undefined : [...override.subagentOnlyExtensions],
-		);
-	}
 	if (override.completionGuard !== undefined) {
 		fill("completionGuard", ["completionGuard"], override.completionGuard);
 	}
@@ -977,7 +929,7 @@ function applyCustomAgentOverrides(
 
 export function buildBuiltinOverrideConfig(
 	base: BuiltinAgentOverrideBase,
-	draft: Pick<AgentConfig, "model" | "fallbackModels" | "thinking" | "systemPromptMode" | "inheritProjectContext" | "inheritSkills" | "defaultContext" | "disabled" | "systemPrompt" | "skills" | "tools" | "mcpDirectTools" | "subagentOnlyExtensions" | "completionGuard" | "toolBudget">,
+	draft: Pick<AgentConfig, "model" | "fallbackModels" | "thinking" | "systemPromptMode" | "inheritProjectContext" | "inheritSkills" | "defaultContext" | "disabled" | "systemPrompt" | "skills" | "completionGuard" | "toolBudget">,
 ): BuiltinAgentOverrideConfig | undefined {
 	const override: BuiltinAgentOverrideConfig = {};
 
@@ -992,12 +944,6 @@ export function buildBuiltinOverrideConfig(
 	if (draft.systemPrompt !== base.systemPrompt) override.systemPrompt = draft.systemPrompt;
 	if (!arraysEqual(draft.skills, base.skills)) override.skills = draft.skills ? [...draft.skills] : false;
 
-	const baseTools = joinToolList(base);
-	const draftTools = joinToolList(draft);
-	if (!arraysEqual(draftTools, baseTools)) override.tools = draftTools ? [...draftTools] : false;
-	if (!arraysEqual(draft.subagentOnlyExtensions, base.subagentOnlyExtensions)) {
-		override.subagentOnlyExtensions = draft.subagentOnlyExtensions ? [...draft.subagentOnlyExtensions] : false;
-	}
 	if ((draft.completionGuard !== false) !== (base.completionGuard !== false)) {
 		override.completionGuard = draft.completionGuard !== false;
 	}

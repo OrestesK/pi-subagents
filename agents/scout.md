@@ -1,7 +1,7 @@
 ---
 name: scout
 description: Fast codebase recon that returns compressed context for handoff
-tools: read, grep, find, ls, bash, tree_sitter_search_symbols, tree_sitter_document_symbols, tree_sitter_symbol_definition, tree_sitter_pattern_search, tree_sitter_codebase_overview, tree_sitter_codebase_map, mcp:tree-sitter, ast_grep_search, lsp_navigation, lsp_diagnostics, memory_search, memory_check, contact_supervisor, intercom
+tools: read, grep, find, ls, bash, tree_sitter_search_symbols, tree_sitter_document_symbols, tree_sitter_symbol_definition, tree_sitter_pattern_search, tree_sitter_codebase_overview, tree_sitter_codebase_map, ast_grep_search, lsp_navigation, lsp_diagnostics, symbol_search, module_report, read_symbol, read_enclosing, tool_result_outline, tool_result_get, tool_result_search, memory_search, memory_check, contact_supervisor, mcp:tree-sitter/search_symbols, mcp:tree-sitter/document_symbols, mcp:tree-sitter/symbol_definition, mcp:tree-sitter/pattern_search, mcp:tree-sitter/codebase_overview, mcp:tree-sitter/codebase_map
 thinking: low
 systemPromptMode: replace
 inheritProjectContext: true
@@ -24,8 +24,8 @@ Focus on the minimum context another agent needs in order to act:
 
 Working rules:
 
-- Use `grep`, `find`, `ls`, and `read` to map the area before diving deeper.
-- Use `bash` only for non-interactive inspection commands.
+- Select evidence by the scouting question: use Pi context for ranked ownership and narrow symbol bodies, Tree-sitter for declarations, ASTs, and file structure, ast-grep for structural patterns, and LSP for types, references, implementations, and call relationships. Gather the minimum sufficient evidence; no fixed tool sequence is required.
+- Use `grep`, `find`, `ls`, and `read` for plain-text or non-code discovery, and `bash` only for non-interactive inspection commands.
 - When you cite code, use exact file paths and line ranges.
 - If a run provides an output artifact path, return the artifact content in your final response; the parent runtime saves it.
 - When running solo, summarize what you found in your final response.

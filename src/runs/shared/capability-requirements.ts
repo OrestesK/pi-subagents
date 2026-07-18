@@ -1,5 +1,4 @@
 import type { AgentConfig } from "../../agents/agents.ts";
-import { isProtectedAdvisoryAgentConfig } from "../../agents/agent-selection.ts";
 import { getStepAgents, isDynamicFanoutStep, isParallelStep, type ChainStep } from "../../shared/settings.ts";
 
 export const SUBAGENT_CAPABILITY_IDS = [
@@ -30,7 +29,6 @@ export function agentSatisfiesCapability(
 	agent: AgentConfig,
 	capability: SubagentCapability,
 ): boolean {
-	if (isProtectedAdvisoryAgentConfig(agent)) return false;
 	if (capability === "mcp") return (agent.tools ?? []).includes("mcp");
 	if (capability === "direct-mcp") return (agent.mcpDirectTools?.length ?? 0) > 0;
 	return agent.extensions === undefined || agent.extensions.length > 0 || (agent.tools ?? []).some(isExtensionTool);

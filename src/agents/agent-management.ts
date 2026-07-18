@@ -67,7 +67,7 @@ function configObject(config: unknown): { value?: Record<string, unknown>; error
 }
 
 function hasKey(obj: Record<string, unknown>, key: string): boolean {
-	return Object.prototype.hasOwnProperty.call(obj, key);
+	return Object.getOwnPropertyDescriptor(obj, key) !== undefined;
 }
 
 function asDisambiguationScope(scope: unknown): ManagementScope | undefined {

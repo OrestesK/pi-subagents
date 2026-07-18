@@ -1,7 +1,7 @@
 ---
 name: planner
 description: Creates implementation plans from context and requirements
-tools: read, grep, find, ls, tree_sitter_search_symbols, tree_sitter_document_symbols, tree_sitter_symbol_definition, tree_sitter_pattern_search, tree_sitter_codebase_overview, tree_sitter_codebase_map, mcp:tree-sitter, ast_grep_search, lsp_navigation, lsp_diagnostics, memory_search, memory_check, contact_supervisor, intercom
+tools: read, grep, find, ls, tree_sitter_search_symbols, tree_sitter_document_symbols, tree_sitter_symbol_definition, tree_sitter_pattern_search, tree_sitter_codebase_overview, tree_sitter_codebase_map, ast_grep_search, lsp_navigation, lsp_diagnostics, symbol_search, module_report, read_symbol, read_enclosing, tool_result_outline, tool_result_get, tool_result_search, memory_search, memory_check, contact_supervisor, mcp:tree-sitter/search_symbols, mcp:tree-sitter/document_symbols, mcp:tree-sitter/symbol_definition, mcp:tree-sitter/pattern_search, mcp:tree-sitter/codebase_overview, mcp:tree-sitter/codebase_map
 thinking: high
 systemPromptMode: replace
 inheritProjectContext: true

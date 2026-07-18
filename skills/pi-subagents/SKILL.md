@@ -339,8 +339,10 @@ Direct settings example:
 
 Useful override fields: `model`, `fallbackModels`, `thinking`,
 `systemPromptMode`, `inheritProjectContext`, `inheritSkills`, `defaultContext`,
-`disabled`, `skills`, `tools`, and `systemPrompt`. Create a user or project
-agent with the same name only when you want a substantially different agent.
+`disabled`, `skills`, and `systemPrompt`. Tool capabilities and
+`subagentOnlyExtensions` belong in the selected agent Markdown; settings overrides
+for those fields are rejected. Create a user or project agent with the same name
+when you want different capabilities or a substantially different agent.
 
 If a provider rejects model IDs with thinking suffixes, use
 `subagents.disableThinking: true` in user or project settings to clear bundled

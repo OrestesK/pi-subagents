@@ -68,6 +68,11 @@ function writeJson(filePath: string, value: unknown): void {
 	fs.writeFileSync(filePath, JSON.stringify(value, null, 2), "utf-8");
 }
 
+function compareDescending(left: string, right: string): number {
+	if (left === right) return 0;
+	return left < right ? 1 : -1;
+}
+
 function writeMcpFixture(
 	fixture: McpFixture,
 	options: {
@@ -101,6 +106,68 @@ function writeMcpFixture(
 				resources: options.resources ?? [],
 			},
 		},
+	});
+}
+
+function writeDirectMcpSelectionFixture(
+	fixture: McpFixture,
+	cachedAt = Date.now(),
+	order: "normal" | "reversed" = "normal",
+): void {
+	const servers = {
+		"tree-sitter": {
+			definition: { command: "tree-sitter-mcp" },
+			tools: [
+				"search_symbols",
+				"document_symbols",
+				"symbol_definition",
+				"pattern_search",
+				"codebase_overview",
+				"codebase_map",
+				"pattern_replace",
+			],
+		},
+		context7: {
+			definition: { command: "context7-mcp" },
+			tools: ["resolve-library-id", "query-docs", "unrelated-operation"],
+		},
+		"context-mode": {
+			definition: { command: "context-mode-mcp" },
+			tools: [
+				"ctx_execute_file",
+				"ctx_search",
+				"ctx_execute",
+				"ctx_batch_execute",
+			],
+		},
+	};
+	const serverEntries =
+		order === "reversed"
+			? Object.entries(servers).sort(([left], [right]) =>
+					compareDescending(left, right),
+				)
+			: Object.entries(servers);
+	writeJson(path.join(fixture.agentDir, "mcp.json"), {
+		mcpServers: Object.fromEntries(
+			serverEntries.map(([name, server]) => [name, server.definition]),
+		),
+	});
+	writeJson(path.join(fixture.agentDir, "mcp-cache.json"), {
+		version: 1,
+		servers: Object.fromEntries(
+			serverEntries.map(([name, server]) => [
+				name,
+				{
+					configHash: computeMcpServerHash(server.definition),
+					cachedAt,
+					tools: (order === "reversed"
+						? [...server.tools].sort(compareDescending)
+						: server.tools
+					).map((toolName) => ({ name: toolName })),
+					resources: [],
+				},
+			]),
+		),
 	});
 }
 
@@ -328,8 +395,16 @@ describe("buildPiArgs system prompt mode wiring", () => {
 			inheritSkills: true,
 		});
 
-		const extensionArgs = args.filter((arg, index) => args[index - 1] === "--extension");
-		assert.ok(extensionArgs.some((arg) => arg.endsWith(path.join("src", "runs", "shared", "subagent-prompt-runtime.ts"))));
+		const extensionArgs = args.filter(
+			(_arg, index) => args[index - 1] === "--extension",
+		);
+		assert.ok(
+			extensionArgs.some((arg) =>
+				arg.endsWith(
+					path.join("src", "runs", "shared", "subagent-prompt-runtime.ts"),
+				),
+			),
+		);
 		assert.equal(env.PI_SUBAGENT_CHILD, "1");
 		assert.equal(env.PI_SUBAGENT_INHERIT_PROJECT_CONTEXT, "0");
 		assert.equal(env.PI_SUBAGENT_INHERIT_SKILLS, "1");
@@ -345,7 +420,10 @@ describe("buildPiArgs system prompt mode wiring", () => {
 			toolBudget: { soft: 2, hard: 3, block: ["read"] },
 		});
 
-		assert.deepEqual(JSON.parse(env[TOOL_BUDGET_ENV] ?? "{}"), { soft: 2, hard: 3, block: ["read"] });
+		assert.equal(
+			env[TOOL_BUDGET_ENV],
+			JSON.stringify({ soft: 2, hard: 3, block: ["read"] }),
+		);
 	});
 
 	it("passes child intercom and orchestrator metadata through env", () => {
@@ -446,7 +524,10 @@ describe("buildPiArgs system prompt mode wiring", () => {
 			mcpDirectTools: ["chrome-devtools"],
 		});
 
-		assert.equal(args[args.indexOf("--tools") + 1], "read,bash,chrome_devtools_take_screenshot,chrome_devtools_click");
+		assert.equal(
+			args[args.indexOf("--tools") + 1],
+			"read,bash,chrome_devtools_click,chrome_devtools_take_screenshot",
+		);
 		assert.equal(env.MCP_DIRECT_TOOLS, "chrome-devtools");
 	});
 
@@ -534,13 +615,149 @@ describe("buildPiArgs system prompt mode wiring", () => {
 			mcpDirectTools: ["browser-mcp"],
 		});
 
-		assert.equal(args[args.indexOf("--tools") + 1], "read,browser_mcp_navigate,browser_mcp_get_console_logs");
+		assert.equal(
+			args[args.indexOf("--tools") + 1],
+			"read,browser_mcp_get_console_logs,browser_mcp_navigate",
+		);
+	});
+
+	it("renders only the exact file-declared direct MCP operations", () => {
+		const fixture = createMcpFixture();
+		writeDirectMcpSelectionFixture(fixture);
+
+		const cases = [
+			{
+				name: "tree",
+				tools: ["read"],
+				mcpDirectTools: [
+					"tree-sitter/search_symbols",
+					"tree-sitter/document_symbols",
+					"tree-sitter/symbol_definition",
+					"tree-sitter/pattern_search",
+					"tree-sitter/codebase_overview",
+					"tree-sitter/codebase_map",
+				],
+				expected:
+					"read,tree_sitter_search_symbols,tree_sitter_document_symbols,tree_sitter_symbol_definition,tree_sitter_pattern_search,tree_sitter_codebase_overview,tree_sitter_codebase_map",
+			},
+			{
+				name: "docs",
+				tools: ["read"],
+				mcpDirectTools: ["context7/resolve-library-id", "context7/query-docs"],
+				expected: "read,context7_resolve-library-id,context7_query-docs",
+			},
+			{
+				name: "context",
+				tools: [
+					"read",
+					"tool_result_outline",
+					"tool_result_get",
+					"tool_result_search",
+				],
+				mcpDirectTools: [
+					"context-mode/ctx_execute_file",
+					"context-mode/ctx_search",
+				],
+				expected:
+					"read,tool_result_outline,tool_result_get,tool_result_search,context_mode_ctx_execute_file,context_mode_ctx_search",
+			},
+		];
+
+		for (const testCase of cases) {
+			const { args, env } = buildPiArgs({
+				baseArgs: ["-p"],
+				task: testCase.name,
+				sessionEnabled: false,
+				inheritProjectContext: false,
+				inheritSkills: false,
+				tools: testCase.tools,
+				mcpDirectTools: testCase.mcpDirectTools,
+			});
+			assert.equal(
+				args[args.indexOf("--tools") + 1],
+				testCase.expected,
+				testCase.name,
+			);
+			assert.equal(
+				env.MCP_DIRECT_TOOLS,
+				testCase.mcpDirectTools.join(","),
+				testCase.name,
+			);
+		}
+
+		const reversedFixture = createMcpFixture();
+		writeDirectMcpSelectionFixture(reversedFixture, Date.now(), "reversed");
+		const reversed = buildPiArgs({
+			baseArgs: ["-p"],
+			task: "reversed provider metadata",
+			sessionEnabled: false,
+			inheritProjectContext: false,
+			inheritSkills: false,
+			tools: cases[0].tools,
+			mcpDirectTools: cases[0].mcpDirectTools,
+		});
+		assert.equal(
+			reversed.args[reversed.args.indexOf("--tools") + 1],
+			cases[0].expected,
+		);
+	});
+
+	it("omits file-declared direct MCP operations when cache metadata is stale or future-dated", () => {
+		const fixture = createMcpFixture();
+		writeDirectMcpSelectionFixture(fixture, Date.now() - 8 * 24 * 60 * 60 * 1000);
+		const { args } = buildPiArgs({
+			baseArgs: ["-p"],
+			task: "stale provider cache",
+			sessionEnabled: false,
+			inheritProjectContext: false,
+			inheritSkills: false,
+			tools: [
+				"read",
+				"tool_result_outline",
+				"tool_result_get",
+				"tool_result_search",
+			],
+			mcpDirectTools: [
+				"context-mode/ctx_execute_file",
+				"context-mode/ctx_search",
+			],
+		});
+		assert.equal(
+			args[args.indexOf("--tools") + 1],
+			"read,tool_result_outline,tool_result_get,tool_result_search",
+		);
+
+		const futureFixture = createMcpFixture();
+		writeDirectMcpSelectionFixture(futureFixture, Date.now() + 60_000);
+		const future = buildPiArgs({
+			baseArgs: ["-p"],
+			task: "future provider cache",
+			sessionEnabled: false,
+			inheritProjectContext: false,
+			inheritSkills: false,
+			tools: [
+				"read",
+				"tool_result_outline",
+				"tool_result_get",
+				"tool_result_search",
+			],
+			mcpDirectTools: [
+				"context-mode/ctx_execute_file",
+				"context-mode/ctx_search",
+			],
+		});
+		assert.equal(
+			future.args[future.args.indexOf("--tools") + 1],
+			"read,tool_result_outline,tool_result_get,tool_result_search",
+		);
 	});
 
 	it("falls back to explicit builtins when direct MCP cache or config is missing or invalid", () => {
 		const missingFixture = createMcpFixture();
 		writeJson(path.join(missingFixture.agentDir, "mcp.json"), {
-			mcpServers: { "chrome-devtools": { command: "npx", args: ["chrome-devtools-mcp"] } },
+			mcpServers: {
+				"chrome-devtools": { command: "npx", args: ["chrome-devtools-mcp"] },
+			},
 		});
 		const missingCache = buildPiArgs({
 			baseArgs: ["-p"],
@@ -606,9 +823,20 @@ describe("buildPiArgs system prompt mode wiring", () => {
 			mcpDirectTools: ["chrome-devtools"],
 		});
 
-		const extensionArgs = args.filter((arg, index) => args[index - 1] === "--extension");
-		assert.equal(args[args.indexOf("--tools") + 1], "read,chrome_devtools_take_screenshot");
-		assert.ok(extensionArgs.some((arg) => arg.endsWith(path.join("src", "runs", "shared", "subagent-prompt-runtime.ts"))));
+		const extensionArgs = args.filter(
+			(_arg, index) => args[index - 1] === "--extension",
+		);
+		assert.equal(
+			args[args.indexOf("--tools") + 1],
+			"read,chrome_devtools_take_screenshot",
+		);
+		assert.ok(
+			extensionArgs.some((arg) =>
+				arg.endsWith(
+					path.join("src", "runs", "shared", "subagent-prompt-runtime.ts"),
+				),
+			),
+		);
 		assert.ok(extensionArgs.includes("./custom-tool.ts"));
 		assert.ok(extensionArgs.includes("./allowed-ext.ts"));
 	});
@@ -625,7 +853,9 @@ describe("buildPiArgs system prompt mode wiring", () => {
 			subagentOnlyExtensions: ["./child-tool.ts"],
 		});
 
-		const extensionArgs = args.filter((arg, index) => args[index - 1] === "--extension");
+		const extensionArgs = args.filter(
+			(_arg, index) => args[index - 1] === "--extension",
+		);
 		assert.ok(args.includes("--no-extensions"));
 		assert.equal(args[args.indexOf("--tools") + 1], "read");
 		assert.ok(extensionArgs.includes("./main-allowed-ext.ts"));
@@ -648,7 +878,9 @@ describe("buildPiArgs system prompt mode wiring", () => {
 			parentCapabilityToken: "token-1",
 		});
 
-		const extensionArgs = args.filter((arg, index) => args[index - 1] === "--extension");
+		const extensionArgs = args.filter(
+			(_arg, index) => args[index - 1] === "--extension",
+		);
 		assert.equal(args[args.indexOf("--tools") + 1], "read,subagent");
 		assert.equal(env[SUBAGENT_FANOUT_CHILD_ENV], "1");
 		assert.equal(env[SUBAGENT_PARENT_EVENT_SINK_ENV], "/tmp/root/events");
@@ -657,9 +889,16 @@ describe("buildPiArgs system prompt mode wiring", () => {
 		assert.equal(env[SUBAGENT_PARENT_RUN_ID_ENV], "parent-run");
 		assert.equal(env[SUBAGENT_PARENT_CHILD_INDEX_ENV], "1");
 		assert.equal(env[SUBAGENT_PARENT_DEPTH_ENV], "1");
-		assert.deepEqual(JSON.parse(env[SUBAGENT_PARENT_PATH_ENV] ?? "[]"), [{ runId: "parent-run", stepIndex: 1 }]);
+		assert.equal(
+			env[SUBAGENT_PARENT_PATH_ENV],
+			JSON.stringify([{ runId: "parent-run", stepIndex: 1 }]),
+		);
 		assert.equal(env[SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV], "token-1");
-		assert.ok(extensionArgs.some((arg) => arg.endsWith(path.join("src", "extension", "fanout-child.ts"))));
+		assert.ok(
+			extensionArgs.some((arg) =>
+				arg.endsWith(path.join("src", "extension", "fanout-child.ts")),
+			),
+		);
 	});
 
 	it("clears all fanout routing env values for non-fanout children", () => {
@@ -678,7 +917,9 @@ describe("buildPiArgs system prompt mode wiring", () => {
 			parentCapabilityToken: "token-should-not-leak",
 		});
 
-		const extensionArgs = args.filter((arg, index) => args[index - 1] === "--extension");
+		const extensionArgs = args.filter(
+			(_arg, index) => args[index - 1] === "--extension",
+		);
 		assert.equal(env[SUBAGENT_FANOUT_CHILD_ENV], "0");
 		assert.equal(env[SUBAGENT_PARENT_EVENT_SINK_ENV], "");
 		assert.equal(env[SUBAGENT_PARENT_CONTROL_INBOX_ENV], "");
@@ -710,14 +951,30 @@ describe("buildPiArgs system prompt mode wiring", () => {
 			inheritSkills: false,
 			tools: ["subagent"],
 		});
-		assert.equal(fanout.env[SUBAGENT_PARENT_EVENT_SINK_ENV], "/tmp/inherited/events");
-		assert.equal(fanout.env[SUBAGENT_PARENT_CONTROL_INBOX_ENV], "/tmp/inherited/control");
+		assert.equal(
+			fanout.env[SUBAGENT_PARENT_EVENT_SINK_ENV],
+			"/tmp/inherited/events",
+		);
+		assert.equal(
+			fanout.env[SUBAGENT_PARENT_CONTROL_INBOX_ENV],
+			"/tmp/inherited/control",
+		);
 		assert.equal(fanout.env[SUBAGENT_PARENT_ROOT_RUN_ID_ENV], "inherited-root");
 		assert.equal(fanout.env[SUBAGENT_PARENT_RUN_ID_ENV], "owner-run");
 		assert.equal(fanout.env[SUBAGENT_PARENT_CHILD_INDEX_ENV], "4");
 		assert.equal(fanout.env[SUBAGENT_PARENT_DEPTH_ENV], "3");
-		assert.deepEqual(JSON.parse(fanout.env[SUBAGENT_PARENT_PATH_ENV] ?? "[]"), [{ runId: "root-run", stepIndex: 0 }, { runId: "owner-run", stepIndex: 1 }, { runId: "owner-run", stepIndex: 4 }]);
-		assert.equal(fanout.env[SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV], "inherited-token");
+		assert.equal(
+			fanout.env[SUBAGENT_PARENT_PATH_ENV],
+			JSON.stringify([
+				{ runId: "root-run", stepIndex: 0 },
+				{ runId: "owner-run", stepIndex: 1 },
+				{ runId: "owner-run", stepIndex: 4 },
+			]),
+		);
+		assert.equal(
+			fanout.env[SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV],
+			"inherited-token",
+		);
 
 		const nonFanout = buildPiArgs({
 			baseArgs: ["-p"],
@@ -763,7 +1020,13 @@ describe("buildPiArgs system prompt mode wiring", () => {
 		assert.equal(env[SUBAGENT_PARENT_RUN_ID_ENV], "current-nested-run");
 		assert.equal(env[SUBAGENT_PARENT_CHILD_INDEX_ENV], "2");
 		assert.equal(env[SUBAGENT_PARENT_DEPTH_ENV], "2");
-		assert.deepEqual(JSON.parse(env[SUBAGENT_PARENT_PATH_ENV] ?? "[]"), [{ runId: "root-run", stepIndex: 0 }, { runId: "current-nested-run", stepIndex: 2 }]);
+		assert.equal(
+			env[SUBAGENT_PARENT_PATH_ENV],
+			JSON.stringify([
+				{ runId: "root-run", stepIndex: 0 },
+				{ runId: "current-nested-run", stepIndex: 2 },
+			]),
+		);
 	});
 
 	it("does not let direct MCP tools authorize child fanout", () => {
@@ -784,10 +1047,16 @@ describe("buildPiArgs system prompt mode wiring", () => {
 			mcpDirectTools: ["delegator"],
 		});
 
-		const extensionArgs = args.filter((arg, index) => args[index - 1] === "--extension");
+		const extensionArgs = args.filter(
+			(_arg, index) => args[index - 1] === "--extension",
+		);
 		assert.equal(args[args.indexOf("--tools") + 1], "read,delegator_subagent");
 		assert.equal(env[SUBAGENT_FANOUT_CHILD_ENV], "0");
-		assert.ok(!extensionArgs.some((arg) => arg.endsWith(path.join("src", "extension", "fanout-child.ts"))));
+		assert.ok(
+			!extensionArgs.some((arg) =>
+				arg.endsWith(path.join("src", "extension", "fanout-child.ts")),
+			),
+		);
 	});
 
 	it("keeps child-safe fanout registration in explicit extensions mode", () => {
@@ -801,10 +1070,16 @@ describe("buildPiArgs system prompt mode wiring", () => {
 			extensions: ["./agent-allowed-ext.ts"],
 		});
 
-		const extensionArgs = args.filter((arg, index) => args[index - 1] === "--extension");
+		const extensionArgs = args.filter(
+			(_arg, index) => args[index - 1] === "--extension",
+		);
 		assert.ok(args.includes("--no-extensions"));
 		assert.equal(env[SUBAGENT_FANOUT_CHILD_ENV], "1");
-		assert.ok(extensionArgs.some((arg) => arg.endsWith(path.join("src", "extension", "fanout-child.ts"))));
+		assert.ok(
+			extensionArgs.some((arg) =>
+				arg.endsWith(path.join("src", "extension", "fanout-child.ts")),
+			),
+		);
 		assert.ok(extensionArgs.includes("./agent-allowed-ext.ts"));
 	});
 

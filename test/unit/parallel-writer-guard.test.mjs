@@ -12,7 +12,6 @@ const {
 	findSharedCwdParallelWriterError,
 	resolveGuardTaskCwd,
 } = await loadTs("../../src/runs/shared/parallel-writer-guard.ts");
-
 const worker = { name: "worker", tools: ["read", "edit", "write"] };
 const reviewer = { name: "reviewer", tools: ["read", "grep", "bash"] };
 const memoryScout = {
@@ -21,8 +20,45 @@ const memoryScout = {
 };
 const diagnosticScout = {
 	name: "diagnostic-scout",
-	tools: ["read", "tree_sitter_search_symbols", "lsp_diagnostics"],
+	tools: ["read", "tree_sitter_search_symbols", "lsp_diagnostics",
+		"symbol_search",
+		"module_report",
+		"read_symbol",
+		"read_enclosing",
+		"lens_diagnostics",
+		"tool_result_outline",
+		"tool_result_get",
+		"tool_result_search",
+	],
+	mcpDirectTools: [
+		"tree-sitter/search_symbols",
+		"tree-sitter/document_symbols",
+		"tree-sitter/symbol_definition",
+		"tree-sitter/pattern_search",
+		"tree-sitter/codebase_overview",
+		"tree-sitter/codebase_map",
+		"context7/resolve-library-id",
+		"context7/query-docs",
+	],
+};
+const broadTreeSitterAgent = {
+	name: "broad-tree-sitter-agent",
+	tools: ["read"],
 	mcpDirectTools: ["tree-sitter"],
+};
+const contextModeAgent = {
+	name: "general-purpose",
+	tools: [
+		"read",
+		"tool_result_outline",
+		"tool_result_get",
+		"tool_result_search",
+		"contact_supervisor",
+	],
+	mcpDirectTools: [
+		"context-mode/ctx_execute_file",
+		"context-mode/ctx_search",
+	],
 };
 const scout = { name: "scout", tools: ["read", "grep"] };
 const writeOnlyAgent = { name: "note-taker", tools: ["read", "write"] };
@@ -44,8 +80,8 @@ const extensionAgent = {
 	tools: ["read"],
 	extensions: ["./custom-writer.ts"],
 };
-const intercomBridgedReviewer = {
-	name: "intercom-bridged-reviewer",
+const staleIntercomAgent = {
+	name: "stale-intercom-agent",
 	tools: ["read", "contact_supervisor", "intercom", "/home/user/.npm-global/lib/node_modules/pi-intercom"],
 	extensions: [],
 };
@@ -58,10 +94,12 @@ test("detects workspace-mutation-capable agents", () => {
 	assert.equal(agentCanMutateWorkspace(genericMcpAgent), true);
 	assert.equal(agentCanMutateWorkspace(directMcpAgent), true);
 	assert.equal(agentCanMutateWorkspace(extensionAgent), true);
-	assert.equal(agentCanMutateWorkspace(intercomBridgedReviewer), false);
+	assert.equal(agentCanMutateWorkspace(staleIntercomAgent), true);
 	assert.equal(agentCanMutateWorkspace(reviewer), false);
 	assert.equal(agentCanMutateWorkspace(memoryScout), false);
 	assert.equal(agentCanMutateWorkspace(diagnosticScout), false);
+	assert.equal(agentCanMutateWorkspace(broadTreeSitterAgent), true);
+	assert.equal(agentCanMutateWorkspace(contextModeAgent), true);
 	assert.equal(agentCanMutateWorkspace(scout), false);
 	assert.equal(agentCanMutateWorkspace(unrestricted), true);
 	assert.equal(agentCanMutateWorkspace(undefined), false);
@@ -136,7 +174,7 @@ test("allows parallel memory lookup scouts sharing cwd", () => {
 	);
 });
 
-test("allows parallel diagnostics scouts sharing cwd", () => {
+test("allows exact read-only MCP and extension-backed diagnostics profiles", () => {
 	assert.equal(
 		findSharedCwdParallelWriterError({
 			tasks: [{ agent: "diagnostic-scout" }, { agent: "diagnostic-scout" }],
@@ -145,6 +183,30 @@ test("allows parallel diagnostics scouts sharing cwd", () => {
 			label: "Parallel",
 		}),
 		undefined,
+	);
+});
+
+test("keeps broad MCP servers and Context-mode operations conservative", () => {
+	assert.match(
+		findSharedCwdParallelWriterError({
+			tasks: [
+				{ agent: "broad-tree-sitter-agent" },
+				{ agent: "broad-tree-sitter-agent" },
+			],
+			agents: [broadTreeSitterAgent],
+			baseCwd: "/repo",
+			label: "Parallel",
+		}),
+		/workspace-mutation-capable/,
+	);
+	assert.match(
+		findSharedCwdParallelWriterError({
+			tasks: [{ agent: "general-purpose" }, { agent: "general-purpose" }],
+			agents: [contextModeAgent],
+			baseCwd: "/repo",
+			label: "Parallel",
+		}),
+		/workspace-mutation-capable/,
 	);
 });
 
@@ -208,18 +270,18 @@ test("rejects multiple extension-loaded agents sharing cwd without worktree", ()
 	);
 });
 
-test("allows parallel advisory agents bridged only with pi-intercom", () => {
-	assert.equal(
+test("keeps removed generic intercom tools conservative", () => {
+	assert.match(
 		findSharedCwdParallelWriterError({
 			tasks: [
-				{ agent: "intercom-bridged-reviewer" },
-				{ agent: "intercom-bridged-reviewer" },
+				{ agent: "stale-intercom-agent" },
+				{ agent: "stale-intercom-agent" },
 			],
-			agents: [intercomBridgedReviewer],
+			agents: [staleIntercomAgent],
 			baseCwd: "/repo",
 			label: "Parallel",
 		}),
-		undefined,
+		/workspace-mutation-capable/,
 	);
 });
 

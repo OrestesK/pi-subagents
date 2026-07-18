@@ -21,6 +21,8 @@ const IMPORT_PATHS = {
 	vscode: [".vscode/mcp.json"],
 } as const;
 
+const IMPORT_KINDS = new Set<string>(Object.keys(IMPORT_PATHS));
+
 type ToolPrefix = "server" | "none" | "short";
 type ImportKind = keyof typeof IMPORT_PATHS;
 
@@ -180,25 +182,48 @@ function expandImports(config: McpConfig, cwd: string): McpConfig {
 
 function resolveImportPath(importKind: ImportKind, cwd: string): string | null {
 	for (const candidate of IMPORT_PATHS[importKind]) {
-		const fullPath = candidate.startsWith(".") ? path.resolve(cwd, candidate) : candidate;
+		const fullPath = candidate.startsWith(".")
+			? path.resolve(cwd, candidate)
+			: candidate;
 		if (fs.existsSync(fullPath)) return fullPath;
 	}
 	return null;
 }
 
-function extractServers(config: unknown, kind: ImportKind): Record<string, ServerEntry> {
+function extractServers(
+	config: unknown,
+	kind: ImportKind,
+): Record<string, ServerEntry> {
 	if (!config || typeof config !== "object" || Array.isArray(config)) return {};
 	const obj = config as Record<string, unknown>;
-	const servers = kind === "cursor" || kind === "windsurf" || kind === "vscode"
-		? obj.mcpServers ?? obj["mcp-servers"]
-		: obj.mcpServers;
-	return servers && typeof servers === "object" && !Array.isArray(servers) ? servers as Record<string, ServerEntry> : {};
+	const servers =
+		kind === "cursor" || kind === "windsurf" || kind === "vscode"
+			? (obj.mcpServers ?? obj["mcp-servers"])
+			: obj.mcpServers;
+	return servers && typeof servers === "object" && !Array.isArray(servers)
+		? (servers as Record<string, ServerEntry>)
+		: {};
 }
 
-function resolveDirectToolNames(config: McpConfig, cache: MetadataCache, prefix: ToolPrefix, envOverride: string[]): string[] {
+function compareStrings(left: string, right: string): number {
+	if (left === right) return 0;
+	return left < right ? -1 : 1;
+}
+
+function resolveDirectToolNames(
+	config: McpConfig,
+	cache: MetadataCache,
+	prefix: ToolPrefix,
+	envOverride: string[],
+): string[] {
 	const names: string[] = [];
 	const seenNames = new Set<string>();
-	const { servers: selectedServers, tools: selectedTools } = parseSelections(envOverride);
+	const selectedNameOrder = new Map<string, number>();
+	const {
+		servers: selectedServers,
+		tools: selectedTools,
+		toolOrder: selectedToolOrder,
+	} = parseSelections(envOverride);
 
 	for (const [serverName, definition] of Object.entries(config.mcpServers)) {
 		const serverCache = cache.servers[serverName];
@@ -209,42 +234,80 @@ function resolveDirectToolNames(config: McpConfig, cache: MetadataCache, prefix:
 			: selectedTools.get(serverName);
 		if (!toolFilter) continue;
 
-		for (const tool of Array.isArray(serverCache.tools) ? serverCache.tools : []) {
+		for (const tool of Array.isArray(serverCache.tools)
+			? serverCache.tools
+			: []) {
 			if (typeof tool?.name !== "string" || !tool.name) continue;
 			if (toolFilter !== true && !toolFilter.has(tool.name)) continue;
-			if (isToolExcluded(tool.name, serverName, prefix, definition.excludeTools)) continue;
+			if (
+				isToolExcluded(tool.name, serverName, prefix, definition.excludeTools)
+			)
+				continue;
 			const prefixedName = formatToolName(tool.name, serverName, prefix);
-			if (BUILTIN_TOOL_NAMES.has(prefixedName) || seenNames.has(prefixedName)) continue;
+			if (BUILTIN_TOOL_NAMES.has(prefixedName) || seenNames.has(prefixedName))
+				continue;
 			seenNames.add(prefixedName);
 			names.push(prefixedName);
+			const selectedOrder = selectedToolOrder.get(`${serverName}/${tool.name}`);
+			if (selectedOrder !== undefined)
+				selectedNameOrder.set(prefixedName, selectedOrder);
 		}
 
 		if (definition.exposeResources === false) continue;
-		for (const resource of Array.isArray(serverCache.resources) ? serverCache.resources : []) {
-			if (typeof resource?.name !== "string" || !resource.name || typeof resource.uri !== "string" || !resource.uri) continue;
+		for (const resource of Array.isArray(serverCache.resources)
+			? serverCache.resources
+			: []) {
+			if (
+				typeof resource?.name !== "string" ||
+				!resource.name ||
+				typeof resource.uri !== "string" ||
+				!resource.uri
+			)
+				continue;
 			const baseName = `get_${resourceNameToToolName(resource.name)}`;
 			if (toolFilter !== true && !toolFilter.has(baseName)) continue;
-			if (isToolExcluded(baseName, serverName, prefix, definition.excludeTools)) continue;
+			if (isToolExcluded(baseName, serverName, prefix, definition.excludeTools))
+				continue;
 			const prefixedName = formatToolName(baseName, serverName, prefix);
-			if (BUILTIN_TOOL_NAMES.has(prefixedName) || seenNames.has(prefixedName)) continue;
+			if (BUILTIN_TOOL_NAMES.has(prefixedName) || seenNames.has(prefixedName))
+				continue;
 			seenNames.add(prefixedName);
 			names.push(prefixedName);
+			const selectedOrder = selectedToolOrder.get(`${serverName}/${baseName}`);
+			if (selectedOrder !== undefined)
+				selectedNameOrder.set(prefixedName, selectedOrder);
 		}
 	}
 
-	return names;
+	return names.sort((left, right) => {
+		const leftOrder = selectedNameOrder.get(left);
+		const rightOrder = selectedNameOrder.get(right);
+		if (leftOrder !== undefined && rightOrder !== undefined)
+			return leftOrder - rightOrder;
+		if (leftOrder !== undefined) return -1;
+		if (rightOrder !== undefined) return 1;
+		return compareStrings(left, right);
+	});
 }
 
-function parseSelections(selections: string[]): { servers: Set<string>; tools: Map<string, Set<string>> } {
+function parseSelections(selections: string[]): {
+	servers: Set<string>;
+	tools: Map<string, Set<string>>;
+	toolOrder: Map<string, number>;
+} {
 	const servers = new Set<string>();
 	const tools = new Map<string, Set<string>>();
-	for (let item of selections) {
-		item = item.replace(/\/+$/, "");
+	const toolOrder = new Map<string, number>();
+	for (const [index, selection] of selections.entries()) {
+		const item = selection.replace(/\/+$/, "");
 		if (item.includes("/")) {
 			const [server, tool] = item.split("/", 2);
 			if (server && tool) {
-				if (!tools.has(server)) tools.set(server, new Set());
-				tools.get(server)!.add(tool);
+				const serverTools = tools.get(server) ?? new Set<string>();
+				serverTools.add(tool);
+				tools.set(server, serverTools);
+				const key = `${server}/${tool}`;
+				if (!toolOrder.has(key)) toolOrder.set(key, index);
 			} else if (server) {
 				servers.add(server);
 			}
@@ -252,13 +315,14 @@ function parseSelections(selections: string[]): { servers: Set<string>; tools: M
 			servers.add(item);
 		}
 	}
-	return { servers, tools };
+	return { servers, tools, toolOrder };
 }
 
 function isServerCacheValid(entry: ServerCacheEntry | undefined, definition: ServerEntry): entry is ServerCacheEntry {
 	if (!entry || entry.configHash !== computeMcpServerHash(definition)) return false;
 	if (!entry.cachedAt || typeof entry.cachedAt !== "number") return false;
-	return Date.now() - entry.cachedAt <= CACHE_MAX_AGE_MS;
+	const age = Date.now() - entry.cachedAt;
+	return age >= 0 && age <= CACHE_MAX_AGE_MS;
 }
 
 export function computeMcpServerHash(definition: ServerEntry): string {
@@ -279,11 +343,13 @@ export function computeMcpServerHash(definition: ServerEntry): string {
 }
 
 function getToolPrefix(value: unknown): ToolPrefix {
-	return value === "none" || value === "short" || value === "server" ? value : "server";
+	return value === "none" || value === "short" || value === "server"
+		? value
+		: "server";
 }
 
 function isImportKind(value: unknown): value is ImportKind {
-	return typeof value === "string" && Object.prototype.hasOwnProperty.call(IMPORT_PATHS, value);
+	return typeof value === "string" && IMPORT_KINDS.has(value);
 }
 
 function getServerPrefix(serverName: string, mode: ToolPrefix): string {
@@ -359,7 +425,11 @@ function stableStringify(value: unknown): string {
 		const serialized = JSON.stringify(value);
 		return serialized === undefined ? "undefined" : serialized;
 	}
-	if (Array.isArray(value)) return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
+	if (Array.isArray(value))
+		return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
 	const obj = value as Record<string, unknown>;
-	return `{${Object.keys(obj).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(obj[key])}`).join(",")}}`;
+	return `{${Object.keys(obj)
+		.sort(compareStrings)
+		.map((key) => `${JSON.stringify(key)}:${stableStringify(obj[key])}`)
+		.join(",")}}`;
 }
