@@ -26,7 +26,7 @@ describe("async resume lookup", () => {
 				lastUpdate: 200,
 				cwd: root,
 				sessionFile,
-				steps: [{ agent: "worker", status: "complete" }],
+				steps: [{ agent: "worker", status: "complete", tools: ["read", "mcp"] }],
 			});
 
 			const target = resolveAsyncResumeTarget({ id: "run-a" }, { asyncDirRoot: asyncRoot, resultsDir: path.join(root, "results") });
@@ -36,6 +36,7 @@ describe("async resume lookup", () => {
 			assert.equal(target.agent, "worker");
 			assert.equal(target.sessionFile, sessionFile);
 			assert.equal(target.cwd, root);
+			assert.deepEqual(target.tools, ["read", "mcp"]);
 			assert.equal(target.intercomTarget, "subagent-worker-run-abc-1");
 		} finally {
 			fs.rmSync(root, { recursive: true, force: true });

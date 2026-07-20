@@ -27,9 +27,9 @@ function writeFile(filePath: string, content: string): void {
 
 function readText(result: { content: Array<{ type: string; text?: string }> }): string {
 	const first = result.content[0];
-	assert.ok(first);
-	assert.equal(first.type, "text");
-	assert.equal(typeof first.text, "string");
+	if (!first || first.type !== "text" || typeof first.text !== "string") {
+		assert.fail("expected a text result");
+	}
 	return first.text;
 }
 
@@ -79,11 +79,43 @@ describe("PI_CODING_AGENT_DIR runtime paths", () => {
 
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 		const configPath = path.join(agentDir, "extensions", "subagent", "config.json");
-		writeFile(configPath, JSON.stringify({ asyncByDefault: true, maxSubagentDepth: 3 }));
+		writeFile(configPath, JSON.stringify({ asyncByDefault: true, maxSubagentDepth: 3,
+				toolExtensions: {
+					mcp: {
+						description: "Regular MCP access",
+						builtinTools: ["mcp"],
+						allowedAgents: ["worker"],
+					},
+				},
+			}));
 
 		const config = loadConfig();
 		assert.equal(config.asyncByDefault, true);
 		assert.equal(config.maxSubagentDepth, 3);
+		assert.deepEqual(config.toolExtensions?.mcp?.builtinTools, ["mcp"]);
+	});
+
+	it("rejects malformed tool-extension registries from config", () => {
+		const configPath = path.join(
+			agentDir,
+			"extensions",
+			"subagent",
+			"config.json",
+		);
+		writeFile(
+			configPath,
+			JSON.stringify({
+				toolExtensions: {
+					mcp: {
+						description: "Regular MCP access",
+						builtinTools: "mcp",
+						allowedAgents: ["worker"],
+					},
+				},
+			}),
+		);
+
+		assert.throws(() => loadConfig(), /Malformed tool extension bundle 'mcp'/);
 	});
 
 	it("discovers user agents, chains, and settings under the configured agent dir", () => {
@@ -127,9 +159,10 @@ Inspect env.
 		const createdName = "created-env-agent";
 		const created = handleCreate(
 			{ config: { name: createdName, description: "Created in env dir", scope: "user" } },
-			{ cwd, modelRegistry: { getAvailable: () => [] } },
+			{ cwd, modelRegistry: { getAvailable: () => [] } } as never,
 		);
-		assert.equal(created.isError, false, readText(created));
+		assert.equal(
+			(created as { isError?: boolean }).isError, false, readText(created));
 		assert.equal(fs.existsSync(path.join(agentDir, "agents", `${createdName}.md`)), true);
 	});
 

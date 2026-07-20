@@ -30,6 +30,7 @@ import {
 	type AcceptanceInput,
 	type ArtifactConfig,
 	type Details,
+	type ExtensionConfig,
 	type MaxOutputConfig,
 	type NestedRouteInfo,
 	type ResolvedControlConfig,
@@ -47,6 +48,7 @@ import {
 import { nestedResultsPath, resolveInheritedNestedRouteFromEnv, resolveNestedParentAddressFromEnv, writeNestedEvent } from "../shared/nested-events.ts";
 import { initialTurnBudgetState } from "../shared/turn-budget.ts";
 import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
+import { resolveToolExtensionAgent } from "../shared/tool-extensions.ts";
 import type { ImportedAsyncRoot } from "./chain-root-attachment.ts";
 
 const require = createRequire(import.meta.url);
@@ -55,8 +57,13 @@ const piPackageRoot = resolvePiPackageRoot();
 function resolveJitiCliFromPackageJson(packageJsonPath: string): string | undefined {
 	if (!fs.existsSync(packageJsonPath)) return undefined;
 	const packageRoot = path.dirname(packageJsonPath);
-	const pkg = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8")) as {
+	let pkg: { bin?: string | Record<string, string> };
+	try {
+		pkg = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8")) as {
 		bin?: string | Record<string, string>;
+		};
+	} catch {
+		return undefined;
 	};
 	const binField = pkg.bin;
 	const binPath = typeof binField === "string"
@@ -116,6 +123,7 @@ interface AsyncChainParams {
 	attachRoot?: ImportedAsyncRoot & { agent: string; outputName?: string; label?: string };
 	resultMode?: Exclude<SubagentRunMode, "single">;
 	agents: AgentConfig[];
+	extensionConfig: ExtensionConfig;
 	ctx: AsyncExecutionContext;
 	availableModels?: AvailableModelInfo[];
 	cwd?: string;
@@ -193,6 +201,7 @@ export interface AsyncRunnerStepBuildParams {
 	attachRoot?: ImportedAsyncRoot & { agent: string; outputName?: string; label?: string };
 	resultMode?: SubagentRunMode;
 	agents: AgentConfig[];
+	extensionConfig?: ExtensionConfig;
 	ctx: AsyncExecutionContext;
 	availableModels?: AvailableModelInfo[];
 	cwd?: string;
@@ -227,7 +236,7 @@ export function formatAsyncStartedMessage(headline: string): string {
 		"The async run is detached. Do not run sleep timers or polling loops just to wait for it.",
 		"Persistent interactive parents should continue useful work. During waits, they may do independent reflection or permitted internal-state maintenance, but only when this work cannot delay required work. When no useful work, independent reflection, or permitted maintenance remains, yield. Completion notifications resume persistent interactive parents without another user prompt.",
 		"Inspect relevant completed outputs before dependent decisions or final claims.",
-		"When a known immediate dependency requires child output, retain the async run ID and yield after qualifying work until its completion notification arrives. Use subagent({ action: \"status\", id: \"...\" }) only for a one-shot inspection of a blocked or stale run.",
+		'When a known immediate dependency requires child output, retain the async run ID and yield after qualifying work until its completion notification arrives. Use subagent({ action: "status", id: "..." }) only for a one-shot inspection of a blocked or stale run.',
 	].join("\n");
 }
 
@@ -421,7 +430,12 @@ export function buildAsyncRunnerSteps(id: string, params: AsyncRunnerStepBuildPa
 		};
 	};
 	const buildSeqStep = (s: SequentialStep, sessionFile?: string, behaviorCwd?: string, progressPrecreated = false, resolvedBehavior?: ResolvedStepBehavior, flatIndex?: number, deferExplicitReadValidation = false) => {
-		const a = agents.find((x) => x.name === s.agent)!;
+		const a = resolveToolExtensionAgent(
+			agents,
+			params.extensionConfig ?? {},
+			s.agent,
+			s.toolExtensions,
+		);
 		const toolBudgetInput = s.toolBudget ?? params.toolBudget ?? a.toolBudget ?? params.configToolBudget;
 		const resolvedToolBudget = validateToolBudgetConfig(toolBudgetInput, s.toolBudget ? "toolBudget" : a.toolBudget ? "agent.toolBudget" : "config.toolBudget");
 		if (resolvedToolBudget.error) throw new AsyncStartValidationError(resolvedToolBudget.error);
@@ -657,6 +671,7 @@ export function executeAsyncChain(
 		attachRoot: params.attachRoot,
 		resultMode,
 		agents,
+		extensionConfig: params.extensionConfig,
 		ctx,
 		availableModels: params.availableModels,
 		cwd,

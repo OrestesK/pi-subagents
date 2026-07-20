@@ -25,7 +25,9 @@ import {
 	tryImport,
 	events,
 } from "../support/helpers.ts";
-import { INTERCOM_DETACH_REQUEST_EVENT } from "../../src/shared/types.ts";
+import { INTERCOM_DETACH_REQUEST_EVENT,
+	type ToolExtensionRequest,
+} from "../../src/shared/types.ts";
 
 interface TestSequentialStep {
 	agent: string;
@@ -42,6 +44,7 @@ interface TestSequentialStep {
 	progress?: boolean;
 	cwd?: string;
 	acceptance?: unknown;
+	toolExtensions?: ToolExtensionRequest;
 }
 
 interface TestParallelTask {
@@ -59,9 +62,11 @@ interface TestParallelTask {
 	progress?: boolean;
 	cwd?: string;
 	acceptance?: unknown;
+	toolExtensions?: ToolExtensionRequest;
 }
 
-type TestChainStep = TestSequentialStep | {
+type TestChainStep =
+	| TestSequentialStep | {
 	parallel: TestParallelTask[];
 	concurrency?: number;
 	failFast?: boolean;
@@ -190,13 +195,25 @@ describe("chain execution — sequential", { skip: !available ? "pi packages not
 		};
 	}
 
+	function readRecordedArgs(callFile: string): string[] {
+		const callPath = path.join(mockPi.dir, callFile);
+		try {
+			return JSON.parse(fs.readFileSync(callPath, "utf-8")).args as string[];
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(
+				`Failed to read recorded call at '${callPath}': ${message}`,
+			);
+		}
+	}
+
 	function readCallArgs(index: number): string[] {
 		const callFiles = fs.readdirSync(mockPi.dir)
 			.filter((name) => name.startsWith("call-") && name.endsWith(".json"))
 			.sort();
 		const callFile = callFiles[index];
 		assert.ok(callFile, `expected call ${index}`);
-		return JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")).args as string[];
+		return readRecordedArgs(callFile);
 	}
 
 	function acceptanceReport(overrides: Record<string, unknown> = {}): string {
@@ -283,6 +300,91 @@ describe("chain execution — sequential", { skip: !available ? "pi packages not
 		assert.equal(result.details.results[0].agent, "analyst");
 		assert.equal(result.details.results[1].agent, "reporter");
 		assert.deepEqual(result.details.totalCost, { inputTokens: 200, outputTokens: 100, costUsd: 0.002 });
+	});
+
+	it("passes configured tool extensions to foreground chain children", async () => {
+		mockPi.onCall({ output: "Analysis complete" });
+		const result = await executeChain(
+			makeChainParams(
+				[
+					{
+						agent: "analyst",
+						task: "Research the code",
+						toolExtensions: { add: ["mcp"] },
+					},
+				],
+				[makeAgent("analyst")],
+				{
+					extensionConfig: {
+						toolExtensions: {
+							mcp: {
+								description: "Regular MCP access",
+								builtinTools: ["mcp"],
+								allowedAgents: ["analyst"],
+							},
+						},
+					},
+				},
+			),
+		);
+
+		assert.ok(
+			!result.isError,
+			`chain should succeed: ${JSON.stringify(result.content)}`,
+		);
+		const args = readCallArgs(0);
+		const toolsIndex = args.indexOf("--tools");
+		assert.notEqual(toolsIndex, -1);
+		assert.equal(args[toolsIndex + 1], "mcp");
+	});
+
+	it("passes configured tool extensions to foreground parallel chain children", async () => {
+		mockPi.onCall({ output: "Analyst complete" });
+		mockPi.onCall({ output: "Reviewer complete" });
+		const extensionConfig = {
+			toolExtensions: {
+				mcp: {
+					description: "Regular MCP access",
+					builtinTools: ["mcp"],
+					allowedAgents: ["analyst", "reviewer"],
+				},
+			},
+		};
+		const result = await executeChain(
+			makeChainParams(
+				[
+					{
+						parallel: [
+							{
+								agent: "analyst",
+								task: "Analyze the code",
+								toolExtensions: { add: ["mcp"] },
+							},
+							{
+								agent: "reviewer",
+								task: "Review the code",
+								toolExtensions: { add: ["mcp"] },
+							},
+						],
+					},
+				],
+				[
+					makeAgent("analyst", { tools: ["read"] }),
+					makeAgent("reviewer", { tools: ["read"] }),
+				],
+				{ extensionConfig },
+			),
+		);
+
+		assert.ok(
+			!result.isError,
+			`chain should succeed: ${JSON.stringify(result.content)}`,
+		);
+		const tools = [readCallArgs(0), readCallArgs(1)].map((args) => {
+			const toolsIndex = args.indexOf("--tools");
+			return args[toolsIndex + 1];
+		});
+		assert.deepEqual(tools, ["read,mcp", "read,mcp"]);
 	});
 
 	it("runs a foreground sequential chain without clarify UI when clarify is omitted", async () => {
@@ -477,7 +579,7 @@ describe("chain execution — sequential", { skip: !available ? "pi packages not
 
 		const result = await executeChain(
 			makeChainParams(
-				[{ agent: "worker", task: "Implement fix", acceptance: { level: "verified", verify: [{ id: "runtime-pass", command: "node -e \"process.exit(0)\"" }] } }],
+				[{ agent: "worker", task: "Implement fix", acceptance: { level: "verified", verify: [{ id: "runtime-pass", command: 'node -e "process.exit(0)"' }] } }],
 				agents,
 			),
 		);
@@ -488,7 +590,7 @@ describe("chain execution — sequential", { skip: !available ? "pi packages not
 		mockPi.onCall({ output: acceptanceReport });
 		const failed = await executeChain(
 			makeChainParams(
-				[{ agent: "worker", task: "Implement fix", acceptance: { level: "verified", verify: [{ id: "runtime-fail", command: "node -e \"process.exit(5)\"" }] } }],
+				[{ agent: "worker", task: "Implement fix", acceptance: { level: "verified", verify: [{ id: "runtime-fail", command: 'node -e "process.exit(5)"' }] } }],
 				agents,
 			),
 		);
@@ -895,7 +997,8 @@ describe("chain execution — sequential", { skip: !available ? "pi packages not
 		mockPi.onCall({ output: "review-b", structuredOutput: { ok: "b" } });
 		mockPi.onCall({ steps: [{ jsonl: [events.assistantMessage("writer started")] }] });
 		const agents = [makeAgent("scout"), makeAgent("reviewer"), makeAgent("writer")];
-		let writerUpdateChildren: Array<{ itemKey?: string; status?: string }> | undefined;
+		let writerUpdateChildren:
+			| Array<{ itemKey?: string; status?: string }> | undefined;
 
 		const result = await executeChain(
 			makeChainParams(
@@ -1245,13 +1348,25 @@ describe("chain execution — parallel steps", { skip: !available ? "pi packages
 		};
 	}
 
+	function readRecordedArgs(callFile: string): string[] {
+		const callPath = path.join(mockPi.dir, callFile);
+		try {
+			return JSON.parse(fs.readFileSync(callPath, "utf-8")).args as string[];
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(
+				`Failed to read recorded call at '${callPath}': ${message}`,
+			);
+		}
+	}
+
 	function readCallArgs(index: number): string[] {
 		const callFiles = fs.readdirSync(mockPi.dir)
 			.filter((name) => name.startsWith("call-") && name.endsWith(".json"))
 			.sort();
 		const callFile = callFiles[index];
 		assert.ok(callFile, `expected call ${index}`);
-		return JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")).args as string[];
+		return readRecordedArgs(callFile);
 	}
 
 	function readCallArgsMatching(text: string): string[] {
@@ -1259,7 +1374,7 @@ describe("chain execution — parallel steps", { skip: !available ? "pi packages
 			.filter((name) => name.startsWith("call-") && name.endsWith(".json"))
 			.sort();
 		for (const callFile of callFiles) {
-			const args = JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")).args as string[];
+			const args = readRecordedArgs(callFile);
 			if (args.join("\n").includes(text)) return args;
 		}
 		assert.fail(`expected recorded call containing ${text}`);

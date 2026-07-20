@@ -211,18 +211,39 @@ describe("single sync execution", { skip: !available ? "pi packages not availabl
 		removeTempDir(tempDir);
 	});
 
+	function parseJson<T>(value: string): T {
+		try {
+			return JSON.parse(value) as T;
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			assert.fail(`Invalid JSON fixture: ${message}`);
+		}
+	}
+
 	function readCall(): { args: string[]; systemPrompts: NonNullable<MockPiCallRecord["systemPrompts"]> } {
 		const callFile = lastItem(fs.readdirSync(mockPi.dir)
 			.filter((name) => name.startsWith("call-") && name.endsWith(".json"))
 			.sort());
 		assert.ok(callFile, "expected a recorded mock pi call");
-		const payload = JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")) as MockPiCallRecord;
+		const payload = parseJson<MockPiCallRecord>(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8"));
 		assert.ok(Array.isArray(payload.args), "expected recorded args");
 		return { args: payload.args, systemPrompts: payload.systemPrompts ?? [] };
 	}
 
 	function readCallArgs(): string[] {
 		return readCall().args;
+	}
+
+	function readCalls(): MockPiCallRecord[] {
+		return fs
+			.readdirSync(mockPi.dir)
+			.filter((name) => name.startsWith("call-") && name.endsWith(".json"))
+			.sort()
+			.map((name) =>
+				parseJson<MockPiCallRecord>(
+					fs.readFileSync(path.join(mockPi.dir, name), "utf-8"),
+				),
+			);
 	}
 
 	function makeExecutor(agents = [makeAgent("echo")], config: Record<string, unknown> = {}) {
@@ -272,7 +293,8 @@ describe("single sync execution", { skip: !available ? "pi packages not availabl
 		assert.ok(content.split("\n").length <= MODEL_VISIBLE_COMPLETION_BUDGET.lines);
 		assert.match(content, /HEAD-SINGLE/);
 		assert.match(content, /TAIL-SINGLE/);
-		const details = result.details as { results?: Array<{ artifactPaths?: { outputPath?: string } }> } | undefined;
+		const details = result.details as
+			| { results?: Array<{ artifactPaths?: { outputPath?: string } }> } | undefined;
 		const outputPath = details?.results?.[0]?.artifactPaths?.outputPath;
 		assert.ok(outputPath && fs.existsSync(outputPath));
 		assert.equal(fs.readFileSync(outputPath, "utf8"), fullOutput);
@@ -301,6 +323,63 @@ describe("single sync execution", { skip: !available ? "pi packages not availabl
 		assert.ok(content.split("\n").length <= MODEL_VISIBLE_COMPLETION_BUDGET.lines);
 		assert.match(content, /HEAD-(?:ALPHA|BETA)/);
 		assert.match(content, /TAIL-(?:ALPHA|BETA)/);
+	});
+
+	it("passes configured tool extensions to direct foreground tasks", {
+		skip: !createSubagentExecutor ? "executor not importable" : undefined,
+	}, async () => {
+		mockPi.onCall({ output: "alpha result" });
+		mockPi.onCall({ output: "beta result" });
+		const agents = [
+			makeAgent("alpha", { tools: ["read"] }),
+			makeAgent("beta", { tools: ["read"] }),
+		];
+		const executor = makeExecutor(agents, {
+			toolExtensions: {
+				mcp: {
+					description: "Regular MCP access",
+					builtinTools: ["mcp"],
+					allowedAgents: ["alpha", "beta"],
+				},
+			},
+		});
+
+		const result = await executor.execute(
+			"foreground-tasks-tools",
+			{
+				tasks: [
+					{
+						agent: "alpha",
+						task: "Alpha task",
+						toolExtensions: { add: ["mcp"] },
+					},
+					{
+						agent: "beta",
+						task: "Beta task",
+						toolExtensions: { add: ["mcp"] },
+					},
+				],
+			},
+			new AbortController().signal,
+			undefined,
+			makeMinimalCtx(tempDir),
+		);
+
+		assert.equal(result.isError, undefined);
+		const toolsValues = readCalls().map((call) => {
+			const args = call.args ?? [];
+			const toolsIndex = args.indexOf("--tools");
+			return args[toolsIndex + 1];
+		});
+		assert.equal(toolsValues.length, 2);
+		for (const tools of toolsValues) {
+			assert.ok(tools?.split(",").includes("read"));
+			assert.ok(tools?.split(",").includes("mcp"));
+		}
+		assert.deepEqual(
+			agents.map((agent) => agent.tools),
+			[["read"], ["read"]],
+		);
 	});
 
 	it("treats action='single' with execution fields as single execution", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
@@ -1032,7 +1111,7 @@ Inspect context`));
 		mockPi.onCall({
 			steps: [
 				{ jsonl: [events.toolStart("read", { path: "package.json" })], delay: 20 },
-				{ jsonl: [events.toolEnd("read"), events.toolResult("read", "{\"name\":\"pkg\"}")], delay: 20 },
+				{ jsonl: [events.toolEnd("read"), events.toolResult("read", '{"name":"pkg"}')], delay: 20 },
 				{ jsonl: [events.assistantMessage("Done")] },
 			],
 		});
@@ -1156,7 +1235,11 @@ Inspect context`));
 		assert.ok(result.transcriptPath, "should expose transcript path on the result");
 		assert.equal(result.transcriptPath, result.artifactPaths.transcriptPath);
 		assert.ok(fs.existsSync(result.transcriptPath), "transcript should be written");
-		const transcript = fs.readFileSync(result.transcriptPath, "utf-8").trim().split("\n").map((line) => JSON.parse(line) as { recordType?: string; source?: string; text?: string });
+		const transcript = fs.readFileSync(result.transcriptPath, "utf-8").trim().split("\n").map((line) =>
+				parseJson<{ recordType?: string; source?: string; text?: string }>(
+					line,
+				),
+			);
 		assert.equal(transcript[0]?.recordType, "message");
 		assert.equal(transcript[0]?.source, "foreground");
 		assert.match(lastItem(transcript)?.text ?? "", /^Result text/);
@@ -1179,7 +1262,10 @@ Inspect context`));
 		assert.equal(result.transcriptPath, undefined);
 		assert.equal(result.transcriptError, undefined);
 		assert.ok(result.artifactPaths?.metadataPath, "should have metadata path");
-		const metadata = JSON.parse(fs.readFileSync(result.artifactPaths.metadataPath, "utf-8")) as { transcriptPath?: string; transcriptError?: string };
+		const metadata = parseJson<{
+			transcriptPath?: string;
+			transcriptError?: string;
+		}>(fs.readFileSync(result.artifactPaths.metadataPath, "utf-8"));
 		assert.equal(metadata.transcriptPath, undefined);
 		assert.equal(metadata.transcriptError, undefined);
 		assert.equal(fs.existsSync(result.artifactPaths.transcriptPath!), false);
@@ -1405,7 +1491,8 @@ Inspect context`));
 			});
 
 			assert.equal(result.exitCode, 0);
-			assert.deepEqual(JSON.parse(result.finalOutput ?? "{}"), {
+			assert.deepEqual(
+				parseJson<Record<string, string>>(result.finalOutput ?? "{}"), {
 				PI_SUBAGENT_DEPTH: "1",
 				PI_SUBAGENT_MAX_DEPTH: "1",
 			});
@@ -1430,7 +1517,8 @@ Inspect context`));
 		});
 
 		assert.equal(result.exitCode, 0);
-		assert.deepEqual(JSON.parse(result.finalOutput ?? "{}"), {
+		assert.deepEqual(
+			parseJson<Record<string, string>>(result.finalOutput ?? "{}"), {
 			PI_SUBAGENT_INHERIT_PROJECT_CONTEXT: "0",
 			PI_SUBAGENT_INHERIT_SKILLS: "0",
 		});
@@ -1455,7 +1543,8 @@ Inspect context`));
 			const fanoutAgents = [makeAgent("delegator", { tools: ["read", "subagent"] })];
 			const fanout = await runSync(tempDir, fanoutAgents, "delegator", "Task", { runId: "fanout-run", index: 2 });
 			assert.equal(fanout.exitCode, 0);
-			assert.deepEqual(JSON.parse(fanout.finalOutput ?? "{}"), {
+			assert.deepEqual(
+				parseJson<Record<string, string>>(fanout.finalOutput ?? "{}"), {
 				PI_SUBAGENT_FANOUT_CHILD: "1",
 				PI_SUBAGENT_PARENT_EVENT_SINK: "/tmp/inherited/events.jsonl",
 				PI_SUBAGENT_PARENT_CONTROL_INBOX: "/tmp/inherited/control",
@@ -1467,7 +1556,8 @@ Inspect context`));
 			const nonFanoutAgents = [makeAgent("worker", { tools: ["read"] })];
 			const nonFanout = await runSync(tempDir, nonFanoutAgents, "worker", "Task", { runId: "non-fanout-run" });
 			assert.equal(nonFanout.exitCode, 0);
-			assert.deepEqual(JSON.parse(nonFanout.finalOutput ?? "{}"), {
+			assert.deepEqual(
+				parseJson<Record<string, string>>(nonFanout.finalOutput ?? "{}"), {
 				PI_SUBAGENT_FANOUT_CHILD: "0",
 				PI_SUBAGENT_PARENT_EVENT_SINK: "",
 				PI_SUBAGENT_PARENT_CONTROL_INBOX: "",
@@ -1500,7 +1590,8 @@ Inspect context`));
 		});
 
 		assert.equal(result.exitCode, 0);
-		assert.deepEqual(JSON.parse(result.finalOutput ?? "{}"), {
+		assert.deepEqual(
+			parseJson<Record<string, string>>(result.finalOutput ?? "{}"), {
 			PI_SUBAGENT_INTERCOM_SESSION_NAME: "subagent-echo-78f659a3-3",
 			PI_SUBAGENT_ORCHESTRATOR_TARGET: "subagent-chat-parent",
 			PI_SUBAGENT_RUN_ID: "78f659a3",

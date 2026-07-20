@@ -39,7 +39,8 @@ export interface ChainOutputMapEntry {
 
 export type ChainOutputMap = Record<string, ChainOutputMapEntry>;
 
-export type WorkflowNodeStatus = "pending" | "running" | "completed" | "failed" | "paused" | "detached";
+export type WorkflowNodeStatus =
+	| "pending" | "running" | "completed" | "failed" | "paused" | "detached";
 
 export interface WorkflowGraphNode {
 	id: string;
@@ -119,7 +120,8 @@ export interface ResolvedToolBudget {
 	block: string[] | "*";
 }
 
-export type ToolBudgetOutcome = "within-budget" | "soft-reached" | "hard-blocked";
+export type ToolBudgetOutcome =
+	| "within-budget" | "soft-reached" | "hard-blocked";
 
 export interface ToolBudgetState extends ResolvedToolBudget {
 	outcome: ToolBudgetOutcome;
@@ -129,7 +131,8 @@ export interface ToolBudgetState extends ResolvedToolBudget {
 	blockedTool?: string;
 }
 
-export type TurnBudgetOutcome = "within-budget" | "wrap-up-requested" | "exceeded";
+export type TurnBudgetOutcome =
+	| "within-budget" | "wrap-up-requested" | "exceeded";
 
 export interface TurnBudgetState extends ResolvedTurnBudget {
 	outcome: TurnBudgetOutcome;
@@ -206,7 +209,8 @@ export interface ControlEvent {
 	nestedRunId?: string;
 	nestingPath?: NestedRunAddress["path"];
 	message: string;
-	reason?: "idle" | "completion_guard" | "active_long_running" | "tool_failures" | "time_threshold" | "turn_threshold" | "token_threshold";
+	reason?:
+		| "idle" | "completion_guard" | "active_long_running" | "tool_failures" | "time_threshold" | "turn_threshold" | "token_threshold";
 	turns?: number;
 	tokens?: number;
 	toolCount?: number;
@@ -217,15 +221,17 @@ export interface ControlEvent {
 	recentFailureSummary?: string;
 }
 
-export type SubagentResultStatus = "completed" | "failed" | "paused" | "detached";
-export type SubagentResultDeliveryState = "delivered" | "failed" | "timed_out" | "not_requested";
+export type SubagentResultStatus =
+	| "completed" | "failed" | "paused" | "detached";
+export type SubagentResultDeliveryState =
+	| "delivered" | "failed" | "timed_out" | "not_requested";
 export type SubagentRunMode = "single" | "parallel" | "chain";
 export const SUBAGENT_LIFECYCLE_ARTIFACT_VERSION = 1;
 export type SubagentLifecycleArtifactVersion = typeof SUBAGENT_LIFECYCLE_ARTIFACT_VERSION;
 
 export type PublicNestedStepSummary = Pick<
 	NestedStepSummary,
-	"agent" | "status" | "sessionFile" | "transcriptPath" | "transcriptError" | "activityState" | "lastActivityAt" | "currentTool" | "currentToolStartedAt" | "currentPath" | "turnCount" | "toolCount" | "toolBudget" | "toolBudgetBlocked" | "startedAt" | "endedAt" | "error" | "timedOut"
+	| "agent" | "status" | "sessionFile" | "transcriptPath" | "transcriptError" | "activityState" | "lastActivityAt" | "currentTool" | "currentToolStartedAt" | "currentPath" | "turnCount" | "toolCount" | "toolBudget" | "toolBudgetBlocked" | "startedAt" | "endedAt" | "error" | "timedOut"
 > & {
 	children?: PublicNestedRunSummary[];
 };
@@ -238,7 +244,7 @@ export type CostSummary = {
 
 export type PublicNestedRunSummary = Pick<
 	NestedRunSummary,
-	"id" | "parentRunId" | "parentStepIndex" | "parentAgent" | "depth" | "path" | "asyncDir" | "sessionId" | "sessionFile" | "intercomTarget" | "ownerIntercomTarget" | "leafIntercomTarget" | "ownerState" | "mode" | "state" | "agent" | "agents" | "currentStep" | "chainStepCount" | "parallelGroups" | "activityState" | "lastActivityAt" | "currentTool" | "currentToolStartedAt" | "currentPath" | "turnCount" | "toolCount" | "toolBudget" | "toolBudgetBlocked" | "totalTokens" | "totalCost" | "startedAt" | "endedAt" | "lastUpdate" | "error" | "timeoutMs" | "deadlineAt" | "timedOut" | "turnBudget" | "turnBudgetExceeded" | "wrapUpRequested"
+	| "id" | "parentRunId" | "parentStepIndex" | "parentAgent" | "depth" | "path" | "asyncDir" | "sessionId" | "sessionFile" | "intercomTarget" | "ownerIntercomTarget" | "leafIntercomTarget" | "ownerState" | "mode" | "state" | "agent" | "agents" | "currentStep" | "chainStepCount" | "parallelGroups" | "activityState" | "lastActivityAt" | "currentTool" | "currentToolStartedAt" | "currentPath" | "turnCount" | "toolCount" | "toolBudget" | "toolBudgetBlocked" | "totalTokens" | "totalCost" | "startedAt" | "endedAt" | "lastUpdate" | "error" | "timeoutMs" | "deadlineAt" | "timedOut" | "turnBudget" | "turnBudgetExceeded" | "wrapUpRequested"
 > & {
 	steps?: PublicNestedStepSummary[];
 	children?: PublicNestedRunSummary[];
@@ -324,7 +330,8 @@ export interface ModelAttempt {
 	usage?: Usage;
 }
 
-export type AcceptanceLevel = "auto" | "none" | "attested" | "checked" | "verified" | "reviewed";
+export type AcceptanceLevel =
+	| "auto" | "none" | "attested" | "checked" | "verified" | "reviewed";
 export type AcceptanceProvenanceLevel = Exclude<AcceptanceLevel, "auto">;
 
 export type AcceptanceEvidenceKind =
@@ -413,7 +420,8 @@ export interface AcceptanceReport {
 	notes?: string;
 }
 
-export type AcceptanceRuntimeCheckStatus = "passed" | "failed" | "not-applicable";
+export type AcceptanceRuntimeCheckStatus =
+	| "passed" | "failed" | "not-applicable";
 
 export interface AcceptanceRuntimeCheck {
 	id: string;
@@ -585,7 +593,8 @@ export interface AsyncParallelGroupStatus {
 	stepIndex: number;
 }
 
-export type NestedRunState = "queued" | "running" | "complete" | "failed" | "paused";
+export type NestedRunState =
+	| "queued" | "running" | "complete" | "failed" | "paused";
 export type NestedOwnerState = "live" | "gone" | "unknown";
 
 export interface NestedRunAddress {
@@ -599,7 +608,8 @@ export interface NestedRunAddress {
 
 export interface NestedStepSummary {
 	agent: string;
-	status: "pending" | "running" | "complete" | "completed" | "failed" | "paused";
+	status:
+		| "pending" | "running" | "complete" | "completed" | "failed" | "paused";
 	sessionFile?: string;
 	transcriptPath?: string;
 	transcriptError?: string;
@@ -731,7 +741,8 @@ export interface AsyncStatus {
 		label?: string;
 		outputName?: string;
 		structured?: boolean;
-		status: "pending" | "running" | "complete" | "completed" | "failed" | "paused";
+		status:
+			| "pending" | "running" | "complete" | "completed" | "failed" | "paused";
 		children?: NestedRunSummary[];
 		sessionFile?: string;
 		transcriptPath?: string;
@@ -758,6 +769,7 @@ export interface AsyncStatus {
 		toolBudgetBlocked?: boolean;
 		tokens?: TokenUsage;
 		skills?: string[];
+		tools?: string[];
 		model?: string;
 		thinking?: string;
 		attemptedModels?: string[];
@@ -1025,10 +1037,23 @@ export interface ScheduledRunsConfig {
 	maxPending?: number;
 }
 
+export interface ToolExtensionBundle {
+	description: string;
+	builtinTools: string[];
+	allowedAgents: string[];
+}
+
+export type ToolExtensionRegistry = Record<string, ToolExtensionBundle>;
+
+export interface ToolExtensionRequest {
+	add?: string[];
+}
+
 export interface ExtensionConfig {
 	asyncByDefault?: boolean;
 	/** Tool description variant registered for the parent-facing subagent tool. Defaults to full. */
 	toolDescriptionMode?: ToolDescriptionMode;
+	toolExtensions?: ToolExtensionRegistry;
 	forceTopLevelAsync?: boolean;
 	waitTool?: WaitToolConfig;
 	defaultSessionDir?: string;

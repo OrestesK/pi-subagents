@@ -61,6 +61,8 @@ describe("registered subagent tool description", () => {
 		assert.doesNotMatch(description, /proactive skill subagent suggestions/i);
 		assert.doesNotMatch(description, /disabled builtins/i);
 		assert.match(description, /output\?,reads\?,progress\?/i);
+		assert.match(description, /toolExtensions/);
+		assert.match(description, /configured bundle IDs/i);
 		assert.match(description, /timeoutMs/i);
 		assert.match(description, /maxRuntimeMs/i);
 		assert.match(description, /foreground and async\/background runs/i);
@@ -89,6 +91,7 @@ describe("registered subagent tool description", () => {
 		assert.match(description, /SINGLE/);
 		assert.match(description, /PARALLEL/);
 		assert.match(description, /CHAIN/);
+		assert.match(description, /toolExtensions/);
 		assert.match(description, /action without execution fields/i);
 		assert.doesNotMatch(description, /wait tool/i);
 		assert.match(description, /Do not sleep or poll/i);
@@ -228,7 +231,14 @@ describe("registered subagent tool description", () => {
 			],
 			{ cwd: projectRoot, env: parentToolEnv(agentDir), encoding: "utf-8" },
 		);
-		return JSON.parse(output) as string;
+		try {
+			return JSON.parse(output) as string;
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(
+				`Registered tool description was not valid JSON: ${message}`,
+			);
+		}
 	}
 
 	function writeExtensionConfig(agentDir: string, config: Record<string, unknown>): void {

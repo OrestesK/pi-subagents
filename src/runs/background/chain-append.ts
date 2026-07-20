@@ -3,7 +3,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { writeAtomicJson } from "../../shared/atomic-json.ts";
 import { appendJsonl } from "../../shared/artifacts.ts";
-import type { AsyncParallelGroupStatus, AsyncStatus, WorkflowGraphNode, WorkflowGraphSnapshot } from "../../shared/types.ts";
+import type {
+	AsyncStatus, WorkflowGraphNode, WorkflowGraphSnapshot } from "../../shared/types.ts";
 import { readStatus } from "../../shared/utils.ts";
 import type { DynamicRunnerGroup, ParallelStepGroup, RunnerStep, RunnerSubagentStep } from "../shared/parallel-utils.ts";
 import { isDynamicRunnerGroup, isParallelGroup } from "../shared/parallel-utils.ts";
@@ -100,7 +101,12 @@ export function enqueueChainAppendRequest(input: {
 }
 
 function readAppendRequest(filePath: string): ChainAppendRequest | undefined {
-	const raw = JSON.parse(fs.readFileSync(filePath, "utf-8")) as Partial<ChainAppendRequest>;
+	let raw: Partial<ChainAppendRequest>;
+	try {
+		raw = JSON.parse(fs.readFileSync(filePath, "utf-8")) as Partial<ChainAppendRequest>;
+	} catch {
+		return undefined;
+	}
 	if (!raw.id || typeof raw.id !== "string") return undefined;
 	if (typeof raw.createdAt !== "number" || !Number.isFinite(raw.createdAt)) return undefined;
 	if (!Array.isArray(raw.steps) || raw.steps.length === 0) return undefined;
@@ -138,6 +144,7 @@ function statusStepForTask(task: RunnerSubagentStep): StatusStep {
 		status: "pending",
 		...(task.sessionFile ? { sessionFile: task.sessionFile } : {}),
 		skills: task.skills,
+		tools: task.tools,
 		model: task.model,
 		thinking: task.thinking,
 		attemptedModels: task.modelCandidates && task.modelCandidates.length > 0 ? task.modelCandidates : task.model ? [task.model] : undefined,

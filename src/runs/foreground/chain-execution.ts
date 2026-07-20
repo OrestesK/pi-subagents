@@ -54,6 +54,7 @@ import {
 	type ArtifactPaths,
 	type ControlEvent,
 	type Details,
+	type ExtensionConfig,
 	type IntercomEventBus,
 	type NestedRouteInfo,
 	type ResolvedControlConfig,
@@ -74,6 +75,7 @@ import { collectDynamicResults, DynamicFanoutError, materializeDynamicParallelSt
 import { acceptanceFailureMessage, aggregateAcceptanceReport, evaluateAcceptance, resolveEffectiveAcceptance } from "../shared/acceptance.ts";
 import type { ChainOutputMap } from "../../shared/types.ts";
 import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
+import { resolveToolExtensionAgent } from "../shared/tool-extensions.ts";
 
 interface ChainExecutionDetailsInput {
 	results: SingleResult[];
@@ -88,8 +90,10 @@ interface ChainExecutionDetailsInput {
 	runId: string;
 	outputs?: ChainOutputMap;
 	currentFlatIndex?: number;
-	dynamicChildren?: Record<number, Array<{ agent: string; label?: string; flatIndex: number; itemKey: string; outputName?: string; structured?: boolean; error?: string }>>;
-	dynamicGroupStatuses?: Record<number, { status: "pending" | "running" | "completed" | "failed" | "paused" | "detached"; error?: string; acceptance?: SingleResult["acceptance"] }>;
+	dynamicChildren?: Record<number, Array<{ agent: string; label?: string; flatIndex: number; itemKey: string; outputName?: string; structured?: boolean; error?: string }>
+	>;
+	dynamicGroupStatuses?: Record<number, { status:
+				| "pending" | "running" | "completed" | "failed" | "paused" | "detached"; error?: string; acceptance?: SingleResult["acceptance"] }>;
 }
 
 interface ParallelChainRunInput {
@@ -97,6 +101,7 @@ interface ParallelChainRunInput {
 	parallelTemplates: string[];
 	parallelBehaviors: ResolvedStepBehavior[];
 	agents: AgentConfig[];
+	extensionConfig: ExtensionConfig;
 	stepIndex: number;
 	availableModels: ModelInfo[];
 	modelScope?: ModelScopeConfig;
@@ -268,7 +273,12 @@ async function runParallelChainTasks(input: ParallelChainRunInput): Promise<Sing
 			const cleanTask = taskStr;
 			taskStr = prefix + taskStr + suffix;
 
-			const taskAgentConfig = input.agents.find((agent) => agent.name === task.agent);
+			const taskAgentConfig = resolveToolExtensionAgent(
+				input.agents,
+				input.extensionConfig,
+				task.agent,
+				task.toolExtensions,
+			);
 			const effectiveModel = resolveSubagentModelOverride(
 				task.model ?? taskAgentConfig?.model,
 				input.ctx.model,
@@ -281,7 +291,7 @@ async function runParallelChainTasks(input: ParallelChainRunInput): Promise<Sing
 			if (toolBudget.error) throw new Error(toolBudget.error);
 
 			const outputPath = typeof behavior.output === "string"
-				? (path.isAbsolute(behavior.output) ? behavior.output : path.join(input.chainDir, behavior.output))
+				? path.isAbsolute(behavior.output) ? behavior.output : path.join(input.chainDir, behavior.output)
 				: undefined;
 			const interruptController = new AbortController();
 			if (input.foregroundControl) {
@@ -301,7 +311,9 @@ async function runParallelChainTasks(input: ParallelChainRunInput): Promise<Sing
 			const structuredRuntime = task.outputSchema
 				? createStructuredOutputRuntime(task.outputSchema, path.join(input.chainDir, "structured-output"))
 				: undefined;
-			const result = await runSync(input.ctx.cwd, input.agents, task.agent, taskStr, {
+			const result = await runSync(input.ctx.cwd,
+				[taskAgentConfig],
+				task.agent, taskStr, {
 				parentSessionId: input.ctx.sessionManager.getSessionId() ?? undefined,
 				cwd: taskCwd,
 				signal: input.signal,
@@ -405,6 +417,7 @@ interface ChainExecutionParams {
 	chain: ChainStep[];
 	task?: string;
 	agents: AgentConfig[];
+	extensionConfig: ExtensionConfig;
 	ctx: ExtensionContext;
 	modelScope?: ModelScopeConfig;
 	intercomEvents?: IntercomEventBus;
@@ -695,7 +708,7 @@ export async function executeChain(params: ChainExecutionParams): Promise<ChainE
 					const readValidationError = validateExplicitReads(behavior, readCwd, label, step.worktree ? "chain/worktree" : "chain");
 					if (readValidationError) return buildChainExecutionErrorResult(readValidationError, makeDetailsInput({ currentStepIndex: stepIndex, currentFlatIndex: globalTaskIndex + taskIndex }));
 					const outputPath = typeof behavior.output === "string"
-						? (path.isAbsolute(behavior.output) ? behavior.output : path.join(chainDir, behavior.output))
+						? path.isAbsolute(behavior.output) ? behavior.output : path.join(chainDir, behavior.output)
 						: undefined;
 					const validationError = validateFileOnlyOutputMode(behavior.outputMode, outputPath, label);
 					if (validationError) return buildChainExecutionErrorResult(validationError, makeDetailsInput({ currentStepIndex: stepIndex, currentFlatIndex: globalTaskIndex + taskIndex }));
@@ -708,6 +721,7 @@ export async function executeChain(params: ChainExecutionParams): Promise<ChainE
 					parallelTemplates,
 					parallelBehaviors,
 					agents,
+					extensionConfig: params.extensionConfig,
 					stepIndex,
 					availableModels,
 					modelScope,
@@ -812,7 +826,7 @@ export async function executeChain(params: ChainExecutionParams): Promise<ChainE
 				const taskResults: ParallelTaskResult[] = parallelResults.map((result, i) => {
 					const outputTarget = parallelBehaviors[i]?.output;
 					const outputTargetPath = typeof outputTarget === "string"
-						? (path.isAbsolute(outputTarget) ? outputTarget : path.join(chainDir, outputTarget))
+						? path.isAbsolute(outputTarget) ? outputTarget : path.join(chainDir, outputTarget)
 						: undefined;
 					return {
 						agent: result.agent,
@@ -918,7 +932,7 @@ export async function executeChain(params: ChainExecutionParams): Promise<ChainE
 					return buildChainExecutionErrorResult(readValidationError, makeDetailsInput({ currentStepIndex: stepIndex, currentFlatIndex: globalTaskIndex + taskIndex }));
 				}
 				const outputPath = typeof behavior.output === "string"
-					? (path.isAbsolute(behavior.output) ? behavior.output : path.join(chainDir, behavior.output))
+					? path.isAbsolute(behavior.output) ? behavior.output : path.join(chainDir, behavior.output)
 					: undefined;
 				const validationError = validateFileOnlyOutputMode(behavior.outputMode, outputPath, label);
 				if (validationError) {
@@ -934,6 +948,7 @@ export async function executeChain(params: ChainExecutionParams): Promise<ChainE
 				parallelTemplates,
 				parallelBehaviors,
 				agents,
+				extensionConfig: params.extensionConfig,
 				stepIndex,
 				availableModels,
 				modelScope,
@@ -1078,14 +1093,31 @@ export async function executeChain(params: ChainExecutionParams): Promise<ChainE
 			const seqStep = step as SequentialStep;
 			const stepTemplate = stepTemplates as string;
 
-			const agentConfig = agents.find((a) => a.name === seqStep.agent);
-			if (!agentConfig) {
+			const baseAgentConfig = agents.find((a) => a.name === seqStep.agent);
+			if (!baseAgentConfig) {
 				removeChainDir(chainDir);
 				return {
 					content: [{ type: "text", text: `Unknown agent: ${seqStep.agent}` }],
 					isError: true,
 					details: buildChainExecutionDetails(makeDetailsInput({ currentStepIndex: stepIndex, currentFlatIndex: globalTaskIndex })),
 				};
+			}
+			let agentConfig: AgentConfig;
+			try {
+				agentConfig = resolveToolExtensionAgent(
+					agents,
+					params.extensionConfig,
+					seqStep.agent,
+					seqStep.toolExtensions,
+				);
+			} catch (error) {
+				return buildChainExecutionErrorResult(
+					error instanceof Error ? error.message : String(error),
+					makeDetailsInput({
+						currentStepIndex: stepIndex,
+						currentFlatIndex: globalTaskIndex,
+					}),
+				);
 			}
 
 			const tuiOverride = tuiBehaviorOverrides?.[stepIndex];
@@ -1136,7 +1168,7 @@ export async function executeChain(params: ChainExecutionParams): Promise<ChainE
 				return buildChainExecutionErrorResult(readValidationError, makeDetailsInput({ currentStepIndex: stepIndex, currentFlatIndex: globalTaskIndex }));
 			}
 			const outputPath = typeof behavior.output === "string"
-				? (path.isAbsolute(behavior.output) ? behavior.output : path.join(chainDir, behavior.output))
+				? path.isAbsolute(behavior.output) ? behavior.output : path.join(chainDir, behavior.output)
 				: undefined;
 			const validationError = validateFileOnlyOutputMode(behavior.outputMode, outputPath, label);
 			if (validationError) {
@@ -1179,7 +1211,7 @@ export async function executeChain(params: ChainExecutionParams): Promise<ChainE
 				dynamicChildren,
 				dynamicGroupStatuses,
 			});
-			const r = await runSync(ctx.cwd, agents, seqStep.agent, stepTask, {
+			const r = await runSync(ctx.cwd, [agentConfig], seqStep.agent, stepTask, {
 				parentSessionId: ctx.sessionManager.getSessionId() ?? undefined,
 				cwd: resolveChildCwd(cwd ?? ctx.cwd, seqStep.cwd),
 				signal,

@@ -107,6 +107,27 @@ describe("agent management list", () => {
 		assert.doesNotMatch(text, /Proactive skill subagent suggestions/);
 	});
 
+	it("lists configured tool-extension bundles", () => {
+		const text = readText(
+			handleList({ action: "list" }, {
+				cwd: tempProject,
+				modelRegistry: { getAvailable: () => [] },
+				config: {
+					toolExtensions: {
+						mcp: {
+							description: "Regular MCP access",
+							builtinTools: ["mcp"],
+							allowedAgents: ["researcher"],
+						},
+					},
+				},
+			} as never),
+		);
+
+		assert.match(text, /Tool extensions:/);
+		assert.match(text, /- mcp \(researcher\): Regular MCP access/);
+	});
+
 	it("uses runtime effective discovery for scope filtering and disabled agents", () => {
 		writeAgent(path.join(tempHome, ".agents"), "user-only", "User-only helper");
 		writeAgent(path.join(tempProject, ".pi", "agents"), "project-only", "Project-only helper");

@@ -45,7 +45,9 @@ const DYNAMIC_STEP_KEYS = new Set(["expand", "parallel", "collect", "concurrency
 const RUNNER_DYNAMIC_STEP_KEYS = new Set([...DYNAMIC_STEP_KEYS, "effectiveAcceptance", "sessionFiles", "thinkingOverrides"]);
 const DYNAMIC_EXPAND_KEYS = new Set(["from", "item", "key", "maxItems", "onEmpty"]);
 const DYNAMIC_EXPAND_FROM_KEYS = new Set(["output", "path"]);
-const DYNAMIC_PARALLEL_KEYS = new Set(["agent", "task", "phase", "label", "outputSchema", "cwd", "output", "outputMode", "reads", "progress", "skill", "model", "toolBudget", "acceptance"]);
+const DYNAMIC_PARALLEL_KEYS = new Set(["agent", "task", "phase", "label", "outputSchema", "cwd", "output", "outputMode", "reads", "progress", "skill", "model",
+	"toolExtensions",
+	"toolBudget", "acceptance"]);
 const RUNNER_DYNAMIC_PARALLEL_KEYS = new Set([
 	...DYNAMIC_PARALLEL_KEYS,
 	"outputName", "structured", "inheritProjectContext", "inheritSkills", "skills", "outputPath", "maxSubagentDepth",
@@ -93,7 +95,7 @@ export function resolveJsonPointer(value: unknown, pointer: string, label: strin
 			throw new DynamicFanoutError(`${label} does not exist.`);
 		}
 		const record = current as Record<string, unknown>;
-		if (!Object.prototype.hasOwnProperty.call(record, segment)) {
+		if (!Object.prototype["hasOwnProperty"].call(record, segment)) {
 			throw new DynamicFanoutError(`${label} does not exist.`);
 		}
 		current = record[segment];
@@ -130,7 +132,10 @@ function valueToTemplateText(value: unknown, reference: string): string {
 
 function resolveItemPath(item: unknown, pathText: string | undefined, reference: string): unknown {
 	if (!pathText) return item;
-	const pointer = `/${pathText.split(".").map((segment) => segment.replace(/~/g, "~0").replace(/\//g, "~1")).join("/")}`;
+	const pointer = `/${pathText
+		.split(".")
+		.map((segment) => segment.replace(/~/g, "~0").replace(/\//g, "~1"))
+		.join("/")}`;
 	return resolveJsonPointer(item, pointer, reference);
 }
 
@@ -176,7 +181,7 @@ export function assertNoUnresolvedItemReferences(template: string, itemName: str
 
 export function hasDynamicFanoutFields(step: unknown): boolean {
 	return !!step && typeof step === "object" && !Array.isArray(step)
-		&& (Object.prototype.hasOwnProperty.call(step, "expand") || Object.prototype.hasOwnProperty.call(step, "collect"));
+		&& (Object.prototype["hasOwnProperty"].call(step, "expand") || Object.prototype["hasOwnProperty"].call(step, "collect"));
 }
 
 export function validateDynamicStepShape(step: DynamicParallelStep, stepIndex: number, config: DynamicFanoutConfig = {}): void {
@@ -263,7 +268,8 @@ export function materializeDynamicParallelStep(step: DynamicParallelStep, output
 export function collectDynamicResults(
 	step: DynamicParallelStep,
 	items: DynamicMaterializedItem[],
-	results: Array<Omit<Pick<SingleResult, "agent" | "exitCode" | "error" | "timedOut" | "structuredOutput" | "artifactPaths" | "savedOutputPath">, "exitCode"> & { exitCode: number | null; output?: string; finalOutput?: string }>,
+	results: Array<Omit<Pick<SingleResult,
+				| "agent" | "exitCode" | "error" | "timedOut" | "structuredOutput" | "artifactPaths" | "savedOutputPath">, "exitCode"> & { exitCode: number | null; output?: string; finalOutput?: string }>,
 ): DynamicCollectedResult[] {
 	return items.map((entry, index) => {
 		const result = results[index];

@@ -67,6 +67,20 @@ const ReadsOverride = Type.Unsafe({
 		"Files to read before running (array of filenames), or false to disable",
 });
 
+const ToolExtensionsOverride = Type.Object(
+	{
+		add: Type.Array(Type.String({ minLength: 1 }), {
+			minItems: 1,
+			description:
+				"Configured tool-extension bundle IDs to add for this child.",
+		}),
+	},
+	{
+		additionalProperties: false,
+		description:
+			"Add configured tool-extension bundle IDs for this child; do not pass raw tool names or paths.",
+	});
+
 const JsonSchemaObject = Type.Unsafe({
 	type: "object",
 	additionalProperties: true,
@@ -142,6 +156,7 @@ const TaskItem = Type.Object({
 	),
 	skill: Type.Optional(SkillOverride),
 	requiresCapabilities: Type.Optional(RequiredCapabilitiesOverride),
+	toolExtensions: Type.Optional(ToolExtensionsOverride),
 	toolBudget: Type.Optional(ToolBudgetOverride),
 	acceptance: Type.Optional(AcceptanceOverride),
 });
@@ -190,6 +205,7 @@ const ParallelTaskSchema = Type.Object({
 		Type.String({ description: "Override model for this task" }),
 	),
 	requiresCapabilities: Type.Optional(RequiredCapabilitiesOverride),
+	toolExtensions: Type.Optional(ToolExtensionsOverride),
 	toolBudget: Type.Optional(ToolBudgetOverride),
 	acceptance: Type.Optional(AcceptanceOverride),
 });
@@ -269,6 +285,7 @@ const DynamicParallelTemplateSchema = Type.Object(
 			Type.String({ description: "Override model for this task" }),
 		),
 		requiresCapabilities: Type.Optional(RequiredCapabilitiesOverride),
+		toolExtensions: Type.Optional(ToolExtensionsOverride),
 		toolBudget: Type.Optional(ToolBudgetOverride),
 		acceptance: Type.Optional(AcceptanceOverride),
 	},
@@ -329,6 +346,7 @@ const ChainItem = Type.Object(
 			Type.String({ description: "Override model for this step" }),
 		),
 		requiresCapabilities: Type.Optional(RequiredCapabilitiesOverride),
+		toolExtensions: Type.Optional(ToolExtensionsOverride),
 		toolBudget: Type.Optional(ToolBudgetOverride),
 		acceptance: Type.Optional(AcceptanceOverride),
 		parallel: Type.Optional(
@@ -645,6 +663,7 @@ const SubagentParamsSchema = Type.Object({
 		}),
 	),
 	requiresCapabilities: Type.Optional(RequiredCapabilitiesOverride),
+	toolExtensions: Type.Optional(ToolExtensionsOverride),
 	acceptance: Type.Optional(AcceptanceOverride),
 });
 

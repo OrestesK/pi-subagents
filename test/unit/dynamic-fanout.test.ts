@@ -14,7 +14,7 @@ import type { ChainOutputMap, SingleResult } from "../../src/shared/types.ts";
 
 const outputs: ChainOutputMap = {
 	targets: {
-		text: "{\"items\":[{\"path\":\"src/a.ts\"},{\"path\":\"src/b.ts\"}]}",
+		text: '{"items":[{"path":"src/a.ts"},{"path":"src/b.ts"}]}',
 		structured: { items: [{ path: "src/a.ts" }, { path: "src/b.ts" }] },
 		agent: "scout",
 		stepIndex: 0,
@@ -26,13 +26,19 @@ describe("dynamic fanout helpers", () => {
 		assert.deepEqual(resolveJsonPointer({ items: [1, 2] }, "/items/1", "path"), 2);
 		const step: ChainStep = {
 			expand: { from: { output: "targets", path: "/items" }, item: "target", key: "/path", maxItems: 4 },
-			parallel: { agent: "reviewer", task: "Review {target.path}", label: "Review {target.path}" },
+			parallel: { agent: "reviewer", task: "Review {target.path}", label: "Review {target.path}",
+				toolExtensions: { add: ["mcp"] },
+			},
 			collect: { as: "reviews" },
 		};
 		const materialized = materializeDynamicParallelStep(step, outputs, 1);
 		assert.deepEqual(materialized.items.map((item) => item.key), ["src/a.ts", "src/b.ts"]);
 		assert.deepEqual(materialized.parallel.map((task) => task.task), ["Review src/a.ts", "Review src/b.ts"]);
-		assert.deepEqual(materialized.parallel.map((task) => task.label), ["Review src/a.ts", "Review src/b.ts"]);
+		assert.deepEqual(materialized.parallel.map((task) => task.label), ["Review src/a.ts", "Review src/b.ts"],
+		);
+		assert.deepEqual(
+			materialized.parallel.map((task) => task.toolExtensions),
+			[{ add: ["mcp"] }, { add: ["mcp"] }]);
 	});
 
 	it("rejects missing structured sources, over-limit arrays, duplicate keys, colliding ids, and bad templates", () => {

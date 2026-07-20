@@ -145,6 +145,7 @@ interface StepResult {
 	toolBudget?: ToolBudgetState;
 	toolBudgetBlocked?: boolean;
 	sessionFile?: string;
+	tools?: string[];
 	intercomTarget?: string;
 	model?: string;
 	attemptedModels?: string[];
@@ -806,6 +807,7 @@ async function runSingleStep(
 	toolBudget?: ToolBudgetState;
 	toolBudgetBlocked?: boolean;
 	sessionFile?: string;
+	tools?: string[];
 	intercomTarget?: string;
 	completionGuardTriggered?: boolean;
 	structuredOutput?: unknown;
@@ -1177,8 +1179,10 @@ async function runSingleStep(
 		wrapUpRequested: finalResult?.wrapUpRequested || turnBudget?.outcome === "wrap-up-requested" || turnBudgetExceeded || undefined,
 		toolBudget,
 		toolBudgetBlocked: toolBudgetBlocked || undefined,
+		tools: step.tools,
 		completionGuardTriggered: completionGuardTriggeredFinal,
-		structuredOutput: timedOutAfterAcceptance || turnBudgetExceeded ? undefined : (finalResult as (RunPiStreamingResult & { structuredOutput?: unknown }) | undefined)?.structuredOutput,
+		structuredOutput: timedOutAfterAcceptance || turnBudgetExceeded ? undefined : (finalResult as
+							| (RunPiStreamingResult & { structuredOutput?: unknown }) | undefined)?.structuredOutput,
 		structuredOutputPath: timedOutAfterAcceptance || turnBudgetExceeded ? undefined : effectiveStructuredOutput?.outputPath,
 		structuredOutputSchemaPath: timedOutAfterAcceptance || turnBudgetExceeded ? undefined : effectiveStructuredOutput?.schemaPath,
 		acceptance: effectiveAcceptance,
@@ -1189,7 +1193,8 @@ type RunnerStatusStep = NonNullable<AsyncStatus["steps"]>[number] & {
 	exitCode?: number | null;
 };
 
-type RunnerStatusPayload = Omit<AsyncStatus, "steps" | "parallelGroups" | "pid" | "cwd" | "currentStep" | "chainStepCount" | "lastUpdate"> & {
+type RunnerStatusPayload = Omit<AsyncStatus,
+	| "steps" | "parallelGroups" | "pid" | "cwd" | "currentStep" | "chainStepCount" | "lastUpdate"> & {
 	pid: number;
 	cwd: string;
 	currentStep: number;
@@ -1398,6 +1403,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 					...(task.sessionFile ? { sessionFile: task.sessionFile } : {}),
 					...(transcriptPath ? { transcriptPath } : {}),
 					skills: task.skills,
+					tools: task.tools,
 					model: task.model,
 					thinking: task.thinking,
 					attemptedModels: task.modelCandidates && task.modelCandidates.length > 0 ? task.modelCandidates : task.model ? [task.model] : undefined,
@@ -1434,6 +1440,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 				...(step.sessionFile ? { sessionFile: step.sessionFile } : {}),
 				...(transcriptPath ? { transcriptPath } : {}),
 				skills: step.skills,
+				tools: step.tools,
 				model: step.model,
 				thinking: step.thinking,
 				attemptedModels: step.modelCandidates && step.modelCandidates.length > 0 ? step.modelCandidates : step.model ? [step.model] : undefined,
@@ -1498,7 +1505,8 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 	const refreshWorkflowGraph = (): void => {
 		if (!config.workflowGraph) return;
 		const graph = structuredClone(statusPayload.workflowGraph ?? config.workflowGraph);
-		const normalize = (status: RunnerStatusStep["status"]): "pending" | "running" | "completed" | "failed" | "paused" | "detached" => {
+		const normalize = (status: RunnerStatusStep["status"]):
+			| "pending" | "running" | "completed" | "failed" | "paused" | "detached" => {
 			if (status === "complete" || status === "completed") return "completed";
 			if (status === "running" || status === "failed" || status === "paused" || status === "pending") return status;
 			return "pending";
@@ -1704,7 +1712,8 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 	const emittedControlEventKeys = new Set<string>();
 	const activeLongRunningSteps = new Set<number>();
 	const mutatingFailureStates = initialStatusSteps.map(() => createMutatingFailureState());
-	const pendingToolResults: Array<{ tool: string; path?: string; mutates: boolean; startedAt?: number } | undefined> = initialStatusSteps.map(() => undefined);
+	const pendingToolResults: Array<
+		| { tool: string; path?: string; mutates: boolean; startedAt?: number } | undefined> = initialStatusSteps.map(() => undefined);
 	const mutatingFailureWindowMs = 5 * 60_000;
 	const appendControlEvent = (event: ReturnType<typeof buildControlEvent>) => {
 		if (!controlConfig.enabled) return;
@@ -2256,7 +2265,8 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 					...(task.sessionFile ? { sessionFile: task.sessionFile } : {}),
 					...(transcriptPath ? { transcriptPath } : {}),
 					skills: task.skills,
-					model: task.model,
+						tools: task.tools,
+						model: task.model,
 					thinking: task.thinking,
 					attemptedModels: task.modelCandidates && task.modelCandidates.length > 0 ? task.modelCandidates : task.model ? [task.model] : undefined,
 					recentTools: [],
@@ -3113,6 +3123,9 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 			...(statusPayload.toolBudget ? { toolBudget: statusPayload.toolBudget } : {}),
 			...(statusPayload.toolBudgetBlocked ? { toolBudgetBlocked: true } : {}),
 			...(timedOut ? { timedOut: true, error: timeoutMessage ?? "Subagent timed out." } : turnBudgetExceeded ? { error: statusPayload.error ?? "Subagent exceeded turn budget." } : {}),
+			...(results.length === 1 && results[0]?.tools
+				? { tools: results[0].tools }
+				: {}),
 			results: results.map((r) => ({
 				agent: r.agent,
 				output: r.output,
@@ -3127,6 +3140,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 				toolBudget: r.toolBudget,
 				toolBudgetBlocked: r.toolBudgetBlocked || undefined,
 				sessionFile: r.sessionFile,
+				tools: r.tools,
 				intercomTarget: r.intercomTarget,
 				model: r.model,
 				attemptedModels: r.attemptedModels,

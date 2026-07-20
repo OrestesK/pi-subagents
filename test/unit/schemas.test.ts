@@ -13,6 +13,7 @@ interface SubagentParamsSchema {
 		tasks?: {
 			items?: {
 				properties?: {
+					toolExtensions?: JsonSchemaNode;
 					count?: {
 						minimum?: number;
 						description?: string;
@@ -106,6 +107,7 @@ interface SubagentParamsSchema {
 				properties?: Record<string, JsonSchemaNode>;
 			};
 		};
+		toolExtensions?: JsonSchemaNode;
 	};
 }
 
@@ -367,9 +369,9 @@ describe("SubagentParams schema", {
 
 				const node = current.value as JsonSchemaNode;
 				if (
-					Object.prototype.hasOwnProperty.call(node, "description") &&
-					!Object.prototype.hasOwnProperty.call(node, "type") &&
-					!Object.prototype.hasOwnProperty.call(node, "anyOf")
+					Object.prototype["hasOwnProperty"].call(node, "description") &&
+					!Object.prototype["hasOwnProperty"].call(node, "type") &&
+					!Object.prototype["hasOwnProperty"].call(node, "anyOf")
 				) {
 					descriptionOnlyPaths.push(current.path);
 				}
@@ -404,7 +406,7 @@ describe("SubagentParams schema", {
 				const node = current.value as JsonSchemaNode;
 				if (
 					node.type === "array" &&
-					!Object.prototype.hasOwnProperty.call(node, "items")
+					!Object.prototype["hasOwnProperty"].call(node, "items")
 				) {
 					missingItemsPaths.push(current.path);
 				}
@@ -533,13 +535,13 @@ describe("SubagentParams schema", {
 					rejectedPaths.push(`${current.path}.type`);
 				}
 				if (
-					Object.prototype.hasOwnProperty.call(node, "anyOf") &&
-					Object.prototype.hasOwnProperty.call(node, "type")
+					Object.prototype["hasOwnProperty"].call(node, "anyOf") &&
+					Object.prototype["hasOwnProperty"].call(node, "type")
 				) {
 					rejectedPaths.push(`${current.path}.type+anyOf`);
 				}
 				for (const keyword of rejectedKeywords) {
-					if (Object.prototype.hasOwnProperty.call(node, keyword))
+					if (Object.prototype["hasOwnProperty"].call(node, keyword))
 						rejectedPaths.push(`${current.path}.${keyword}`);
 				}
 
@@ -631,12 +633,17 @@ describe("SubagentParams schema", {
 			dynamicParallelBranch,
 			"parallel should support a dynamic task template object",
 		);
+		const dynamicParallelProperties = dynamicParallelBranch.properties as
+			| Record<string, JsonSchemaNode>
+			| undefined;
+		assert.equal(dynamicParallelProperties?.toolExtensions?.type, "object");
 		const chainParallelTask = (
 			staticParallelBranch.items as
 				| { properties?: Record<string, JsonSchemaNode> }
 				| undefined
 		)?.properties;
 		assert.equal(chainParallelTask?.agent?.type, "string");
+		assert.equal(chainParallelTask?.toolExtensions?.type, "object");
 		assert.equal(chainParallelTask?.phase?.type, "string");
 		assert.equal(chainParallelTask?.label?.type, "string");
 		assert.equal(chainParallelTask?.as?.type, "string");
@@ -670,6 +677,29 @@ describe("SubagentParams schema", {
 		assert.equal(hasAnyOfType(chainReadsSchema, "boolean"), true);
 	});
 
+	it("exposes configured tool-extension bundles in every child-bearing schema", () => {
+		if (!SubagentParams) return;
+		const taskItem = SubagentParams.properties?.tasks?.items as
+			| JsonSchemaNode
+			| undefined;
+		const chainItem = SubagentParams.properties?.chain?.items as
+			| JsonSchemaNode
+			| undefined;
+		const schemasToCheck = [
+			SubagentParams.properties?.toolExtensions,
+			getPropertySchema(taskItem, ["toolExtensions"]),
+			getPropertySchema(chainItem, ["toolExtensions"]),
+		];
+		for (const schema of schemasToCheck) {
+			assert.equal(schema?.type, "object", "missing toolExtensions schema");
+			assert.equal(getPropertySchema(schema, ["add"])?.type, "array");
+		}
+		assert.match(
+			String(SubagentParams.properties?.toolExtensions?.description ?? ""),
+			/bundle IDs/i,
+		);
+	});
+
 	it("validates representative flexible field values with TypeBox compiler", {
 		skip: !CompileSchema ? "typebox compiler not available" : undefined,
 	}, () => {
@@ -678,8 +708,11 @@ describe("SubagentParams schema", {
 		const validator = CompileSchema(SubagentParams);
 		const validValues = [
 			{ skill: "review" },
+			{ toolExtensions: { add: ["mcp"] } },
 			{ skill: false },
-			{ tasks: [{ agent: "reviewer", task: "check this", reads: false }] },
+			{ tasks: [{ agent: "reviewer", task: "check this", reads: false,
+						toolExtensions: { add: ["mcp"] },
+					}] },
 			{ tasks: [{ agent: "reviewer", task: "check this", skill: "review" }] },
 			{ tasks: [{ agent: "reviewer", task: "check this", skill: false }] },
 			{
@@ -693,7 +726,7 @@ describe("SubagentParams schema", {
 					},
 				],
 			},
-			{ chain: [{ agent: "reviewer", reads: false }] },
+			{ chain: [{ agent: "reviewer", reads: false, toolExtensions: { add: ["mcp"] } }] },
 			{
 				chain: [
 					{
@@ -829,6 +862,7 @@ describe("SubagentParams schema", {
 		];
 		const invalidValues = [
 			{ skill: 123 },
+			{ toolExtensions: { add: [""] } },
 			{ skill: [123] },
 			{ output: 123 },
 			{ timeoutMs: 0 },

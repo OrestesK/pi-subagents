@@ -32,7 +32,8 @@ import { BUILTIN_WORKFLOW_IDS } from "../runs/shared/workflows.ts";
 import type { Details, ExtensionConfig, ToolBudgetConfig } from "../shared/types.ts";
 import { getProjectConfigDir } from "../shared/utils.ts";
 
-type ManagementAction = "list" | "get" | "models" | "create" | "update" | "delete" | "eject" | "disable" | "enable" | "reset";
+type ManagementAction =
+	| "list" | "get" | "models" | "create" | "update" | "delete" | "eject" | "disable" | "enable" | "reset";
 type ManagementScope = "user" | "project";
 type ManagementContext = Pick<ExtensionContext, "cwd" | "modelRegistry"> & { model?: ExtensionContext["model"]; config?: ExtensionConfig };
 
@@ -612,6 +613,9 @@ export function handleList(params: ManagementParams, ctx: ManagementContext): Ag
 	const chains = d.chains.filter((c) => scope === "both" || c.source === "package" || c.source === scope).sort((a, b) => a.name.localeCompare(b.name));
 	const diagnostics = d.chainDiagnostics.filter((entry) => scope === "both" || entry.source === scope);
 	const chainLocations = [d.userChainDir, d.projectChainDir].filter((dir): dir is string => Boolean(dir));
+	const toolExtensions = Object.entries(ctx.config?.toolExtensions ?? {}).sort(
+		([left], [right]) => left.localeCompare(right),
+	);
 	const lines = [
 		"Agents (effective; default context: fresh):",
 		...(agents.length ? agents.map(formatListAgent) : ["- (none)"]),
@@ -637,8 +641,16 @@ export function handleList(params: ManagementParams, ctx: ManagementContext): Ag
 		"- SINGLE: { agent, task? }",
 		"- PARALLEL: { tasks: [...] }",
 		"- CHAIN: { chain: [...] }",
-		"- WORKFLOW: deprecated compatibility alias { workflow: \"builtin.*\", task }; prefer explicit tasks/chain or prompt shortcuts.",
-		"- Details/provenance/tools: use { action: \"get\", agent: \"name\" }.",
+		'- WORKFLOW: deprecated compatibility alias { workflow: "builtin.*", task }; prefer explicit tasks/chain or prompt shortcuts.',
+		'- Details/provenance/tools: use { action: "get", agent: "name" }.',
+		"",
+		"Tool extensions:",
+		...(toolExtensions.length
+			? toolExtensions.map(
+					([id, extension]) =>
+						`- ${id} (${extension.allowedAgents.join(", ")}): ${extension.description}`,
+				)
+			: ["- none configured"]),
 		"",
 		"Saved chains (.chain.md):",
 		...(chains.length ? chains.map((c) => `- ${c.name} (${c.source}): ${c.description}`) : [`- none found in ${chainLocations.join(" or ") || "configured chain directories"}.`]),

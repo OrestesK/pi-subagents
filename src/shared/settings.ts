@@ -6,7 +6,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentConfig } from "../agents/agents.ts";
 import { normalizeSkillInput } from "../agents/skills.ts";
-import { CHAIN_RUNS_DIR, type AcceptanceInput, type JsonSchemaObject, type OutputMode, type ProgressConfig, type ProgressReportMode, type ToolBudgetConfig } from "./types.ts";
+import { CHAIN_RUNS_DIR, type AcceptanceInput, type JsonSchemaObject, type OutputMode, type ProgressConfig, type ProgressReportMode, type ToolBudgetConfig,
+	type ToolExtensionRequest,
+} from "./types.ts";
 const CHAIN_DIR_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 const PROGRESS_FILE_NAME = "progress.md";
 const INITIAL_PROGRESS_CONTENT = "# Progress\n\n## Status\nIn Progress\n\n## Tasks\n\n## Files Changed\n\n## Notes\n";
@@ -57,6 +59,7 @@ export interface SequentialStep {
 	progress?: boolean;
 	skill?: string | string[] | false;
 	model?: string;
+	toolExtensions?: ToolExtensionRequest;
 	toolBudget?: ToolBudgetConfig;
 	acceptance?: AcceptanceInput;
 }
@@ -77,6 +80,7 @@ export interface ParallelTaskItem {
 	progress?: boolean;
 	skill?: string | string[] | false;
 	model?: string;
+	toolExtensions?: ToolExtensionRequest;
 	toolBudget?: ToolBudgetConfig;
 	acceptance?: AcceptanceInput;
 }
@@ -135,7 +139,9 @@ export function isParallelStep(step: ChainStep): step is ParallelStep {
 }
 
 export function isDynamicParallelStep(step: ChainStep): step is DynamicParallelStep {
-	return "expand" in step && "collect" in step && "parallel" in step && !Array.isArray((step as { parallel?: unknown }).parallel);
+	return (
+		"expand" in step && "collect" in step && "parallel" in step && !Array.isArray((step as { parallel?: unknown }).parallel)
+	);
 }
 
 export const isDynamicFanoutStep = isDynamicParallelStep;
@@ -246,20 +252,20 @@ export function resolveStepBehavior(
 	const output =
 		stepOutput !== undefined
 			? stepOutput
-			: normalizeOutputOverride(agentConfig.output) ?? false;
+			: (normalizeOutputOverride(agentConfig.output) ?? false);
 
 	// Reads: step override > frontmatter defaultReads > false (no reads)
 	const readsFromDefault = stepOverrides.reads === undefined;
 	const reads =
 		stepOverrides.reads !== undefined
 			? stepOverrides.reads
-			: agentConfig.defaultReads ?? false;
+			: (agentConfig.defaultReads ?? false);
 
 	// Progress: step override > frontmatter defaultProgress > false
 	const progress =
 		stepOverrides.progress !== undefined
 			? stepOverrides.progress
-			: agentConfig.defaultProgress ?? false;
+			: (agentConfig.defaultProgress ?? false);
 
 	let skills: string[] | false;
 	if (stepOverrides.skills === false) {
@@ -297,7 +303,9 @@ export function taskDisallowsFileUpdates(task: string | undefined): boolean {
 
 export function suppressProgressForReadOnlyTask(behavior: ResolvedStepBehavior, task: string | undefined, originalTask?: string): ResolvedStepBehavior {
 	const policyTask = resolveTaskTextForFileUpdatePolicy(task, originalTask);
-	return behavior.progress && taskDisallowsFileUpdates(policyTask) ? { ...behavior, progress: false } : behavior;
+	return behavior.progress && taskDisallowsFileUpdates(policyTask)
+		? { ...behavior, progress: false }
+		: behavior;
 }
 
 // =============================================================================
@@ -320,16 +328,25 @@ export function validateExplicitReads(
 	if (!behavior.reads || behavior.readsFromDefault !== false) return undefined;
 	const resolvedCwd = path.resolve(cwd);
 	const missing = behavior.reads
-		.map((readPath) => ({ readPath, resolvedPath: resolveChainPath(readPath, resolvedCwd) }))
+		.map((readPath) => ({
+			readPath,
+			resolvedPath: resolveChainPath(readPath, resolvedCwd),
+		}))
 		.filter(({ resolvedPath }) => !fs.existsSync(resolvedPath));
 	if (missing.length === 0) return undefined;
 	const missingText = missing
-		.map(({ readPath, resolvedPath }) => readPath === resolvedPath ? readPath : `${readPath} (resolved: ${resolvedPath})`)
+		.map(({ readPath, resolvedPath }) =>
+			readPath === resolvedPath
+				? readPath
+				: `${readPath} (resolved: ${resolvedPath})`,
+		)
 		.join(", ");
 	return `Missing explicit reads for ${label} (mode: ${mode}). Resolved cwd: ${resolvedCwd}. Missing: ${missingText}.`;
 }
 
-export function resolveProgressReportMode(config: ProgressConfig | undefined): ProgressReportMode {
+export function resolveProgressReportMode(
+	config: ProgressConfig | undefined,
+): ProgressReportMode {
 	return config?.reportMode === "supervisor" ? "supervisor" : "file";
 }
 
@@ -341,9 +358,15 @@ function isProgressRead(filePath: string): boolean {
 	return path.basename(filePath) === PROGRESS_FILE_NAME;
 }
 
-function progressReadsForMode(behavior: ResolvedStepBehavior, reportMode: ProgressReportMode): string[] | false {
-	if (!behavior.reads || reportMode === "file" || !behavior.readsFromDefault) return behavior.reads;
-	const filtered = behavior.reads.filter((filePath) => !isProgressRead(filePath));
+function progressReadsForMode(
+	behavior: ResolvedStepBehavior,
+	reportMode: ProgressReportMode,
+): string[] | false {
+	if (!behavior.reads || reportMode === "file" || !behavior.readsFromDefault)
+		return behavior.reads;
+	const filtered = behavior.reads.filter(
+		(filePath) => !isProgressRead(filePath),
+	);
 	return filtered.length > 0 ? filtered : false;
 }
 
@@ -357,7 +380,10 @@ function buildSupervisorProgressInstruction(): string {
  */
 export function writeInitialProgressFile(progressDir: string): void {
 	fs.mkdirSync(progressDir, { recursive: true });
-	fs.writeFileSync(path.join(progressDir, PROGRESS_FILE_NAME), INITIAL_PROGRESS_CONTENT);
+	fs.writeFileSync(
+		path.join(progressDir, PROGRESS_FILE_NAME),
+		INITIAL_PROGRESS_CONTENT,
+	);
 }
 
 export function buildChainInstructions(
@@ -457,13 +483,13 @@ export function resolveParallelBehaviors(
 
 		// Reads: task override > agent default > false
 		const reads =
-			task.reads !== undefined ? task.reads : config.defaultReads ?? false;
+			task.reads !== undefined ? task.reads : (config.defaultReads ?? false);
 
 		// Progress: task override > agent default > false
 		const progress =
 			task.progress !== undefined
 				? task.progress
-				: config.defaultProgress ?? false;
+				: (config.defaultProgress ?? false);
 
 		const taskSkillInput = normalizeSkillInput(task.skill);
 		let skills: string[] | false;

@@ -37,6 +37,7 @@ export type AsyncResumeTarget = {
 	sessionFile?: string;
 	model?: string;
 	thinking?: string;
+	tools?: string[];
 };
 
 type KillFn = (pid: number, signal?: NodeJS.Signals | 0) => boolean;
@@ -88,7 +89,10 @@ interface AsyncResultFile {
 	sessionFile?: string;
 	model?: string;
 	thinking?: string;
-	results?: Array<{ agent?: string; success?: boolean; sessionFile?: string; intercomTarget?: string; model?: string; thinking?: string }>;
+	tools?: string[];
+	results?: Array<{ agent?: string; success?: boolean; sessionFile?: string; intercomTarget?: string; model?: string; thinking?: string;
+		tools?: string[];
+	}>;
 }
 
 export interface AsyncRunLocation {
@@ -331,6 +335,7 @@ export function resolveAsyncResumeTarget(params: AsyncResumeParams, deps: AsyncR
 					sessionFile: selectedStep.sessionFile ?? status?.sessionFile ?? result?.sessionFile,
 					model: selectedStep.model,
 					thinking: selectedStep.thinking,
+					tools: selectedStep.tools,
 				};
 			}
 			if (selectedStep?.status === "pending") throw new Error(`Async run '${runId}' child ${requestedIndex} is pending and has not started yet. Wait for it to run or complete before resuming.`);
@@ -355,6 +360,7 @@ export function resolveAsyncResumeTarget(params: AsyncResumeParams, deps: AsyncR
 				sessionFile: selected.step.sessionFile ?? status?.sessionFile ?? result?.sessionFile,
 				model: selected.step.model,
 				thinking: selected.step.thinking,
+				tools: selected.step.tools,
 			};
 		}
 	}
@@ -374,6 +380,10 @@ export function resolveAsyncResumeTarget(params: AsyncResumeParams, deps: AsyncR
 	const resolvedSessionFile = sessionFile ? validateResumeSessionFile(runId, sessionFile) : undefined;
 	const stepModel = statusSteps[index]?.model ?? resultSteps[index]?.model ?? (stepCount === 1 ? result?.model : undefined);
 	const stepThinking = statusSteps[index]?.thinking ?? resultSteps[index]?.thinking ?? (stepCount === 1 ? result?.thinking : undefined);
+	const stepTools =
+		statusSteps[index]?.tools ??
+		resultSteps[index]?.tools ??
+		(stepCount === 1 ? result?.tools : undefined);
 
 	return {
 		kind: "revive",
@@ -387,6 +397,7 @@ export function resolveAsyncResumeTarget(params: AsyncResumeParams, deps: AsyncR
 		...(resolvedSessionFile ? { sessionFile: resolvedSessionFile } : {}),
 		...(stepModel ? { model: stepModel } : {}),
 		...(stepThinking ? { thinking: stepThinking } : {}),
+		...(stepTools ? { tools: stepTools } : {}),
 	};
 }
 

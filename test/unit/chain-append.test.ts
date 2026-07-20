@@ -11,7 +11,9 @@ import {
 	runnerStepOutputNames,
 } from "../../src/runs/background/chain-append.ts";
 import type { AsyncStatus } from "../../src/shared/types.ts";
-import type { RunnerStep } from "../../src/runs/shared/parallel-utils.ts";
+import type { RunnerStep,
+	RunnerSubagentStep,
+} from "../../src/runs/shared/parallel-utils.ts";
 import { createTempDir, removeTempDir } from "../support/helpers.ts";
 
 function writeStatus(asyncDir: string, status: Partial<AsyncStatus> & Pick<AsyncStatus, "runId" | "mode" | "state" | "startedAt">): void {
@@ -20,15 +22,26 @@ function writeStatus(asyncDir: string, status: Partial<AsyncStatus> & Pick<Async
 }
 
 function readStatus(asyncDir: string): AsyncStatus {
-	return JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf-8")) as AsyncStatus;
+	const statusPath = path.join(asyncDir, "status.json");
+	try {
+		return JSON.parse(fs.readFileSync(statusPath, "utf-8")) as AsyncStatus;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(
+			`Failed to read async status at '${statusPath}': ${message}`,
+		);
+	}
 }
 
-function runnerStep(agent: string, task = "Use {previous}"): RunnerStep {
+function runnerStep(agent: string, task = "Use {previous}",
+	tools?: string[],
+): RunnerSubagentStep {
 	return {
 		agent,
 		task,
 		inheritProjectContext: false,
 		inheritSkills: false,
+		...(tools ? { tools } : {}),
 	};
 }
 
@@ -176,7 +189,7 @@ describe("chain append requests", () => {
 			},
 		};
 		const appended: RunnerStep[] = [
-			runnerStep("worker"),
+			runnerStep("worker", "Use {previous}", ["read", "mcp"]),
 			{
 				parallel: [
 					runnerStep("reviewer"),
@@ -198,6 +211,7 @@ describe("chain append requests", () => {
 			"reviewer:pending",
 			"auditor:pending",
 		]);
+		assert.deepEqual(status.steps?.[1]?.tools, ["read", "mcp"]);
 		assert.deepEqual(status.parallelGroups, [{ start: 2, count: 2, stepIndex: 2 }]);
 		assert.equal(status.workflowGraph?.nodes[1]?.id, "step-1");
 		assert.equal(status.workflowGraph?.nodes[2]?.kind, "parallel-group");

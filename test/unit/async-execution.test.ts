@@ -60,6 +60,7 @@ describe("async runner execution", () => {
 				{ agent: "worker", task: "step beats run", toolBudget: { hard: 2, block: ["grep"] } },
 			],
 			agents: [agent("worker", { hard: 4, block: ["read"] })],
+			extensionConfig: {},
 			ctx,
 			asyncDir: path.join(process.cwd(), ".tmp-async-test"),
 			maxSubagentDepth: 2,
@@ -76,10 +77,37 @@ describe("async runner execution", () => {
 		assert.deepEqual(secondStep.toolBudget, { hard: 2, block: ["grep"] });
 	});
 
+	it("resolves tool-extension bundles into async runner steps", () => {
+		const result = buildAsyncRunnerSteps("run-tools", {
+			chain: [
+				{ agent: "worker", task: "use MCP", toolExtensions: { add: ["mcp"] } },
+			],
+			agents: [{ ...agent("worker"), tools: ["read"] }],
+			extensionConfig: {
+				toolExtensions: {
+					mcp: {
+						description: "Regular MCP access",
+						builtinTools: ["mcp"],
+						allowedAgents: ["worker"],
+					},
+				},
+			},
+			ctx,
+			asyncDir: path.join(process.cwd(), ".tmp-async-test"),
+			maxSubagentDepth: 2,
+		});
+
+		assert.ok("steps" in result, "expected successful step build");
+		const step = result.steps[0];
+		assert.ok(step && !("parallel" in step));
+		assert.deepEqual(step.tools, ["read", "mcp"]);
+	});
+
 	it("uses agent tool budget before config default when no run override exists", () => {
 		const result = buildAsyncRunnerSteps("run-2", {
 			chain: [{ agent: "worker", task: "agent beats config" }],
 			agents: [agent("worker", { hard: 4, block: ["read"] })],
+			extensionConfig: {},
 			ctx,
 			asyncDir: path.join(process.cwd(), ".tmp-async-test"),
 			maxSubagentDepth: 2,
@@ -96,6 +124,7 @@ describe("async runner execution", () => {
 		const result = buildAsyncRunnerSteps("run-3", {
 			chain: [{ agent: "worker", task: "config default" }],
 			agents: [agent("worker")],
+			extensionConfig: {},
 			ctx,
 			asyncDir: path.join(process.cwd(), ".tmp-async-test"),
 			maxSubagentDepth: 2,
