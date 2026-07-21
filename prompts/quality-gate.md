@@ -76,7 +76,7 @@ subagent({
 });
 ```
 
-After the completion notification, inspect the reviewer outputs and perform the mandatory parent synthesis. Do not outsource the final decision to a child. Classify feedback as:
+After the completion notification, inspect the reviewer outputs and perform the mandatory parent synthesis. Do not outsource the final decision to a child. Reviewer findings cannot amend the active task contract or authorize edits. Classify feedback as:
 
 - must-fix now;
 - should-fix now;
@@ -99,4 +99,4 @@ Blocking rule:
 - `INCONCLUSIVE` when the reviewers lacked access to the target, evidence is incomplete, tool failures prevent inspection, or the parent cannot reconcile contradictory reviewer findings.
 - `PASS` only when no accepted must-fix remains, required evidence is fresh enough for the claim, and the parent can state why should-fix/optional findings do not block.
 
-This gate is review and synthesis only. Do not edit files, launch a fix worker, or apply fixes from `/quality-gate` itself. If the target needs changes, report the accepted findings and the next authorized fix workflow. Stop and ask when a finding requires an unapproved product, architecture, security, data, or scope decision.
+This gate is review and synthesis only. Do not edit files, launch a fix worker, or apply fixes from `/quality-gate` itself. If the target needs changes, report the accepted findings against the current contract and the next authorized fix workflow. Stop and ask when a finding needs another file, range, behavior, changed-line budget, or an unapproved product, architecture, compatibility, dependency, security, data, or scope decision.

@@ -35,7 +35,7 @@ If the `verbosity-cleaner` skill is available, pass it to this reviewer. If not,
 
 Tell this reviewer that shorter is only better when it is clearer and preserves behavior, error signals, cleanup semantics, useful invariants, and local style.
 
-Both reviewers are review-only. They must not edit files unless I explicitly ask for a writer pass. Their response should be review feedback, not a context summary. Ask them to return concise, evidence-backed findings with file/line references and suggested fixes.
+Both reviewers are review-only. They must not edit files unless I explicitly ask for a writer pass. Their response should be review feedback, not a context summary. Ask them to return concise, evidence-backed findings with file/line references and suggested fixes. Cleanup findings are evidence, not authority to expand the active task contract.
 
 While reviewers run, do your own narrow inspection if useful. After they return, synthesize the feedback into:
 - fixes worth doing now;
@@ -44,14 +44,14 @@ While reviewers run, do your own narrow inspection if useful. After they return,
 
 Do not blindly apply every reviewer suggestion.
 
-Autofix mode: if the invocation contains the exact word `autofix`, treat it as workflow control, not cleanup scope. Remove it before deciding the cleanup target. After synthesis, apply only fixes worth doing now, validate, and summarize. Do not apply optional improvements unless explicitly requested. If there are no fixes worth doing now, do not edit.
+Autofix mode: if the invocation contains the exact word `autofix`, treat it as workflow control, not cleanup scope. Remove it before deciding the cleanup target. After synthesis, apply only fixes worth doing now that the current approved contract already authorizes, validate, and summarize. A fix needing another file, range, behavior, dependency, compatibility decision, or changed-line budget requires an amendment even in autofix mode. Do not apply optional improvements unless explicitly requested. If there are no authorized fixes worth doing now, do not edit.
 
-Without autofix mode, ask before applying fixes unless I already told you to address review feedback. When you ask, end with a compact numbered menu so I can respond with a number. Use wording suited to the findings, but include these choices when applicable:
+Without autofix mode, ask before applying fixes unless the current contract already authorizes both addressing review feedback and the resulting exact edits. When you ask, end with a compact numbered menu so I can respond with a number. Use wording suited to the findings, but include these choices when applicable:
 
 ```text
 Reply with [1], [2], or further instructions:
-[1] Apply only the fixes worth doing now.
-[2] Apply the fixes worth doing now plus optional improvements.
+[1] Apply only fixes already authorized by the current contract.
+[2] Present a contract amendment for the optional improvements; do not apply it yet.
 ```
 
 Additional scope or focus from the slash command invocation:

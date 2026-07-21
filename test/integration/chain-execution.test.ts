@@ -499,7 +499,7 @@ describe("chain execution — sequential", { skip: !available ? "pi packages not
 		assert.doesNotMatch(secondTaskArg, /full chain output/);
 	});
 
-	it("persists explicit checked acceptance and rejects missing evidence", async () => {
+	it("persists explicit checked acceptance and allows no-test work by default", async () => {
 		mockPi.onCall({
 			output: [
 				"implemented",
@@ -539,24 +539,21 @@ describe("chain execution — sequential", { skip: !available ? "pi packages not
 				JSON.stringify({
 					criteriaSatisfied: [{ id: "criterion-1", status: "satisfied", evidence: "patched" }],
 					changedFiles: ["src/file.ts"],
-					testsAddedOrUpdated: [],
 					commandsRun: [{ command: "npm test", result: "passed", summary: "passed" }],
 					residualRisks: [],
-					noStagedFiles: true,
 				}),
 				"```",
 			].join("\n"),
 		});
 
-		const failed = await executeChain(
+		const noTestResult = await executeChain(
 			makeChainParams(
 				[{ agent: "worker", task: "Implement fix", acceptance: { level: "checked" } }],
 				agents,
 			),
 		);
-		assert.equal(failed.isError, true);
-		assert.equal(failed.details.results[0]?.acceptance?.status, "rejected");
-		assert.match(failed.details.results[0]?.error ?? "", /tests-added evidence missing/);
+		assert.ok(!noTestResult.isError, `chain should succeed: ${JSON.stringify(noTestResult.content)}`);
+		assert.equal(noTestResult.details.results[0]?.acceptance?.status, "checked");
 	});
 
 	it("runs explicit verified acceptance commands and does not trust child command claims as verification", async () => {

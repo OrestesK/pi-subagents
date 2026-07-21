@@ -6,9 +6,9 @@ Run a parent-orchestrated review loop for the requested work. The parent session
 
 Use the `subagent` tool for broad read-only reconnaissance, research, planning advice, review, and validation. Child subagents must receive concrete role-specific tasks; they must not run subagents or manage the loop themselves unless the parent intentionally selected an explicit fanout agent whose builtin `tools` includes `subagent` for that assigned fanout.
 
-If the invocation includes an implementation request, the parent implements the approved scope. If the current diff is already the target, start with review. The parent directly reads the precise files and symbols it edits and every delegated diff.
+If the invocation includes an implementation request, the parent implements the current approved task contract. Bind every write pass to its revision, behavior, non-goals, root/worktree, exact files and baseline symbols/ranges, allowed new files, changed-line budget, and approval boundaries. If the current diff is already the target, start with review. The parent directly reads the precise files and symbols it edits and every delegated diff.
 
-Use a write-capable child only when at least two independent implementation or fix areas can proceed concurrently in the shared checkout. The parent must own at least one area, and every writer must receive an exclusive, non-overlapping file list. Every write-child dispatch must name the exact files and symbols, required behavior, non-goals, validation commands and evidence, and prohibited product/API/compatibility/scope decisions. The child stops before touching an unassigned file and contacts the parent only for a real blocker, discovered file overlap, or an unapproved product/API/compatibility/scope decision.
+Use a write-capable child only when at least two independent implementation or fix areas can proceed concurrently in the shared checkout. The parent must own at least one area, and every writer must receive an exclusive, non-overlapping file list. Every write-child dispatch must name the current contract revision, exact files and baseline symbols/ranges, required behavior, non-goals, changed-line budget, validation commands and evidence, and prohibited product/API/compatibility/scope decisions. The child stops before touching an unassigned file and contacts the parent only for a real blocker, discovered file overlap, stale revision, or an unapproved product/API/compatibility/scope decision.
 
 Do not run repository-wide mutating formatters, code generators, migrations, or equivalent commands while concurrent writes are active. The parent inspects, integrates, and verifies every delegated change.
 
@@ -24,9 +24,9 @@ After reviewers return, the parent synthesizes their feedback into:
 - optional improvements;
 - feedback to ignore or defer, with a short reason.
 
-Do not blindly apply every reviewer suggestion. If reviewers surface an unapproved product, scope, architecture, compatibility, or API decision, pause and ask me before editing.
+Do not blindly apply every reviewer suggestion. Findings are evidence, not authority to amend the task contract. If a fix needs another file, range, behavior, dependency, changed-line budget, or an unapproved product, scope, architecture, compatibility, or API decision, pause and ask me before editing.
 
-When fixes are authorized, the parent applies them. Use write children only when at least two independent fix areas satisfy the same concurrent-write contract. Run another review round only after material changes or non-trivial findings; do not loop for optional polish, speculative improvements, or findings already deferred by the parent.
+When fixes are authorized by the current contract, the parent applies them. Use write children only when at least two independent fix areas satisfy the same concurrent-write contract and revision. Run another review round only after material changes or non-trivial findings; do not loop for optional polish, speculative improvements, or findings already deferred by the parent.
 
 Stop and summarize when one of these is true:
 - reviewers find no blockers or fixes worth doing now;

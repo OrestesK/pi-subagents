@@ -21,9 +21,11 @@ Use this skill when the parent orchestrator needs to launch a specialized subage
 
 The parent normally owns implementation and fixes. Use read-only subagents by default for broad reconnaissance, research, planning advice, review, and validation. The parent directly reads the precise files and symbols it edits and every delegated diff.
 
-Use a write-capable child only when at least two independent implementation areas can proceed concurrently in the shared checkout. The parent must own at least one area, and every writer must receive an exclusive, non-overlapping file list. Every write-child dispatch must name the exact files and symbols, required behavior, non-goals, validation commands and evidence, and prohibited product/API/compatibility/scope decisions. The child must stop before touching an unassigned file.
+Use a write-capable child only when at least two independent implementation areas can proceed concurrently in the shared checkout. The parent must own at least one area, and every writer must receive an exclusive, non-overlapping file list. Every write-child dispatch must name the current task-contract revision, exact files and baseline symbols/ranges, required behavior, non-goals, changed-line budget, validation commands and evidence, and prohibited product/API/compatibility/scope decisions. The child must stop before touching an unassigned file.
 
-A write child contacts the parent only for a real blocker, discovered file overlap, or an unapproved product/API/compatibility/scope decision. Do not run repository-wide mutating formatters, code generators, migrations, or equivalent commands while concurrent writes are active. The parent inspects, integrates, and verifies every delegated change.
+A write child contacts the parent only for a real blocker, discovered file overlap, stale contract revision, or an unapproved product/API/compatibility/scope decision. Do not run repository-wide mutating formatters, code generators, migrations, or equivalent commands while concurrent writes are active. The parent rejects stale-revision write results, inspects every delegated diff, and verifies the combined change.
+
+Reviewer, diagnostic, test, and tool findings are evidence, not edit authority. The parent may apply a finding only when the current approved task contract already covers the resulting file/range/behavior/budget; otherwise it must obtain a contract amendment first.
 
 This policy governs every recipe, workflow, role description, and example below. A single worker is not the normal implementation or fix path.
 
@@ -129,9 +131,9 @@ For options, ideas, test cases, names, comparisons, decisions, and “strongest 
 
 ### Large review matrix and review reduction
 
-8-10 review agents are valid defaults when the target is broad enough and roles are distinct or chained through validation. Larger explicit counts are valid when the user says the count is literal, a goal, or a requirement and the target can be decomposed into that many distinct scopes or validation passes. Do not collapse explicit large-review requests to three reviewers when the work has many independent attack surfaces; also do not satisfy them with duplicate vague reviewers.
+Normal review starts with three distinct reviewers: correctness/regressions, tests/verification, and simplicity/maintainability. Add named specialist reviewers only for concrete extra attack surfaces. Use 8–10 for broad or high-stakes targets that genuinely need distinct first-pass roles plus validation/reduction. Larger explicit counts remain valid when the user says the count is literal, a goal, or a requirement and the target can be decomposed without duplicate vague work.
 
-Default 10-reviewer matrix:
+Large-scope 10-reviewer matrix:
 
 | Stage | Count | Roles |
 | --- | ---: | --- |
@@ -160,7 +162,7 @@ The parent must synthesize `PASS` / `FAIL` / `INCONCLUSIVE` before proceeding. S
 
 ### Parallel review technique
 
-Use this when the user wants adversarial review of a diff, plan, issue, file, or implemented work. Launch fresh-context, read-only `reviewer` agents with distinct angles generated from the actual target. Common angles are correctness/regressions, tests/validation, and simplicity/maintainability; adapt for TypeScript, UI, security, docs, or large structural changes. Reviewers should inspect files and diffs directly, return concise evidence-backed findings with file/line references, and must not edit project/source files. The parent synthesizes fixes worth doing now, optional improvements, and feedback to ignore/defer before editing.
+Use this when the user wants adversarial review of a diff, plan, issue, file, or implemented work. Launch fresh-context, read-only `reviewer` agents with distinct angles generated from the actual target. Common angles are correctness/regressions, tests/validation, and simplicity/maintainability; adapt for TypeScript, UI, security, docs, or large structural changes. Reviewers should inspect files and diffs directly, return concise evidence-backed findings with file/line references, and must not edit project/source files. The parent synthesizes fixes worth doing now, optional improvements, and feedback to ignore/defer before editing. That synthesis does not amend the active task contract; out-of-contract fixes require approval.
 
 ### Manual skill-specialist technique
 
@@ -188,7 +190,7 @@ subagent({
 
 ### Review-loop technique
 
-Use this when the user wants implementation or current diff review to continue until reviewers stop finding fixes worth doing now. Keep the loop in the parent session: the parent implements and fixes, fresh-context read-only `reviewer` agents inspect the actual repo and diff, and the parent synthesizes and applies accepted fixes. Use write children only when independent implementation or fix areas satisfy the parent-owned write policy. Stop when reviewers find no blockers or fixes worth doing now, remaining feedback is optional or deferred, an unapproved product/scope/architecture decision appears, or the max review-round cap is reached. Default to 3 review rounds unless the user sets a different cap. Do not loop for optional polish, and do not let children launch subagents or decide the loop outcome.
+Use this when the user wants implementation or current diff review to continue until reviewers stop finding fixes worth doing now. Keep the loop in the parent session: the parent implements and fixes, fresh-context read-only `reviewer` agents inspect the actual repo and diff, and the parent synthesizes findings against the current task contract. Apply only fixes already authorized by that contract; request an amendment for any new file, range, behavior, compatibility decision, dependency, or budget. Use write children only when independent implementation or fix areas satisfy the parent-owned write policy. Stop when reviewers find no blockers or authorized fixes worth doing now, remaining feedback is optional or deferred, an unapproved product/scope/architecture decision appears, or the max review-round cap is reached. Default to 3 review rounds unless the user sets a different cap. Do not loop for optional polish, and do not let children launch subagents or decide the loop outcome.
 
 ### Parallel research technique
 
@@ -239,17 +241,17 @@ Use this at the start of non-trivial work. Launch `scout` for local context and 
 
 ### Parallel cleanup technique
 
-Use this after implementation when the user wants cleanup review or when a final pass would reduce AI-slop. Launch two fresh-context `reviewer` tasks with `output: false` and `progress: false`: one deslop pass and one verbosity pass. If the `deslop` or `verbosity-cleaner` skills are available, pass the relevant skill to that reviewer; otherwise inline the criteria. Both reviewers are review-only and should flag concrete issues with severity, file/line references, and smallest safe fixes. Phrase the constraint as “Do not modify project/source files; returning findings through the configured output artifact is allowed” when you use `output` or `outputMode: "file-only"`. The parent decides what to apply and asks before making changes unless cleanup was already authorized.
+Use this after implementation when the user wants cleanup review or when a final pass would reduce AI-slop. Launch two fresh-context `reviewer` tasks with `output: false` and `progress: false`: one deslop pass and one verbosity pass. If the `deslop` or `verbosity-cleaner` skills are available, pass the relevant skill to that reviewer; otherwise inline the criteria. Both reviewers are review-only and should flag concrete issues with severity, file/line references, and smallest safe fixes. Phrase the constraint as “Do not modify project/source files; returning findings through the configured output artifact is allowed” when you use `output` or `outputMode: "file-only"`. The parent applies only findings already authorized by the current task contract; generic cleanup authorization does not permit another file, range, behavior, or budget.
 
 ### Staged fix orchestration technique
 
 Use this when a broad diff has known reviewer findings across several items and the user wants the parent to orchestrate read-only planning and validation around its own edits. Use three parent-owned phases:
 
 1. Launch a parallel read-only planning fanout, one planner/reviewer per issue cluster. Each child inspects the real diff and returns exact files, line refs, proposed fixes, and focused validation. They must not edit project/source files.
-2. The parent synthesizes the findings and applies accepted fixes. Use write children only when at least two independent fix areas satisfy the parent-owned write policy; the parent must own at least one area.
+2. The parent synthesizes the findings and applies only fixes authorized by the current task contract. Use write children only when at least two independent fix areas satisfy the parent-owned write policy; the parent must own at least one area.
 3. After all writes finish, launch a parallel fresh-context, read-only validation fanout against the resulting diff.
 
-Do not place ordinary implementation inside a subagent chain because the parent owns the normal write path. Run planning fanout, parent implementation or qualifying concurrent writes, and validation fanout as separate phases. Prefer `async: true`, `context: "fresh"`, and distinct output paths for read-only planners and validators. Include non-blocking suggestions in implementation scope only when they are small, safe, and do not expand approved product scope; otherwise defer them.
+Do not place ordinary implementation inside a subagent chain because the parent owns the normal write path. Run planning fanout, parent implementation or qualifying concurrent writes, and validation fanout as separate phases. Prefer `async: true`, `context: "fresh"`, and distinct output paths for read-only planners and validators. Do not add a non-blocking suggestion merely because it is small or safe; implement it only when the current contract already authorizes its exact file/range/behavior/budget, otherwise defer it or obtain an amendment.
 
 Dynamic fanout may expand structured target lists for read-only planning or validation. Do not use it to create write children unless the resulting targets are independently writable, have exclusive file lists, and each dispatch satisfies the complete write contract.
 
@@ -280,7 +282,7 @@ and user/project agents override builtins with the same name.
 | `scout` | Fast codebase recon | inherits default | Writes `context.md` handoff material |
 | `planner` | Creates implementation plans | inherits default | Writes `plan.md` |
 | `worker` | Exceptional concurrent implementation area | inherits default | Exact edit packet, exclusive file list, decision escalation, and parent integration |
-| `reviewer` | Read-only review specialist | inherits default | Evidence-backed findings; the parent applies accepted fixes |
+| `reviewer` | Read-only review specialist | inherits default | Evidence-backed findings; the parent applies contract-authorized fixes |
 | `context-builder` | Requirements/codebase handoff builder | inherits default | Writes structured context files |
 | `researcher` | Web research brief generator | inherits default | Writes `research.md` |
 | `delegate` | Lightweight generic delegate | inherits default | No fixed output; generic delegated work |
@@ -306,6 +308,7 @@ Builtin role agents inherit the current Pi default model unless you override the
 
 A strong subagent prompt usually includes:
 - **Goal**: the concrete outcome the child should produce.
+- **Task contract**: current revision, approved behavior, non-goals, root/worktree, exact files and baseline symbols/ranges, allowed new files, changed-line budget, and approval boundaries when the child can write.
 - **Context/evidence**: relevant plan paths, files, diffs, decisions, or user constraints already approved.
 - **Success criteria**: what must be true before the child can finish.
 - **Hard constraints**: true invariants only, such as no project/source edits for read-only tasks, exclusive file ownership for write children, child must not run subagents unless it is an explicitly assigned `tools: subagent` fanout child, or escalation for an unapproved product/API/compatibility/scope decision.
@@ -884,11 +887,11 @@ The validation contract defines acceptance before code is written: expected beha
 
 Use the structured `acceptance` field when the run should carry an explicit acceptance contract. If omitted, subagents infer an effective acceptance policy from role, mode, and risk. Use `level: "checked"` for ordinary writer evidence gates, `level: "verified"` when the runtime should run explicit validation commands, and `level: "reviewed"` only when an independent reviewer result is expected. Do not call a run reviewed just because the worker says it is done; reviewed means a reviewer gate returned a result. Child-reported command success is evidence, not runtime verification.
 
-The parent implements the approved plan and reads the precise files and symbols it edits. Qualifying write children may edit additional independent areas concurrently under exclusive file ownership. After all writes finish, parallel fresh-context reviewers inspect the resulting diff and validators check behavior using the best available evidence: commands, tests, browser/CLI interaction, screenshots, logs, or manual reproduction notes. The parent synthesizes findings, applies accepted fixes, and inspects the final diff before completing. Do not stop after parallel review unless the user explicitly asked for review-only output or the review surfaced a decision that needs approval first.
+The parent implements the approved plan and reads the precise files and symbols it edits. Qualifying write children may edit additional independent areas concurrently under exclusive file ownership. After all writes finish, parallel fresh-context reviewers inspect the resulting diff and validators check behavior using the best available evidence: commands, tests, browser/CLI interaction, screenshots, logs, or manual reproduction notes. The parent synthesizes findings, applies only contract-authorized fixes, and inspects the final diff before completing. Do not stop after parallel review unless the user explicitly asked for review-only output or the review surfaced a decision that needs approval first.
 
 For complex work, risky changes, broad refactors, or many changed lines, increase read-only review and validation fanout rather than trusting one reviewer. Use distinct angles such as correctness/regressions, tests/validation, simplicity/maintainability, security/privacy, performance, docs/API contracts, and user-flow behavior. When reviewers find non-trivial issues or the parent applies substantial fixes, run another focused review round before final validation.
 
-When review has already produced concrete findings across several areas, use staged fix orchestration: parallel read-only planners for each issue cluster, parent synthesis and fixes, then parallel fresh-context validators. Use write children only when at least two accepted fix clusters are independently writable under the parent-owned write policy. Non-blocking suggestions may enter implementation scope only when small, safe, and inside the approved scope; otherwise defer them explicitly.
+When review has already produced concrete findings across several areas, use staged fix orchestration: parallel read-only planners for each issue cluster, parent synthesis and fixes, then parallel fresh-context validators. Use write children only when at least two accepted fix clusters are independently writable under the parent-owned write policy. A finding may be implemented only when the current task contract already authorizes its file/range/behavior/budget; otherwise defer it or obtain an amendment, regardless of how small or safe it appears.
 
 For very large work, split implementation into serial milestones. The parent implements and fixes each milestone, with a validation contract, fresh-context review/validation, and parent acceptance before the next milestone. Use write children only for qualifying independent areas inside a milestone.
 
@@ -900,7 +903,7 @@ Keep orchestration authority in the parent session. Child subagents should not l
 4. Implement in the parent. The parent directly reads the precise files and symbols it edits, applies the approved changes, and runs focused checks.
 5. Use write children only for qualifying parallel areas. At least two independent areas must proceed concurrently in the shared checkout, the parent must own at least one, and every writer must receive an exclusive file list and the complete edit contract. Each write child reports changed files, work completed and omitted, commands with exit codes, validation evidence, surprises, and any unapproved product/API/compatibility/scope decision.
 6. Review after implementation. After all writes finish, launch parallel async fresh-context, read-only `reviewer` agents for correctness/regressions, tests/validation, and simplicity/maintainability. Add security, performance, docs/API, domain-specific, or user-flow validators when relevant.
-7. Synthesize and fix in the parent. Separate blockers, fixes worth doing now, optional improvements, and feedback to ignore/defer. Ask before unapproved product, scope, architecture, compatibility, or API decisions. The parent applies accepted fixes; write children remain limited to qualifying independent fix areas.
+7. Synthesize and fix in the parent. Separate blockers, contract-authorized fixes worth doing now, optional improvements, and feedback to ignore/defer. Ask before another file, range, behavior, budget, or unapproved product, scope, architecture, compatibility, dependency, or API decision. Write children remain limited to qualifying independent fix areas.
 8. Review again when warranted. If fixes materially change the diff or address non-trivial findings, run another focused read-only review round.
 9. Validate and complete. Inspect the final diff, run or confirm focused validation, update affected docs when relevant, and summarize changes, evidence, and residual risks.
 
@@ -933,11 +936,11 @@ subagent({
 })
 ```
 
-The parent applies synthesized reviewer fixes. Use concurrent fix children only when at least two independent fix areas satisfy the same exclusive-file and exact-contract requirements.
+The parent applies synthesized reviewer fixes only when the current task contract authorizes the resulting edits. Use concurrent fix children only when at least two independent fix areas satisfy the same exclusive-file and exact-contract requirements.
 
 ### Review loop
 
-Do not treat review as the final step for implementation work. Run read-only reviewers and validators, synthesize their findings against user scope and the validation contract, then have the parent apply accepted fixes.
+Do not treat review as the final step for implementation work. Run read-only reviewers and validators, synthesize their findings against the current task contract and validation contract, then have the parent apply only authorized fixes.
 
 For explicit review-loop requests, repeat parent implementation/fix → fresh read-only review → parent synthesis until reviewers find no blockers or fixes worth doing now, remaining feedback is optional or intentionally deferred, an unapproved product/scope/architecture decision needs the user, or the max review-round cap is reached. Default to 3 review rounds. Use write children only for qualifying independent areas, and run another focused review round after material fixes.
 

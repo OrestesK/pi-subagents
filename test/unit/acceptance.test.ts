@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -44,8 +45,10 @@ function tempRepo(): string {
 }
 
 describe("acceptance gates", () => {
-	it("infers different policies for reviewer, writer, async writer, and dynamic contexts", () => {
+	it("infers different policies for read-only, writer, async writer, and dynamic contexts", () => {
 		assert.equal(resolveEffectiveAcceptance({ agentName: "reviewer", task: "Review-only. Do not edit.", mode: "single" }).level, "attested");
+		assert.equal(resolveEffectiveAcceptance({ agentName: "scout", task: "Inspect the change and recommend tests. Do not modify files.", mode: "single", async: true }).level, "attested");
+		assert.equal(resolveEffectiveAcceptance({ agentName: "reviewer", task: "Review security. Do not edit.", mode: "chain", dynamic: true }).level, "attested");
 		assert.equal(resolveEffectiveAcceptance({ agentName: "worker", task: "Implement the fix", mode: "single" }).level, "checked");
 		assert.equal(resolveEffectiveAcceptance({ agentName: "worker", task: "Implement the fix", mode: "single", async: true }).level, "reviewed");
 		assert.equal(resolveEffectiveAcceptance({ agentName: "worker", task: "Fix each item", mode: "chain", dynamic: true }).level, "reviewed");
@@ -209,9 +212,11 @@ describe("acceptance gates", () => {
 		assert.deepEqual(acceptance.evidence, []);
 	});
 
-	it("checked mode rejects missing required evidence", async () => {
+	it("checked defaults allow no-test work and pre-existing staged files", async () => {
 		const cwd = tempRepo();
 		try {
+			assert.equal(spawnSync("git", ["init", "-q"], { cwd }).status, 0);
+			assert.equal(spawnSync("git", ["add", "file.txt"], { cwd }).status, 0);
 			const acceptance = resolveEffectiveAcceptance({
 				agentName: "worker",
 				task: "Implement a fix",
@@ -219,12 +224,47 @@ describe("acceptance gates", () => {
 			});
 			const ledger = await evaluateAcceptance({
 				acceptance,
-				output: report({ testsAddedOrUpdated: [] }),
+				output: report({ testsAddedOrUpdated: [], noStagedFiles: false }),
 				cwd,
 			});
 
-			assert.equal(ledger.status, "rejected");
-			assert.match(acceptanceFailureMessage(ledger) ?? "", /tests-added evidence missing/);
+			assert.deepEqual(acceptance.evidence, ["changed-files", "commands-run", "residual-risks"]);
+			assert.equal(ledger.status, "checked");
+		} finally {
+			fs.rmSync(cwd, { recursive: true, force: true });
+		}
+	});
+
+	it("explicit test and staged-file evidence remains enforced", async () => {
+		const cwd = tempRepo();
+		try {
+			assert.equal(spawnSync("git", ["init", "-q"], { cwd }).status, 0);
+			assert.equal(spawnSync("git", ["add", "file.txt"], { cwd }).status, 0);
+			const testsAcceptance = resolveEffectiveAcceptance({
+				agentName: "worker",
+				task: "Implement a fix",
+				explicit: { level: "checked", evidence: ["tests-added"] },
+			});
+			const testsLedger = await evaluateAcceptance({
+				acceptance: testsAcceptance,
+				output: report({ testsAddedOrUpdated: [] }),
+				cwd,
+			});
+			assert.equal(testsLedger.status, "rejected");
+			assert.match(acceptanceFailureMessage(testsLedger) ?? "", /tests-added evidence missing/);
+
+			const stagedAcceptance = resolveEffectiveAcceptance({
+				agentName: "worker",
+				task: "Implement a fix",
+				explicit: { level: "checked", evidence: ["no-staged-files"] },
+			});
+			const stagedLedger = await evaluateAcceptance({
+				acceptance: stagedAcceptance,
+				output: report(),
+				cwd,
+			});
+			assert.equal(stagedLedger.status, "rejected");
+			assert.match(acceptanceFailureMessage(stagedLedger) ?? "", /Staged files present/);
 		} finally {
 			fs.rmSync(cwd, { recursive: true, force: true });
 		}
