@@ -1656,6 +1656,65 @@ Inspect context`));
 		assert.ok(!(result.progress?.recentOutput ?? []).some((line) => line.includes("Forcing termination")));
 	});
 
+	it("same-process run-monitor continuation survives the provisional final drain", async () => {
+		const running = [
+			"# Run Monitor Status",
+			"- state: running",
+			"- next_parent_action: continue_waiting",
+		].join("\n");
+		const completed = [
+			"# Run Monitor Status",
+			"- state: completed",
+			"- next_parent_action: no_action",
+		].join("\n");
+		mockPi.onCall({
+			steps: [
+				{
+					jsonl: [
+						events.assistantMessage(running),
+						{ type: "turn_start", turnIndex: 1, timestamp: Date.now() },
+					],
+				},
+				{ delay: 1300, jsonl: [events.assistantMessage(completed)] },
+			],
+			keepAliveAfterFinalMessageMs: 10000,
+		});
+		const agents = makeAgentConfigs(["run-monitor"]);
+
+		const start = Date.now();
+		const result = await runSync(tempDir, agents, "run-monitor", "Monitor until terminal", {});
+		const elapsed = Date.now() - start;
+
+		assert.ok(elapsed < 6000, `should drain after the continued terminal turn instead of waiting for natural exit, took ${elapsed}ms`);
+		assert.equal(mockPi.callCount(), 1);
+		assert.equal(result.exitCode, 0);
+		assert.equal(result.error, undefined);
+		assert.equal(result.finalOutput, completed);
+	});
+
+	it("late turn_start cannot cancel an already-signaled final hard kill", async () => {
+		const terminalOutput = "terminal-before-late-turn";
+		mockPi.onCall({
+			steps: [
+				{ jsonl: [events.assistantMessage(terminalOutput)] },
+				{ delay: 1200, jsonl: [{ type: "turn_start", turnIndex: 1, timestamp: Date.now() }] },
+				{ delay: 10000 },
+			],
+			ignoreSigterm: true,
+		});
+		const agents = makeAgentConfigs(["worker"]);
+
+		const start = Date.now();
+		const result = await runSync(tempDir, agents, "worker", "Task", {});
+		const elapsed = Date.now() - start;
+
+		assert.ok(elapsed >= 3500, `child should ignore final-drain SIGTERM until hard kill, took ${elapsed}ms`);
+		assert.ok(elapsed < 8000, `late turn_start must not cancel the armed hard kill, took ${elapsed}ms`);
+		assert.equal(result.exitCode, 0);
+		assert.equal(result.error, undefined);
+		assert.equal(result.finalOutput, terminalOutput);
+	});
+
 	it("treats forced drain after empty terminal assistant output as cleanup success", async () => {
 		mockPi.onCall({
 			jsonl: [{

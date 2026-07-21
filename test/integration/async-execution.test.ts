@@ -2583,6 +2583,132 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		assert.equal(payload.results[0].output, "async-done-before-drain");
 	});
 
+	it("same-process run-monitor continuation survives the background provisional final drain", { skip: !isAsyncAvailable() ? "jiti not available" : undefined }, async () => {
+		const running = [
+			"# Run Monitor Status",
+			"- state: running",
+			"- next_parent_action: continue_waiting",
+		].join("\n");
+		const completed = [
+			"# Run Monitor Status",
+			"- state: completed",
+			"- next_parent_action: no_action",
+		].join("\n");
+		mockPi.onCall({
+			steps: [
+				{
+					jsonl: [
+						events.assistantMessage(running),
+						{ type: "turn_start", turnIndex: 1, timestamp: Date.now() },
+					],
+				},
+				{ delay: 1300, jsonl: [events.assistantMessage(completed)] },
+			],
+			keepAliveAfterFinalMessageMs: 10000,
+		});
+
+		const id = `async-run-monitor-continuation-${Date.now().toString(36)}`;
+		const start = Date.now();
+		executeAsyncSingle(id, {
+			agent: "run-monitor",
+			task: "Monitor until terminal",
+			agentConfig: makeAgent("run-monitor"),
+			ctx: { pi: { events: { emit() {} } }, cwd: tempDir, currentSessionId: "session-1" },
+			artifactConfig: { enabled: false, includeInput: false, includeOutput: false, includeJsonl: false, includeMetadata: false, cleanupDays: 7 },
+			shareEnabled: false,
+			sessionRoot: path.join(tempDir, "sessions"),
+			maxSubagentDepth: 2,
+		});
+
+		const resultPath = await waitForAsyncResultFile(id);
+		const elapsed = Date.now() - start;
+		const payload = JSON.parse(fs.readFileSync(resultPath, "utf-8"));
+		assert.ok(elapsed < 6000, `should drain after the continued terminal turn instead of waiting for natural exit, took ${elapsed}ms`);
+		assert.equal(mockPi.callCount(), 1);
+		assert.equal(payload.success, true);
+		assert.equal(payload.exitCode, 0);
+		assert.equal(payload.results[0].success, true);
+		assert.equal(payload.results[0].output, completed);
+	});
+
+	it("late turn_start cannot cancel an already-signaled background final hard kill", { skip: !isAsyncAvailable() ? "jiti not available" : process.platform === "win32" ? "signal timing is intermittent on Windows CI" : undefined }, async () => {
+		const terminalOutput = "terminal-before-late-turn";
+		mockPi.onCall({
+			steps: [
+				{ jsonl: [events.assistantMessage(terminalOutput)] },
+				{ delay: 1200, jsonl: [{ type: "turn_start", turnIndex: 1, timestamp: Date.now() }] },
+				{ delay: 10000 },
+			],
+			ignoreSigterm: true,
+		});
+
+		const id = `async-late-turn-hard-kill-${Date.now().toString(36)}`;
+		const start = Date.now();
+		executeAsyncSingle(id, {
+			agent: "worker",
+			task: "Do work",
+			agentConfig: makeAgent("worker"),
+			ctx: { pi: { events: { emit() {} } }, cwd: tempDir, currentSessionId: "session-1" },
+			artifactConfig: { enabled: false, includeInput: false, includeOutput: false, includeJsonl: false, includeMetadata: false, cleanupDays: 7 },
+			shareEnabled: false,
+			sessionRoot: path.join(tempDir, "sessions"),
+			maxSubagentDepth: 2,
+		});
+
+		const resultPath = await waitForAsyncResultFile(id, 8000);
+		const elapsed = Date.now() - start;
+		const payload = JSON.parse(fs.readFileSync(resultPath, "utf-8"));
+		assert.ok(elapsed >= 3500, `child should ignore final-drain SIGTERM until hard kill, took ${elapsed}ms`);
+		assert.ok(elapsed < 8000, `late turn_start must not cancel the armed hard kill, took ${elapsed}ms`);
+		assert.equal(payload.success, true);
+		assert.equal(payload.exitCode, 0);
+		assert.equal(payload.results[0]?.output, terminalOutput);
+	});
+
+	it("keeps async timeout authority after same-process monitor continuation begins", { skip: !isAsyncAvailable() ? "jiti not available" : process.platform === "win32" ? "timeout signal delivery intermittent on Windows CI" : undefined }, async () => {
+		const running = [
+			"# Run Monitor Status",
+			"- state: running",
+			"- next_parent_action: continue_waiting",
+		].join("\n");
+		mockPi.onCall({
+			steps: [
+				{
+					jsonl: [
+						events.assistantMessage(running),
+						{ type: "turn_start", turnIndex: 1, timestamp: Date.now() },
+					],
+				},
+				{ delay: 10000 },
+			],
+		});
+
+		const id = `async-run-monitor-continuation-timeout-${Date.now().toString(36)}`;
+		const start = Date.now();
+		executeAsyncSingle(id, {
+			agent: "run-monitor",
+			task: "Monitor until terminal",
+			agentConfig: makeAgent("run-monitor"),
+			ctx: { pi: { events: { emit() {} } }, cwd: tempDir, currentSessionId: "session-1" },
+			artifactConfig: { enabled: false, includeInput: false, includeOutput: false, includeJsonl: false, includeMetadata: false, cleanupDays: 7 },
+			shareEnabled: false,
+			sessionRoot: path.join(tempDir, "sessions"),
+			maxSubagentDepth: 2,
+			timeoutMs: 800,
+		});
+
+		const resultPath = await waitForAsyncResultFile(id, 8000);
+		const elapsed = Date.now() - start;
+		const payload = JSON.parse(fs.readFileSync(resultPath, "utf-8")) as AsyncResultPayload;
+		assert.ok(elapsed < 5000, `configured timeout should remain authoritative after turn_start, took ${elapsed}ms`);
+		assert.equal(payload.success, false);
+		assert.equal(payload.timedOut, true);
+		assert.equal(payload.exitCode, 1);
+		assert.equal(payload.results[0]?.timedOut, true);
+		assert.match(payload.results[0]?.error ?? "", /Subagent timed out after 800ms\./);
+		assert.match(payload.results[0]?.output ?? "", /Subagent timed out after 800ms\./);
+	});
+
 	it("background forced drain after empty terminal assistant output is cleanup success", { skip: !isAsyncAvailable() ? "jiti not available" : undefined }, async () => {
 		mockPi.onCall({
 			jsonl: [events.assistantMessage("")],

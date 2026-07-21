@@ -446,6 +446,7 @@ function runPiStreaming(
 			appendChildEvent(event as Record<string, unknown>);
 			transcriptWriter?.writeChildEvent(event);
 			onChildEvent?.(event);
+			if (event.type === "turn_start") cancelProvisionalFinalDrain();
 
 			if (event.type === "tool_execution_start" && event.toolName) {
 				observedMutationAttempt = observedMutationAttempt || isMutatingTool(event.toolName, event.args);
@@ -555,7 +556,7 @@ function runPiStreaming(
 			}, 4000);
 			turnBudgetHardKillTimer.unref?.();
 		});
-		const clearDrainTimers = () => {
+		function clearFinalDrainTimers(): void {
 			if (finalDrainTimer) {
 				clearTimeout(finalDrainTimer);
 				finalDrainTimer = undefined;
@@ -564,6 +565,13 @@ function runPiStreaming(
 				clearTimeout(finalHardKillTimer);
 				finalHardKillTimer = undefined;
 			}
+		}
+		function cancelProvisionalFinalDrain(): void {
+			if (forcedTerminationSignal) return;
+			clearFinalDrainTimers();
+		}
+		const clearDrainTimers = () => {
+			clearFinalDrainTimers();
 			if (timeoutHardKillTimer) {
 				clearTimeout(timeoutHardKillTimer);
 				timeoutHardKillTimer = undefined;

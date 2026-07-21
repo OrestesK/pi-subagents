@@ -189,6 +189,131 @@ describe("subagent prompt runtime", () => {
 		}
 	});
 
+	it("queues a same-process follow-up after every clean nonterminal run-monitor response", () => {
+		process.env[SUBAGENT_CHILD_AGENT_ENV] = "run-monitor";
+		type RuntimeContext = { signal?: AbortSignal; hasPendingMessages(): boolean };
+		type MessageEndHandler = (payload: unknown, context: RuntimeContext) => unknown;
+		const handlers = new Map<string, MessageEndHandler>();
+		const sent: Array<{
+			message: { customType?: string; content?: unknown; display?: boolean };
+			options?: { deliverAs?: string; triggerTurn?: boolean };
+		}> = [];
+
+		registerSubagentPromptRuntime(runtimePi({
+			on(event: string, handler: MessageEndHandler) {
+				handlers.set(event, handler);
+			},
+			sendMessage(
+				message: { customType?: string; content?: unknown; display?: boolean },
+				options?: { deliverAs?: string; triggerTurn?: boolean },
+			) {
+				sent.push({ message, options });
+			},
+		}));
+
+		const messageEnd = handlers.get("message_end");
+		assert.ok(messageEnd, "message_end handler should be registered");
+		const context = { signal: undefined, hasPendingMessages: () => false };
+		messageEnd({
+			type: "message_end",
+			message: {
+				role: "assistant",
+				stopReason: "stop",
+				content: [{ type: "text", text: "- state: running\n- next_parent_action: continue_waiting" }],
+			},
+		}, context);
+		messageEnd({
+			type: "message_end",
+			message: {
+				role: "assistant",
+				stopReason: "stop",
+				content: [{ type: "text", text: "The target is still in progress." }],
+			},
+		}, context);
+
+		assert.equal(sent.length, 2);
+		for (const call of sent) {
+			assert.equal(call.message.customType, "run-monitor-continuation");
+			assert.equal(call.message.display, false);
+			assert.match(String(call.message.content), /continue monitoring the same target/i);
+			assert.deepEqual(call.options, { deliverAs: "followUp", triggerTurn: true });
+		}
+	});
+
+	it("does not auto-continue terminal, active-tool, cancelled, errored, or externally continued responses", () => {
+		process.env[SUBAGENT_CHILD_AGENT_ENV] = "run-monitor";
+		type RuntimeContext = { signal?: AbortSignal; hasPendingMessages(): boolean };
+		type MessageEndHandler = (payload: unknown, context: RuntimeContext) => unknown;
+		const handlers = new Map<string, MessageEndHandler>();
+		const sent: unknown[] = [];
+
+		registerSubagentPromptRuntime(runtimePi({
+			on(event: string, handler: MessageEndHandler) {
+				handlers.set(event, handler);
+			},
+			sendMessage(message: unknown) {
+				sent.push(message);
+			},
+		}));
+
+		const messageEnd = handlers.get("message_end");
+		assert.ok(messageEnd, "message_end handler should be registered");
+		const idleContext = { signal: undefined, hasPendingMessages: () => false };
+		const assistant = (text: string, stopReason = "stop", extra: Record<string, unknown> = {}) => ({
+			type: "message_end",
+			message: {
+				role: "assistant",
+				stopReason,
+				content: [{ type: "text", text }],
+				...extra,
+			},
+		});
+
+		for (const state of ["completed", "failed", "missing", "stuck", "timed_out"]) {
+			messageEnd(assistant(`- state: ${state}\n- next_parent_action: no_action`), idleContext);
+		}
+		messageEnd(assistant("cancelled", "aborted"), idleContext);
+		messageEnd(assistant("provider failed", "error", { errorMessage: "provider exploded" }), idleContext);
+		messageEnd({
+			type: "message_end",
+			message: {
+				role: "assistant",
+				stopReason: "toolUse",
+				content: [{ type: "toolCall", name: "read", input: { path: "status.json" } }],
+			},
+		}, idleContext);
+		messageEnd(assistant("- state: running\n- next_parent_action: continue_waiting"), {
+			signal: undefined,
+			hasPendingMessages: () => true,
+		});
+		const controller = new AbortController();
+		controller.abort();
+		messageEnd(assistant("- state: running\n- next_parent_action: continue_waiting"), {
+			signal: controller.signal,
+			hasPendingMessages: () => false,
+		});
+
+		assert.deepEqual(sent, []);
+	});
+
+	it("does not install monitor continuation for other child roles", () => {
+		process.env[SUBAGENT_CHILD_AGENT_ENV] = "worker";
+		const handlers = new Map<string, (payload: unknown, context: unknown) => unknown>();
+		const sent: unknown[] = [];
+
+		registerSubagentPromptRuntime(runtimePi({
+			on(event: string, handler: (payload: unknown, context: unknown) => unknown) {
+				handlers.set(event, handler);
+			},
+			sendMessage(message: unknown) {
+				sent.push(message);
+			},
+		}));
+
+		assert.equal(handlers.has("message_end"), false);
+		assert.deepEqual(sent, []);
+	});
+
 	it("registered structured_output tool accepts valid schema output and writes the capture file", async () => {
 		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "subagent-structured-runtime-"));
 		try {

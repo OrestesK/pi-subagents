@@ -2,11 +2,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerNativeSupervisorClient } from "../../intercom/native-supervisor-channel.ts";
+import type { JsonSchemaObject, ResolvedToolBudget } from "../../shared/types.ts";
+import { extractTextFromContent } from "../../shared/utils.ts";
 import { consumeSteerRequestsFromDir, writeSteerRequestToDir, type SteerRequest } from "../background/control-channel.ts";
-import { SUBAGENT_FANOUT_CHILD_ENV, SUBAGENT_STEER_INBOX_ENV } from "./pi-args.ts";
+import { runMonitorCompletionError } from "./completion-guard.ts";
+import { SUBAGENT_CHILD_AGENT_ENV, SUBAGENT_FANOUT_CHILD_ENV, SUBAGENT_STEER_INBOX_ENV } from "./pi-args.ts";
 import { STRUCTURED_OUTPUT_CAPTURE_ENV, STRUCTURED_OUTPUT_SCHEMA_ENV, validateStructuredOutputValue } from "./structured-output.ts";
 import { TOOL_BUDGET_ENV, decodeToolBudgetEnv, shouldBlockToolForBudget, toolBudgetBlockedMessage, toolBudgetSoftNudge } from "./tool-budget.ts";
-import type { JsonSchemaObject, ResolvedToolBudget } from "../../shared/types.ts";
 
 const SUBAGENT_INHERIT_PROJECT_CONTEXT_ENV = "PI_SUBAGENT_INHERIT_PROJECT_CONTEXT";
 const SUBAGENT_INHERIT_SKILLS_ENV = "PI_SUBAGENT_INHERIT_SKILLS";
@@ -260,8 +262,30 @@ function registerSteeringInbox(pi: ExtensionAPI): void {
 	});
 }
 
+function registerRunMonitorContinuation(pi: ExtensionAPI): void {
+	if (process.env[SUBAGENT_CHILD_AGENT_ENV] !== "run-monitor") return;
+
+	pi.on("message_end", (event, ctx) => {
+		const message = event.message;
+		if (message.role !== "assistant") return;
+		if (message.stopReason === "aborted" || message.stopReason === "error" || message.errorMessage) return;
+		if (message.content.some((part) => part.type === "toolCall")) return;
+		if (ctx.signal?.aborted || ctx.hasPendingMessages()) return;
+
+		const output = extractTextFromContent(message.content);
+		if (!runMonitorCompletionError("run-monitor", output)) return;
+
+		pi.sendMessage({
+			customType: "run-monitor-continuation",
+			content: "The previous response did not establish a documented terminal state. Continue monitoring the same target in this process and session. Do not finish until the target reaches a documented terminal state, the parent explicitly cancels, or the configured deadline is reached.",
+			display: false,
+		}, { deliverAs: "followUp", triggerTurn: true });
+	});
+}
+
 export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 	registerSteeringInbox(pi);
+	registerRunMonitorContinuation(pi);
 	registerToolBudget(pi, decodeToolBudgetEnv(process.env[TOOL_BUDGET_ENV]));
 	let nativeSupervisorClientRegistered = false;
 	let nativeSupervisorFallbackRegistered = false;

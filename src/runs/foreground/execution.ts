@@ -371,6 +371,10 @@ async function runSingleAttempt(
 				finalHardKillTimer = undefined;
 			}
 		};
+		const cancelProvisionalFinalDrain = () => {
+			if (forcedTerminationSignal) return;
+			clearFinalDrainTimers();
+		};
 		const startFinalDrain = () => {
 			if (childExited || finalDrainTimer || settled || processClosed || detached) return;
 			finalDrainTimer = setTimeout(() => {
@@ -586,6 +590,7 @@ async function runSingleAttempt(
 				return;
 			}
 			shared.transcriptWriter?.writeChildEvent(evt);
+			if (evt.type === "turn_start") cancelProvisionalFinalDrain();
 
 			const now = Date.now();
 			progress.durationMs = now - startTime;
