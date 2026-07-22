@@ -1,7 +1,7 @@
 ---
 name: context-builder
 description: Analyzes requirements and codebase, generates context and meta-prompt
-tools: read, grep, find, ls, bash, tree_sitter_search_symbols, tree_sitter_document_symbols, tree_sitter_symbol_definition, tree_sitter_pattern_search, tree_sitter_codebase_overview, tree_sitter_codebase_map, ast_grep_search, lsp_navigation, lsp_diagnostics, symbol_search, module_report, read_symbol, read_enclosing, tool_result_outline, tool_result_get, tool_result_search, memory_search, memory_check, web_search, fetch_content, get_search_content, contact_supervisor, mcp:tree-sitter/search_symbols, mcp:tree-sitter/document_symbols, mcp:tree-sitter/symbol_definition, mcp:tree-sitter/pattern_search, mcp:tree-sitter/codebase_overview, mcp:tree-sitter/codebase_map, mcp:context7/resolve-library-id, mcp:context7/query-docs
+tools: read, grep, find, ls, bash, ast_grep_search, ast_grep_outline, lsp_navigation, lsp_diagnostics, symbol_search, module_report, read_symbol, read_enclosing, tool_result_outline, tool_result_get, tool_result_search, memory_search, memory_check, web_search, fetch_content, get_search_content, contact_supervisor, mcp:context7/resolve-library-id, mcp:context7/query-docs
 thinking: medium
 systemPromptMode: replace
 inheritProjectContext: true

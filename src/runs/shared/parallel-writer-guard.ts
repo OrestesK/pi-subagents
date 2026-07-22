@@ -21,12 +21,6 @@ export interface ParallelWriterGuardChainStep {
 
 const WORKSPACE_MUTATION_TOOLS = new Set(["edit", "write", "ast_grep_replace"]);
 const READ_ONLY_MCP_DIRECT_TOOLS = new Set([
-	"tree-sitter/search_symbols",
-	"tree-sitter/document_symbols",
-	"tree-sitter/symbol_definition",
-	"tree-sitter/pattern_search",
-	"tree-sitter/codebase_overview",
-	"tree-sitter/codebase_map",
 	"context7/resolve-library-id",
 	"context7/query-docs",
 ]);
@@ -38,13 +32,8 @@ const KNOWN_ADVISORY_TOOLS = new Set([
 	"bash",
 	"contact_supervisor",
 	"ack_supervisor_message",
-	"tree_sitter_search_symbols",
-	"tree_sitter_document_symbols",
-	"tree_sitter_symbol_definition",
-	"tree_sitter_pattern_search",
-	"tree_sitter_codebase_overview",
-	"tree_sitter_codebase_map",
 	"ast_grep_search",
+	"ast_grep_outline",
 	"lsp_navigation",
 	"lsp_diagnostics",
 	"symbol_search",

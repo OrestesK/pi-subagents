@@ -20,9 +20,10 @@ const memoryScout = {
 };
 const diagnosticScout = {
 	name: "diagnostic-scout",
-	tools: ["read", "tree_sitter_search_symbols", "lsp_diagnostics",
+	tools: ["read", "lsp_diagnostics",
 		"symbol_search",
 		"module_report",
+		"ast_grep_outline",
 		"read_symbol",
 		"read_enclosing",
 		"lens_diagnostics",
@@ -31,20 +32,14 @@ const diagnosticScout = {
 		"tool_result_search",
 	],
 	mcpDirectTools: [
-		"tree-sitter/search_symbols",
-		"tree-sitter/document_symbols",
-		"tree-sitter/symbol_definition",
-		"tree-sitter/pattern_search",
-		"tree-sitter/codebase_overview",
-		"tree-sitter/codebase_map",
 		"context7/resolve-library-id",
 		"context7/query-docs",
 	],
 };
-const broadTreeSitterAgent = {
-	name: "broad-tree-sitter-agent",
+const broadMcpAgent = {
+	name: "broad-mcp-agent",
 	tools: ["read"],
-	mcpDirectTools: ["tree-sitter"],
+	mcpDirectTools: ["custom-server"],
 };
 const contextModeAgent = {
 	name: "general-purpose",
@@ -98,7 +93,7 @@ test("detects workspace-mutation-capable agents", () => {
 	assert.equal(agentCanMutateWorkspace(reviewer), false);
 	assert.equal(agentCanMutateWorkspace(memoryScout), false);
 	assert.equal(agentCanMutateWorkspace(diagnosticScout), false);
-	assert.equal(agentCanMutateWorkspace(broadTreeSitterAgent), true);
+	assert.equal(agentCanMutateWorkspace(broadMcpAgent), true);
 	assert.equal(agentCanMutateWorkspace(contextModeAgent), true);
 	assert.equal(agentCanMutateWorkspace(scout), false);
 	assert.equal(agentCanMutateWorkspace(unrestricted), true);
@@ -190,10 +185,10 @@ test("keeps broad MCP servers and Context-mode operations conservative", () => {
 	assert.match(
 		findSharedCwdParallelWriterError({
 			tasks: [
-				{ agent: "broad-tree-sitter-agent" },
-				{ agent: "broad-tree-sitter-agent" },
+				{ agent: "broad-mcp-agent" },
+				{ agent: "broad-mcp-agent" },
 			],
-			agents: [broadTreeSitterAgent],
+			agents: [broadMcpAgent],
 			baseCwd: "/repo",
 			label: "Parallel",
 		}),

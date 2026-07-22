@@ -115,8 +115,8 @@ function writeDirectMcpSelectionFixture(
 	order: "normal" | "reversed" = "normal",
 ): void {
 	const servers = {
-		"tree-sitter": {
-			definition: { command: "tree-sitter-mcp" },
+		"code-index": {
+			definition: { command: "code-index-mcp" },
 			tools: [
 				"search_symbols",
 				"document_symbols",
@@ -627,18 +627,18 @@ describe("buildPiArgs system prompt mode wiring", () => {
 
 		const cases = [
 			{
-				name: "tree",
+				name: "code-index",
 				tools: ["read"],
 				mcpDirectTools: [
-					"tree-sitter/search_symbols",
-					"tree-sitter/document_symbols",
-					"tree-sitter/symbol_definition",
-					"tree-sitter/pattern_search",
-					"tree-sitter/codebase_overview",
-					"tree-sitter/codebase_map",
+					"code-index/search_symbols",
+					"code-index/document_symbols",
+					"code-index/symbol_definition",
+					"code-index/pattern_search",
+					"code-index/codebase_overview",
+					"code-index/codebase_map",
 				],
 				expected:
-					"read,tree_sitter_search_symbols,tree_sitter_document_symbols,tree_sitter_symbol_definition,tree_sitter_pattern_search,tree_sitter_codebase_overview,tree_sitter_codebase_map",
+					"read,code_index_search_symbols,code_index_document_symbols,code_index_symbol_definition,code_index_pattern_search,code_index_codebase_overview,code_index_codebase_map",
 			},
 			{
 				name: "docs",
