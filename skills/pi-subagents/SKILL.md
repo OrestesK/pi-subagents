@@ -47,11 +47,12 @@ For async subagents, prefer event-based progress over timer polling.
 
 Use this protocol for long-running async runs:
 
-- For long-running tmux/log/status runs that are not themselves subagent children, start a paired async `run-monitor` with a specific monitoring intent: exact target/evidence surfaces, the parent decision it supports, minimum useful facts to report, escalation triggers, terminal/stop authority for timeout or stuck states, reporting expectations such as a rough maximum silence window, and optional runtime output capture configured by the parent.
+- For long-running tmux/log/status runs that are not themselves subagent children and are not already covered by native async completion, start a paired fully async `run-monitor` with a specific monitoring intent: exact target/evidence surfaces, the parent decision it supports, minimum useful terminal facts, terminal/stop authority for target timeout or stuck states, and optional explicit milestones, management-relevant conditions, cadence/lifetime overrides, or runtime output capture. When omitted, the monitor uses short separate internal polls, a five-minute heartbeat, and a one-hour lifetime.
+- A `run-monitor` sends one compact initial report, then reports only explicit milestones, clear high-level phase transitions, management-relevant events, heartbeats, requested snapshots, and its final result. Any report resets the heartbeat; internal polling and unreported target progress do not. Every interim report gives a concise delta, evidence, and one recommendation: continue waiting, steer the monitor, or stop it.
+- Monitor expiry is a successful observer completion through the existing async completion path and must preserve the target's separate last-known state. If observation should continue, the parent may launch another monitor. When the parent sets `timeoutMs` or `maxRuntimeMs`, it must exceed the monitor lifetime so normal expiry can return first. A monitor stays read-only; mutation of the target is a separate parent-controlled action followed by a new monitor.
 - Give each long-running child an explicit progress file path under `.scratch/` whenever phase checkpoints materially improve parent visibility or recovery.
-- Ask children to update progress after meaningful phases, not every few seconds.
-- Ask children to contact the parent only when blocked, when scope changes, when a must-fix/high-risk finding appears, or when a meaningful progress update changes the plan.
-- Do not poll constantly. Persistent interactive parents should continue useful work. During waits, they may do independent reflection or permitted internal-state maintenance, but only when this work cannot delay required work. When no useful work, independent reflection, or permitted maintenance remains, yield and let completion notifications resume them.
+- For children other than `run-monitor`, ask for progress after meaningful phases rather than every few seconds, and ask them to contact the parent only when blocked, scope changes, a must-fix/high-risk finding appears, or a meaningful update changes the plan.
+- Persistent interactive parents must not duplicate the monitor's polls. They should continue useful work or Reflection, then yield when no qualifying work remains and let monitor reports or completion notifications resume them.
 - Before dependent decisions or final completion, inspect relevant async outputs; do not rely on completion notifications alone.
 
 For short reviewer/scout runs expected under a few minutes, a final saved output is enough. For deeper audits, use both `output` and a progress file, and ask the child to write concise phase checkpoints.
@@ -624,6 +625,7 @@ Use `contact_supervisor` with `reason: "progress_update"` when:
 - a child is explicitly asked for progress
 - a meaningful discovery changes the plan
 - a long-running child needs to report a blocked/progress checkpoint without waiting for normal tool return flow
+- a `run-monitor` reaches one of its contracted initial, milestone, phase-change, management-event, heartbeat, or requested-snapshot report gates
 
 Message conventions:
 - `reason: "need_decision"` and `reason: "interview_request"` wait for the parent reply and return it to the child.
