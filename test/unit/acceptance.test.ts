@@ -212,6 +212,25 @@ describe("acceptance gates", () => {
 		assert.deepEqual(acceptance.evidence, []);
 	});
 
+	it("explicit none shorthands bypass inferred gates before report parsing", async () => {
+		const malformedOutput = report({
+			commandsRun: [{ command: "npm test", result: "completed", summary: "done" }],
+		});
+
+		for (const explicit of ["none", false] as const) {
+			const acceptance = resolveEffectiveAcceptance({
+				agentName: "worker",
+				task: "Implement a fix",
+				explicit,
+			});
+			const ledger = await evaluateAcceptance({ acceptance, output: malformedOutput, cwd: process.cwd() });
+
+			assert.equal(acceptance.level, "none", `explicit ${String(explicit)}`);
+			assert.equal(ledger.status, "not-required", `explicit ${String(explicit)}`);
+			assert.equal(ledger.childReport, undefined, `explicit ${String(explicit)}`);
+		}
+	});
+
 	it("checked defaults allow no-test work and pre-existing staged files", async () => {
 		const cwd = tempRepo();
 		try {

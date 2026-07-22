@@ -265,24 +265,31 @@ describe("registerSubagentNotify", () => {
 		assert.deepEqual(sent, []);
 	});
 
-	it("queues hidden native follow-ups for delivered intercom completions and visible fallbacks otherwise", () => {
+	it("queues output-free hidden wake-ups for delivered intercom completions and visible fallbacks otherwise", () => {
 		const { events, sent } = createPi("session-a");
+		const delivered = [
+			["delivered-success", "completed", { success: true, summary: "delivered success summary" }],
+			["delivered-failure", "failed", { success: false, exitCode: 1, summary: "delivered failure summary" }],
+			["delivered-paused", "paused", { success: false, state: "paused", summary: "delivered paused summary" }],
+		] as const;
 
-		for (const [id, overrides] of [
-			["delivered-success", { success: true, summary: "delivered success summary" }],
-			["delivered-failure", { success: false, exitCode: 1, summary: "delivered failure summary" }],
-			["delivered-paused", { success: false, state: "paused", summary: "delivered paused summary" }],
-		] as const) {
+		for (const [id, , overrides] of delivered) {
 			events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, completionResult({ id, deliveryState: "delivered", ...overrides }));
 		}
 		assert.equal(sent.length, 3);
-		for (const entry of sent) {
+		for (let index = 0; index < delivered.length; index++) {
+			const [id, status, overrides] = delivered[index]!;
+			const entry = sent[index]!;
+			const content = (entry.message as { content: string; display: boolean }).content;
+
 			assert.equal((entry.message as { display: boolean }).display, false);
 			assert.deepEqual(entry.options, { triggerTurn: true, deliverAs: "followUp" });
+			assert.match(content, new RegExp(`Background task ${status}:`));
+			assert.match(content, new RegExp(`Run: ${id}`));
+			assert.match(content, /Output: \/tmp\/worker\.md/);
+			assert.ok(content.includes(`Inspect: subagent({ action: "status", id: "${id}" })`));
+			assert.ok(!content.includes(overrides.summary));
 		}
-		assert.match((sent[0]!.message as { content: string }).content, /delivered success summary/);
-		assert.match((sent[1]!.message as { content: string }).content, /delivered failure summary/);
-		assert.match((sent[2]!.message as { content: string }).content, /delivered paused summary/);
 
 		events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, completionResult({
 			id: "failed-success",
@@ -344,7 +351,10 @@ describe("registerSubagentNotify", () => {
 
 		assert.equal(sent.length, 3);
 		for (const entry of sent) {
-			const content = (entry.message as { content: string }).content;
+			const message = entry.message as { content: string; display: boolean };
+			const content = message.content;
+			assert.equal(message.display, true);
+			assert.deepEqual(entry.options, { triggerTurn: true, deliverAs: "followUp" });
 			assert.match(content, /intercom delivery timed out/);
 			assert.match(content, /Run: timeout-/);
 			assert.match(content, /Output: \/tmp\/worker\.md/);

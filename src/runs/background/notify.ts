@@ -166,10 +166,10 @@ function sendCompletion(pi: Pick<ExtensionAPI, "sendMessage">, details: Subagent
 	sendNotification(pi, content, display);
 }
 
-function sendTimedOutCompletion(pi: Pick<ExtensionAPI, "sendMessage">, details: SubagentNotifyDetails): void {
+function formatCompletionReceipt(details: SubagentNotifyDetails, statusSuffix = ""): string {
 	const sessionLine = formatSessionLine(details);
-	const content = [
-		`Background task ${details.status} (intercom delivery timed out): **${details.agent}**${details.taskInfo ?? ""}`,
+	return [
+		`Background task ${details.status}${statusSuffix}: **${details.agent}**${details.taskInfo ?? ""}`,
 		...formatMetadataLines(details),
 		details.runId ? `Inspect: subagent({ action: "status", id: "${details.runId}" })` : undefined,
 		sessionLine ? "" : undefined,
@@ -177,7 +177,14 @@ function sendTimedOutCompletion(pi: Pick<ExtensionAPI, "sendMessage">, details: 
 	]
 		.filter((line) => line !== undefined)
 		.join("\n");
-	sendNotification(pi, content);
+}
+
+function sendDeliveredCompletion(pi: Pick<ExtensionAPI, "sendMessage">, details: SubagentNotifyDetails): void {
+	sendNotification(pi, formatCompletionReceipt(details), false);
+}
+
+function sendTimedOutCompletion(pi: Pick<ExtensionAPI, "sendMessage">, details: SubagentNotifyDetails): void {
+	sendNotification(pi, formatCompletionReceipt(details, " (intercom delivery timed out)"));
 }
 
 function completionBatchKey(result: SubagentResult): string {
@@ -298,7 +305,7 @@ export default function registerSubagentNotify(
 		const details = buildCompletionDetails(result, options.existsSync ?? fs.existsSync);
 		switch (result.deliveryState ?? "not_requested") {
 			case "delivered":
-				sendCompletion(pi, [details], false);
+				sendDeliveredCompletion(pi, details);
 				return;
 			case "timed_out":
 				sendTimedOutCompletion(pi, details);

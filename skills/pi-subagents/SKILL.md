@@ -2,7 +2,7 @@
 name: pi-subagents
 description: |
   Delegate work to builtin or custom subagents with single-agent, chain,
-  parallel, async, forked-context, and intercom-coordinated workflows. Use
+  parallel, async, forked-context, and native-supervisor-coordinated workflows. Use
   for advisory review, implementation context, exceptional parallel write handoffs, and multi-step tasks where a
   single agent should stay in control while other agents contribute context,
   planning, or execution. Also use when ordinary user language implies a
