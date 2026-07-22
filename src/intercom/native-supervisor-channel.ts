@@ -633,19 +633,22 @@ export function createNativeSupervisorChannel(pi: ExtensionAPI, state: SubagentS
 			else {
 				removeRequestFile(request.requestFile);
 			}
-			pi.sendMessage({
-				customType: "subagent_supervisor_request",
-				content: requestVisibleText(request),
-				display: true,
-				details: {
-					id: request.id,
-					reason: request.reason,
-					expectsReply: request.expectsReply,
-					runId: request.runId,
-					agent: request.agent,
-					childIndex: request.childIndex,
+			pi.sendMessage(
+				{
+					customType: "subagent_supervisor_request",
+					content: requestVisibleText(request),
+					display: true,
+					details: {
+						id: request.id,
+						reason: request.reason,
+						expectsReply: request.expectsReply,
+						runId: request.runId,
+						agent: request.agent,
+						childIndex: request.childIndex,
+					},
 				},
-			});
+				{ triggerTurn: true, deliverAs: request.expectsReply ? "steer" : "followUp" },
+			);
 			if (request.expectsReply) {
 				(pi as { events?: IntercomEventBus }).events?.emit(INTERCOM_DETACH_REQUEST_EVENT, {
 					requestId: request.id,
