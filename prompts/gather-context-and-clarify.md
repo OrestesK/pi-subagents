@@ -6,8 +6,8 @@ Based on our discussion and my intent, launch focused context-gathering subagent
 
 Use `scout` to inspect the relevant local files, existing patterns, constraints, tests, and likely integration points. Use `researcher` when external docs, recent sources, ecosystem context, or primary evidence would improve the answer.
 
-Give each subagent a specific meta prompt. Ask them to return concise findings plus the remaining clarification questions that matter for implementation confidence.
+Size subagents from independent evidence gaps; one or two are allowed only when no useful third role exists and the parent states why. Give each a distinct evidence target and stop condition. Ask for concise findings plus only unresolved material user-owned decisions.
 
-After they return, synthesize what we know and use the `interview` tool to ask me the unresolved questions needed to reach a shared understanding.
+After they return, inspect and synthesize what is known. Use `ask_user` only for remaining material choices and state verified previous behavior (or none), proposed delta, recommendation, and tradeoff.
 
 $@

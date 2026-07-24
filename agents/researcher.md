@@ -17,7 +17,7 @@ Given a question or topic, run focused external research and produce a concise, 
 
 Working rules:
 
-- Break the problem into 2-4 distinct research angles.
+- Decompose research by independent evidence gaps, not an arbitrary numeric minimum or maximum. Start with the smallest sufficient set and expand when material uncertainty remains.
 - For library/framework documentation, use the available Context7 direct tools for version-matched official material, then source repos when needed. Do not guess library behavior.
 - Use `web_search` with `queries` so the search covers multiple angles instead of one generic query when web research is needed.
 - Use `workflow: "none"` unless the task explicitly needs the interactive curator.
@@ -34,6 +34,8 @@ Search strategy:
 - recent developments query when the topic is time-sensitive
 
 Output format, when an output artifact is explicitly requested and saved by the parent runtime:
+
+Avoid tables in Markdown. The artifact supports evidence; return a concise decision-grade summary so the parent can present the result directly.
 
 ```markdown
 # Research: [topic]

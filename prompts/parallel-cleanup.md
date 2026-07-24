@@ -2,13 +2,13 @@
 description: Parallel cleanup review
 ---
 
-Run a fresh-context parallel cleanup review of the current work.
+Run a fresh-context parallel cleanup review when cleanup/simplification is explicitly the primary approved review target.
 
-Use the `subagent` tool. First inspect available agents/skills if needed, then launch two reviewer subagents in parallel with `context: "fresh"`. Do not use forked context unless I explicitly ask for it. Reviewers must inspect the repository, relevant instructions, and current diff directly from files and commands. They must not rely on the main conversation history.
+Use the `subagent` tool with `context: "fresh"` unless I explicitly ask for inherited context. For nontrivial cleanup review, launch at least three reviewers with genuinely distinct cleanup evidence targets; add more only for another useful surface. Reviewers inspect the actual target/effective change directly and never edit.
 
-Do not write reviewer output files into the repository unless I explicitly ask for artifacts. Prefer `output: false` for each reviewer task.
+Do not write reviewer output files into the repository unless I explicitly ask for artifacts. Prefer `output: false` for concise reviewer tasks.
 
-Reviewer 1: deslop pass.
+Candidate angle: deslop pass.
 
 If the `deslop` skill is available, pass it to this reviewer. If not, inline the guidance below. Ask this reviewer to look for AI-slop patterns in the changed scope:
 - comments that restate code, placeholder text, stale rationale, or debug leftovers;
@@ -21,7 +21,7 @@ If the `deslop` skill is available, pass it to this reviewer. If not, inline the
 
 Tell this reviewer to treat tool output and slop-scan-style findings as leads, not verdicts. It should flag only concrete issues in the requested scope with evidence, severity, file/line references, and the smallest safe fix.
 
-Reviewer 2: verbosity pass.
+Candidate angle: verbosity pass.
 
 If the `verbosity-cleaner` skill is available, pass it to this reviewer. If not, inline the guidance below. Ask this reviewer to look for needless verbosity in code, tests, docs, status text, grouped messages, receipts, and changelog wording:
 - single-use helpers that merely paraphrase an expression;
@@ -35,14 +35,20 @@ If the `verbosity-cleaner` skill is available, pass it to this reviewer. If not,
 
 Tell this reviewer that shorter is only better when it is clearer and preserves behavior, error signals, cleanup semantics, useful invariants, and local style.
 
-Both reviewers are review-only. They must not edit files unless I explicitly ask for a writer pass. Their response should be review feedback, not a context summary. Ask them to return concise, evidence-backed findings with file/line references and suggested fixes. Cleanup findings are evidence, not authority to expand the active task contract.
+Candidate angle: ownership/directness pass.
 
-While reviewers run, do your own narrow inspection if useful. After they return, synthesize the feedback into:
-- fixes worth doing now;
-- optional improvements;
-- feedback to ignore or defer, with a short reason.
+Ask this reviewer to trace the approved behavior to its canonical owner and look for concrete duplicate ownership, scattered special cases, pass-through layers, or avoidable concepts that make the changed path harder to reason about. Require a behavior-preserving smaller direction and proof; taste-only restructuring is not a finding.
 
-Do not blindly apply every reviewer suggestion.
+Give every reviewer the approved behavior, non-goals, relevant decisions, target/effective change, proof/evidence, assigned angle/evidence target, and stop condition. Reviewers return the three finding partitions. Cleanup is primary here; incidental material adjacent risks and further optional polish stay separate. Findings are evidence, not authority to expand behavior.
+
+While reviewers run, do your own narrow inspection if useful. After they return, validate scope, producer/reachability, impact, proof, and behavior preservation, then synthesize:
+
+1. primary in-scope cleanup findings worth doing now;
+2. incidental material adjacent risks;
+3. incidental optional cleanup/polish beyond the requested target;
+4. rejected/deferred feedback with reason.
+
+Do not blindly apply suggestions.
 
 Autofix mode: if the invocation contains the exact word `autofix`, treat it as workflow control, not cleanup scope. Remove it before deciding the cleanup target. After synthesis, apply only fixes worth doing now that the current approved contract already authorizes, validate, and summarize. A fix needing another file, range, behavior, dependency, compatibility decision, or changed-line budget requires an amendment even in autofix mode. Do not apply optional improvements unless explicitly requested. If there are no authorized fixes worth doing now, do not edit.
 

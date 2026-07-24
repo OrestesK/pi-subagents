@@ -13,14 +13,14 @@ This workflow is quality-first. Do not avoid useful reviewers merely to save cos
 Runtime policy:
 
 - Use the `subagent` tool with parallel fresh-context reviewers.
-- Set `async: true`, retain the run ID, and yield after any qualifying parent work; the completion notification resumes the parent.
+- Set `async: true` and retain the run ID. Yield only after the required `pi-subagents` pre-yield Reflection scan finds no qualifying work or meaningful child interaction; the completion notification resumes the parent.
 - Do not emit the verdict until completion and direct inspection of the reviewer outputs.
 - If the user says `no repo artifacts`, `no project artifacts`, or `don't write .scratch files`, also set top-level `artifacts: false` and keep every child `output: false` and `progress: false`.
-- If the user says strict `do not write artifacts`, `no files`, or `inline only`, do not launch subagents; gate parent-only or ask to relax that constraint.
-- Prefer three strong reviewers for normal work and add a fourth or fifth when the target is large, security-sensitive, ops-heavy, architecture-heavy, or ambiguous.
-- Do not spawn duplicate vague reviewers.
-- For broader grouped gates or missing-evidence follow-ups, use the sectioned-swarm protocol in `packages/pi-subagents/skills/pi-subagents/SKILL.md`: name the new evidence angle before launching any second targeted read-only swarm.
-- Every child task should include this compact stop/block contract: Do not stop to save cost; continue while additional evidence could materially improve the deliverable. If blocked by missing tools, missing access, or missing context, return `BLOCKED` with the smallest missing next step. Do not broaden scope or make approval-required decisions.
+- If the user says strict `do not write artifacts`, `no files`, or `inline only`, do not launch subagents; gate parent-only or ask to relax the constraint.
+- For a nontrivial gate, select at least three genuinely distinct material review angles; add a specialist only for another concrete attack surface.
+- Do not spawn duplicate vague reviewers or create findings to fill the minimum.
+- For broader grouped gates or missing-evidence follow-ups, follow the second-wave rule in `pi-subagents` under **Review fanout, packets, and reduction**: name the new evidence angle before launching another targeted read-only swarm.
+- Every reviewer receives the approved behavior, non-goals, relevant decisions, actual target, required proof and available evidence, assigned angle/evidence target, and stop condition. Include this compact stop contract: continue while additional evidence could materially change the assigned verdict; if access, context, or tooling prevents responsible judgment, return `INCONCLUSIVE` with the blocking reason and smallest missing next step. Never edit, broaden behavior, or make approval-required decisions.
 
 Before emitting the verdict:
 
@@ -29,60 +29,44 @@ Before emitting the verdict:
 - If reviewer findings are too large or too compact to inspect inline, use distinct saved outputs with `outputMode: "file-only"` when artifacts are allowed.
 - Under repo-scoped no-artifact constraints, return `INCONCLUSIVE` or ask to relax the constraint instead of synthesizing from receipts or session directories alone.
 
-Default angles:
+Select angles from the actual target and missing evidence. Common candidates include:
 
-1. Correctness/regression adversary
-   Attack whether the target satisfies the request, preserves behavior, handles edge cases, and avoids hidden runtime failures.
+- **Correctness/regression:** whether the target satisfies the request and preserves behavior across reachable states.
+- **Behavioral proof:** whether the selected test, characterization, reproduction, integration/live/manual evidence, diagnostics, or build checks actually prove the claim and are fresh.
+- **Simplicity/ownership:** concrete accidental complexity, duplication, brittle ownership, or misleading structure affecting the approved behavior. Do not actively hunt optional cleanup unless explicitly assigned as primary.
 
-2. Tests/verification adversary
-   Attack whether the evidence actually proves the claim. Check tests, typecheck/lint/build commands, manual validation, missing red/green evidence, and stale or insufficient verification.
-
-3. Simplicity/maintainability adversary
-   Attack unnecessary complexity, duplication, vague abstractions, brittle ownership boundaries, misleading names, and cleanup that is clearly worth doing.
-
-Add these when relevant:
+Add these only when relevant:
 
 - Security/privacy adversary for auth, permissions, secrets, data exposure, untrusted input/output, or destructive actions.
 - Ops/resource adversary for tmp/log/session pressure, concurrency, cloud resources, migrations, deploy risk, rollback, or observability.
 - User-preference/adoption adversary for workflow, UX, documentation, or behavior that might violate known user preferences.
 
-Recommended runtime shape:
+Runtime shape:
 
 ```typescript
 subagent({
-  tasks: [
-    {
-      agent: "reviewer",
-      task: "Quality gate: attack correctness and regression risk for <target>. Inspect files/diffs/sources directly. Return concise evidence-backed findings with severity and file/line references where applicable. Do not edit.",
-      output: false,
-      progress: false,
-    },
-    {
-      agent: "reviewer",
-      task: "Quality gate: attack tests and verification evidence for <target>. Identify missing, stale, weak, or overclaimed validation. Return concise evidence-backed findings. Do not edit.",
-      output: false,
-      progress: false,
-    },
-    {
-      agent: "reviewer",
-      task: "Quality gate: attack simplicity and maintainability for <target>. Flag only concrete issues that affect correctness, reasoning, testability, or future change cost. Do not edit.",
-      output: false,
-      progress: false,
-    },
-  ],
-  concurrency: 3,
+  tasks: selectedMaterialAngles.map((angle) => ({
+    agent: "reviewer",
+    task: `Quality gate ${angle.name} for <target>. Approved behavior: <behavior>. Non-goals: <non-goals>. Decisions: <decisions>. Proof/evidence: <evidence>. Inspect ${angle.evidenceTarget}; use the three finding partitions; never edit. Stop when ${angle.stopCondition}.`,
+    output: false,
+    progress: false,
+  })),
+  concurrency: selectedMaterialAngles.length,
   context: "fresh",
   async: true,
 });
 ```
 
-After the completion notification, inspect the reviewer outputs and perform the mandatory parent synthesis. Do not outsource the final decision to a child. Reviewer findings cannot amend the active task contract or authorize edits. Classify feedback as:
+`selectedMaterialAngles` contains at least three entries for a nontrivial gate. Each angle names its evidence target and stop condition; do not create duplicate angles or findings merely to fill the array.
 
-- must-fix now;
-- should-fix now;
-- optional/defer;
-- reject/ignore with reason;
-- ask user because applying it changes product, architecture, security, data, or scope.
+After completion, inspect every reviewer output. Validate candidate findings for scope, producer/reachability, impact, proof, and behavior preservation. Reviewer findings cannot amend the behavioral contract or authorize edits. Synthesize these partitions:
+
+1. primary in-scope required findings;
+2. incidental material adjacent risks;
+3. incidental optional cleanup/polish;
+4. rejected/deferred findings with reason.
+
+Only primary findings block the gate. Incidental findings do not trigger automatic fixes or another loop.
 
 Then emit a structured gate verdict:
 
@@ -99,4 +83,4 @@ Blocking rule:
 - `INCONCLUSIVE` when the reviewers lacked access to the target, evidence is incomplete, tool failures prevent inspection, or the parent cannot reconcile contradictory reviewer findings.
 - `PASS` only when no accepted must-fix remains, required evidence is fresh enough for the claim, and the parent can state why should-fix/optional findings do not block.
 
-This gate is review and synthesis only. Do not edit files, launch a fix worker, or apply fixes from `/quality-gate` itself. If the target needs changes, report the accepted findings against the current contract and the next authorized fix workflow. Stop and ask when a finding needs another file, range, behavior, changed-line budget, or an unapproved product, architecture, compatibility, dependency, security, data, or scope decision.
+This gate is review and synthesis only. Do not edit, launch a fix worker, or apply fixes from `/quality-gate` itself. If the target needs changes, report validated primary findings against the behavioral contract and the next authorized parent fix workflow. Another implementation file inside the approved behavior is not a scope amendment; new material behavior, architecture, compatibility, dependency, security/data, persistent artifact, or protected action is.

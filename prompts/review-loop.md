@@ -6,36 +6,35 @@ Run a parent-orchestrated review loop for the requested work. The parent session
 
 Use the `subagent` tool for broad read-only reconnaissance, research, planning advice, review, and validation. Child subagents must receive concrete role-specific tasks; they must not run subagents or manage the loop themselves unless the parent intentionally selected an explicit fanout agent whose builtin `tools` includes `subagent` for that assigned fanout.
 
-If the invocation includes an implementation request, the parent implements the current approved task contract. Bind every write pass to its revision, behavior, non-goals, root/worktree, exact files and baseline symbols/ranges, allowed new files, changed-line budget, and approval boundaries. If the current diff is already the target, start with review. The parent directly reads the precise files and symbols it edits and every delegated diff.
+If the invocation includes an implementation request, the parent implements the current approved behavioral contract. Bind every write pass to its revision, behavior, non-goals, protected boundaries, proof, and stop conditions. Likely implementation locations guide execution; they are not the user approval boundary. If the current effective change is already the target, start with review. The parent directly reads the sources it edits and every delegated diff.
 
-Use a write-capable child only when at least two independent implementation or fix areas can proceed concurrently in the shared checkout. The parent must own at least one area, and every writer must receive an exclusive, non-overlapping file list. Every write-child dispatch must name the current contract revision, exact files and baseline symbols/ranges, required behavior, non-goals, changed-line budget, validation commands and evidence, and prohibited product/API/compatibility/scope decisions. The child stops before touching an unassigned file and contacts the parent only for a real blocker, discovered file overlap, stale revision, or an unapproved product/API/compatibility/scope decision.
+Use a write-capable child only when at least two independent implementation or fix areas can proceed concurrently in the shared checkout. The parent must own at least one area, and every writer receives an exclusive, non-overlapping internal file/symbol assignment, required behavior/non-goals, proof/validation evidence, and prohibited material decisions. The child stops before touching an unassigned file and contacts the parent only for a real blocker, overlap, stale revision, or an unapproved material decision.
 
 Do not run repository-wide mutating formatters, code generators, migrations, or equivalent commands while concurrent writes are active. The parent inspects, integrates, and verifies every delegated change.
 
-Default to a maximum of 3 review rounds unless I specify a different cap. Count a review round each time fresh-context reviewers inspect the current diff after an implementation or fix pass. Stop early when reviewers find no blockers or fixes worth doing now.
+For each nontrivial review round, launch at least three fresh-context read-only `reviewer` agents in parallel with genuinely distinct evidence targets. Add more only for another distinct useful surface. Reviewers inspect the actual target/effective change directly and never edit or become writers.
 
-For each review round, launch fresh-context, read-only `reviewer` agents in parallel. Reviewers must inspect the repository, relevant instructions, and current diff directly from files and commands. They must not rely on the main conversation history and must not modify project/source files.
+Give each reviewer the approved behavior, non-goals, relevant decisions, required proof and available evidence, assigned angle/evidence target, and stop condition. Correctness/regressions, proof/validation, and simplicity/ownership are common primary candidates, not a mandatory matrix. Add security, performance, docs/API, data, ops, or user-flow angles only when the affected path reaches them.
 
-Choose review angles from the actual change. Common angles are correctness/regressions, tests/validation, and simplicity/maintainability. Add security, performance, docs/API contracts, or user-flow validation when the work calls for it. Prefer three strong reviewers over many vague reviewers.
+After reviewers return, the parent validates scope, producer/reachability, impact, proof, and behavior preservation, then synthesizes:
 
-After reviewers return, the parent synthesizes their feedback into:
-- blockers or scope/product/architecture decisions that need user approval;
-- fixes worth doing now;
-- optional improvements;
-- feedback to ignore or defer, with a short reason.
+1. primary in-scope required findings;
+2. incidental material adjacent risks;
+3. incidental optional cleanup/polish;
+4. rejected/deferred findings with reason.
 
-Do not blindly apply every reviewer suggestion. Findings are evidence, not authority to amend the task contract. If a fix needs another file, range, behavior, dependency, changed-line budget, or an unapproved product, scope, architecture, compatibility, or API decision, pause and ask me before editing.
+Reviewers actively hunt only the primary assigned scope unless cleanup/adjacent analysis was explicitly requested as primary. Do not blindly apply suggestions. The parent automatically applies only validated, mechanically local, non-material fixes inside the approved behavior. Another necessary implementation file is allowed; new material behavior, architecture, dependency, compatibility, security/data, persistent artifact, or protected action requires an amendment. After fixes, run at least three fresh reviewers again. Never loop for incidental polish.
 
-When fixes are authorized by the current contract, the parent applies them. Use write children only when at least two independent fix areas satisfy the same concurrent-write contract and revision. Run another review round only after material changes or non-trivial findings; do not loop for optional polish, speculative improvements, or findings already deferred by the parent.
+Continue only while a validated primary finding yields material progress. Stop and summarize when:
 
-Stop and summarize when one of these is true:
-- reviewers find no blockers or fixes worth doing now;
-- remaining feedback is optional, speculative, or intentionally deferred;
-- reviewers surface an unapproved product/API/compatibility/scope/architecture decision that needs me;
-- the max review-round cap is reached.
+- the final state is clean;
+- only incidental/non-actionable/deferred findings remain;
+- the same root repeats or progress stalls;
+- a blocker appears;
+- a new material decision or protected action is approval-gated.
 
-On completion, inspect the final diff, run or confirm focused validation, and summarize the loop: rounds run, fixes applied, validation, remaining deferred items, and why the loop stopped.
+Do not stop merely because of an arbitrary round count. On completion, inspect the final effective change, run safe local verification automatically, and summarize rounds, fixes, finding partitions, evidence, residual risks, and why the loop stopped. Live/external/expensive/effectful validation remains separately authorized.
 
-Additional target, implementation request, max-iteration cap, or review focus from the slash command invocation:
+Additional target, implementation request, or primary review focus from the slash command invocation:
 
 $@

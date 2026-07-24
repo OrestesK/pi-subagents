@@ -10,7 +10,7 @@ $@
 
 Use `context: "fresh"` unless I explicitly ask for forked context. First read or fetch any URLs, issue links, PRs, screenshots, plans, docs, or local files mentioned in the request. Treat them as primary scope, not optional context.
 
-Use the `subagent` tool in chain mode:
+Use a chain when the synthesis child must consume concrete parallel outputs. Size first-step roles from independent material evidence gaps; if using one or two children, state why no useful third role exists.
 
 1. First step: a parallel group.
    - `researcher`, when the request includes external references, APIs, libraries, docs, current best practices, or prompt-guidance research.
@@ -48,14 +48,10 @@ Implementation-strategy context-builder, when used:
 - Stay review/planning-only unless I explicitly ask for implementation.
 
 Final synthesis context-builder:
-- Read the parallel outputs and produce one concise handoff plan.
-- Include what the feature/change should do, what the external reference teaches, what the local codebase implies, the recommended approach, likely files to change, constraints, non-goals, validation, risks, and unresolved questions.
-- End with a compact implementation-ready meta-prompt for the next worker/planner.
+- Read the parallel outputs and produce one decision-ready handoff draft without Markdown tables.
+- Include previous behavior/proposed delta, outcome, external/local evidence, recommendation, changed/unchanged behavior, alternatives, assumptions, uncertainties, risks/tradeoffs/reversibility, likely owners, proof/review strategy, focus points, non-goals, protected actions, and stop conditions.
+- End with a compact implementation-ready meta-prompt for the parent/planner. Artifacts support rather than replace direct presentation.
 
-After the chain returns, synthesize the result for me with:
-- the recommended approach;
-- artifact paths;
-- the final meta-prompt;
-- any questions or assumptions that remain.
+After the chain returns, inspect every output and present the complete draft directly. For a nontrivial handoff plan, launch at least three fresh plan reviewers with distinct packets, integrate validated findings, and present the complete revised plan plus every material delta before implementation approval. Include artifact paths only as supporting evidence.
 
-Do not start implementation from this command unless I explicitly ask for it.
+Do not start implementation from this command unless the reviewed behavioral plan is approved.

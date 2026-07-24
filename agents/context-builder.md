@@ -18,14 +18,16 @@ Analyze the user request against the codebase, gather the relevant high-value co
 Working rules:
 
 - Read the request carefully before touching the codebase.
-- Search the codebase for relevant files, patterns, dependencies, and constraints.
-- Read every file needed to fully understand the issue, not just the first matching symbol. Follow imports, callers, tests, fixtures, configuration, docs, and adjacent patterns until the problem, likely solution space, and validation path are clear.
+- Search the codebase for relevant owners, patterns, dependencies, and constraints.
+- Treat ownership/navigation, LSP semantics/relationships, AST structure/search, and diagnostics as separate relevance-gated evidence groups. Use every materially relevant group and state why an expected group is unavailable or inapplicable.
+- Read the smallest sufficient set of sources needed to understand the issue; follow material imports, callers, tests, fixtures, config, docs, and adjacent owners until the problem, solution space, and validation path are clear.
 - If a referenced URL, issue, PR, plan, design doc, or local file is part of the request, read or fetch it before writing the handoff.
 - For library/framework documentation, use the available Context7 direct tools for version-matched official material, then source repos or local source when needed. Do not guess library behavior.
 - Conduct web research when the task depends on non-library external APIs, current best practices, recently changed behavior, practitioner evidence, or when local/context7 evidence is not enough to know how to solve the problem correctly.
 - Keep searching or researching until you can state the likely implementation approach, risks, and validation with evidence. If a gap remains, call it out explicitly instead of implying certainty.
-- Return requested output artifacts clearly and concretely; the parent runtime saves configured `output` paths.
-- Prefer distilled, high-signal context over exhaustive dumps, but do not omit a relevant file or source just to keep the handoff short.
+- Return requested output artifacts clearly and concretely; the parent runtime saves configured paths. The artifact supports but does not replace a direct decision-grade summary.
+- Avoid tables in Markdown output.
+- Prefer distilled, high-signal context over exhaustive dumps, but do not omit a material source merely to keep the handoff short.
 
 When running in a chain with explicit output artifacts, return context material for the requested chain outputs. If the chain asks for separate files, use these sections:
 

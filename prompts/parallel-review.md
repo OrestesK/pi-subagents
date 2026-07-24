@@ -8,34 +8,36 @@ Use fresh context, not forked context, unless I explicitly ask for forked contex
 
 Give each reviewer a distinct angle. Generate the angles dynamically from the user's intent, the plan, the implemented code, and the current diff. If I specify angles, use mine. Otherwise, choose the highest-value review angles for this specific work.
 
-These are examples, not fixed defaults:
+Common candidates below are examples, not a required matrix:
 
 1. Correctness and regressions
-   Check whether the change satisfies the request, preserves existing behavior, handles edge cases, and avoids hidden runtime failures.
+   Check whether the change satisfies the request and preserves behavior across states reachable from inspected producers and contracts.
 
 2. Tests and validation
    Check whether tests or validation were added at the right layer, whether assertions are meaningful, and whether the chosen verification commands are enough.
 
-3. Simplicity and maintainability
-   Check for unnecessary complexity, duplicate structure, single-use wrappers, brittle abstractions, confusing names, verbosity, and cleanup that is clearly worth doing.
+3. Simplicity and ownership
+   Check for concrete accidental complexity, duplicate ownership, brittle abstractions, or structure that makes the approved behavior harder to reason about. Do not proactively hunt optional cleanup/polish unless cleanup was explicitly requested as the primary target.
 
-Choose or adapt angles when the work calls for it:
-- TypeScript-heavy changes: include type safety, source-of-truth types, casts, and error-boundary discipline.
-- UI-heavy changes: include UX, accessibility, copy, and visual quality.
-- Security-sensitive changes: include unsafe input/output handling, auth boundaries, privacy, and data exposure.
-- Docs-heavy changes: include clarity, accuracy, completeness, reader flow, and non-robotic prose.
-- Large multi-file changes: consider a fourth reviewer for structural friction, module boundaries, and testability.
+Choose or adapt angles only when the affected path calls for them:
+- TypeScript-heavy changes may need type/source-of-truth evidence.
+- UI-heavy changes may need UX, accessibility, copy, or visual evidence.
+- Security/privacy/data angles apply only when the changed path reaches those boundaries.
+- Docs-heavy changes may need accuracy and reader-flow evidence.
+- Broad structural changes may need module-boundary or testability evidence.
 
-Prefer three strong reviewers over many vague reviewers.
+For nontrivial review, select at least three genuinely distinct angles; add more only for another useful surface. For numerous or materially disputed findings, use the fanout/reduction rules in `pi-subagents`.
 
-Give every reviewer a specific task prompt naming its angle. Ask reviewers to return concise, evidence-backed findings with file/line references and suggested fixes. The response should be review feedback, not a context summary. Reviewers must not edit files unless I explicitly ask for a writer pass. Findings are evidence, not authority to expand the active task contract.
+Give every reviewer the approved behavior, non-goals, relevant decisions, actual target/effective change, required proof and available evidence, one distinct angle/evidence target, and a stop condition. Reviewers return concise evidence-backed findings and never edit or become writers. Findings are evidence, not authority to expand the behavioral contract.
 
-While reviewers run, do your own narrow inspection if useful. After they return, synthesize the feedback into:
-- fixes worth doing now
-- optional improvements
-- feedback to ignore or defer, with a short reason
+While reviewers run, do your own narrow inspection if useful. After they return, validate scope, producer/reachability, impact, proof, and behavior preservation, then synthesize:
 
-Do not blindly apply every reviewer suggestion.
+1. primary in-scope required findings;
+2. incidental material adjacent risks found during primary review;
+3. incidental optional cleanup/polish found during primary review;
+4. rejected/deferred feedback with reason.
+
+Only primary findings can block or drive automatic fixes. Do not blindly apply suggestions.
 
 Autofix mode: if the invocation contains the exact word `autofix`, treat it as workflow control, not review scope. Remove it before deciding the review target. After synthesis, apply only fixes worth doing now that the current approved contract already authorizes, validate, and summarize. A fix needing another file, range, behavior, dependency, compatibility decision, or changed-line budget requires an amendment even in autofix mode. Do not apply optional improvements unless explicitly requested. If there are no authorized fixes worth doing now, do not edit.
 
