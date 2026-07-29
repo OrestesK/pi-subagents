@@ -62,7 +62,7 @@ Which tasks depend on others.
 
 ## Proof, review, risks, and approval boundary
 
-Selected proof; at least three distinct reviewer angles for nontrivial work; assumptions, tradeoffs, protected actions, exclusions, and stop conditions.
+Selected proof; review focus points for the parent workflow; assumptions, tradeoffs, protected actions, exclusions, and stop conditions.
 ```
 
 Keep the plan concrete. Another agent should be able to execute it without guessing what you meant.

@@ -26,7 +26,7 @@ Choose or adapt angles only when the affected path calls for them:
 - Docs-heavy changes may need accuracy and reader-flow evidence.
 - Broad structural changes may need module-boundary or testability evidence.
 
-For nontrivial review, select at least three genuinely distinct angles; add more only for another useful surface. For numerous or materially disputed findings, use the fanout/reduction rules in `pi-subagents`.
+For nontrivial review, use the canonical initial-review fanout and select genuinely distinct angles; add more only for another useful surface. For numerous or materially disputed findings, use the canonical fanout/reduction rules.
 
 Give every reviewer the approved behavior, non-goals, relevant decisions, actual target/effective change, required proof and available evidence, one distinct angle/evidence target, and a stop condition. Reviewers return concise evidence-backed findings and never edit or become writers. Findings are evidence, not authority to expand the behavioral contract.
 

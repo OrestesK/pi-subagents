@@ -4,7 +4,7 @@ description: Parallel cleanup review
 
 Run a fresh-context parallel cleanup review when cleanup/simplification is explicitly the primary approved review target.
 
-Use the `subagent` tool with `context: "fresh"` unless I explicitly ask for inherited context. For nontrivial cleanup review, launch at least three reviewers with genuinely distinct cleanup evidence targets; add more only for another useful surface. Reviewers inspect the actual target/effective change directly and never edit.
+Use the `subagent` tool with `context: "fresh"` unless I explicitly ask for inherited context. For nontrivial cleanup review, use the canonical initial-review fanout with genuinely distinct cleanup evidence targets; add more only for another useful surface. Reviewers inspect the actual target/effective change directly and never edit.
 
 Do not write reviewer output files into the repository unless I explicitly ask for artifacts. Prefer `output: false` for concise reviewer tasks.
 

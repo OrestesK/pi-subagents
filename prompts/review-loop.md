@@ -12,7 +12,7 @@ Use a write-capable child only when at least two independent implementation or f
 
 Do not run repository-wide mutating formatters, code generators, migrations, or equivalent commands while concurrent writes are active. The parent inspects, integrates, and verifies every delegated change.
 
-For each nontrivial review round, launch at least three fresh-context read-only `reviewer` agents in parallel with genuinely distinct evidence targets. Add more only for another distinct useful surface. Reviewers inspect the actual target/effective change directly and never edit or become writers.
+For the initial nontrivial review, use the canonical initial-review fanout with fresh-context read-only `reviewer` agents and genuinely distinct evidence targets. Add more only for another distinct useful surface. Reviewers inspect the actual target/effective change directly and never edit or become writers.
 
 Give each reviewer the approved behavior, non-goals, relevant decisions, required proof and available evidence, assigned angle/evidence target, and stop condition. Correctness/regressions, proof/validation, and simplicity/ownership are common primary candidates, not a mandatory matrix. Add security, performance, docs/API, data, ops, or user-flow angles only when the affected path reaches them.
 
@@ -23,9 +23,9 @@ After reviewers return, the parent validates scope, producer/reachability, impac
 3. incidental optional cleanup/polish;
 4. rejected/deferred findings with reason.
 
-Reviewers actively hunt only the primary assigned scope unless cleanup/adjacent analysis was explicitly requested as primary. Do not blindly apply suggestions. The parent automatically applies only validated, mechanically local, non-material fixes inside the approved behavior. Another necessary implementation file is allowed; new material behavior, architecture, dependency, compatibility, security/data, persistent artifact, or protected action requires an amendment. After fixes, run at least three fresh reviewers again. Never loop for incidental polish.
+Reviewers actively hunt only the primary assigned scope unless cleanup/adjacent analysis was explicitly requested as primary. Do not blindly apply suggestions. The parent automatically applies only validated, mechanically local, non-material fixes inside the approved behavior. Another necessary implementation file is allowed; new material behavior, architecture, dependency, compatibility, security/data, persistent artifact, or protected action requires an amendment. After fixes, use the canonical post-fix follow-up tier. Never loop for incidental polish.
 
-Continue only while a validated primary finding yields material progress. Stop and summarize when:
+Continue only while a new validated in-scope primary finding produces a material correction. Stop and summarize when:
 
 - the final state is clean;
 - only incidental/non-actionable/deferred findings remain;

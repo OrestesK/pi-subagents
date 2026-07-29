@@ -17,7 +17,7 @@ Runtime policy:
 - Do not emit the verdict until completion and direct inspection of the reviewer outputs.
 - If the user says `no repo artifacts`, `no project artifacts`, or `don't write .scratch files`, also set top-level `artifacts: false` and keep every child `output: false` and `progress: false`.
 - If the user says strict `do not write artifacts`, `no files`, or `inline only`, do not launch subagents; gate parent-only or ask to relax the constraint.
-- For a nontrivial gate, select at least three genuinely distinct material review angles; add a specialist only for another concrete attack surface.
+- For a nontrivial gate, use the canonical initial-review fanout with genuinely distinct material review angles; add a specialist only for another concrete attack surface.
 - Do not spawn duplicate vague reviewers or create findings to fill the minimum.
 - For broader grouped gates or missing-evidence follow-ups, follow the second-wave rule in `pi-subagents` under **Review fanout, packets, and reduction**: name the new evidence angle before launching another targeted read-only swarm.
 - Every reviewer receives the approved behavior, non-goals, relevant decisions, actual target, required proof and available evidence, assigned angle/evidence target, and stop condition. Include this compact stop contract: continue while additional evidence could materially change the assigned verdict; if access, context, or tooling prevents responsible judgment, return `INCONCLUSIVE` with the blocking reason and smallest missing next step. Never edit, broaden behavior, or make approval-required decisions.
@@ -57,7 +57,7 @@ subagent({
 });
 ```
 
-`selectedMaterialAngles` contains at least three entries for a nontrivial gate. Each angle names its evidence target and stop condition; do not create duplicate angles or findings merely to fill the array.
+`selectedMaterialAngles` satisfies the canonical initial-review fanout for a nontrivial gate. Each angle names its evidence target and stop condition; do not create duplicate angles or findings merely to fill the array.
 
 After completion, inspect every reviewer output. Validate candidate findings for scope, producer/reachability, impact, proof, and behavior preservation. Reviewer findings cannot amend the behavioral contract or authorize edits. Synthesize these partitions:
 

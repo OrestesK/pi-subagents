@@ -35,16 +35,30 @@ This policy governs every recipe, workflow, role description, and example below.
 
 Use subagents for every nontrivial task unless delegation is concretely unavailable or prohibited.
 
-- Every nontrivial review uses at least three fresh parallel read-only reviewers with genuinely distinct evidence targets. Add more only for another distinct useful surface.
+- Every initial nontrivial review—including plan review and the first implementation-readiness review—uses at least three fresh parallel read-only reviewers with genuinely distinct evidence targets. Add more only for another distinct useful surface.
 - Size non-review advisory/recon/research/planning/validation fanout from independent evidence need. One or two children are allowed only when no useful third role exists and the parent states why.
 - Every child has a named angle, evidence target, novelty relative to active/recent work, and bounded stop condition.
 - Every reviewer also receives the approved behavior, non-goals, relevant decisions, actual target/effective change, required proof, and available evidence.
 - Classify each child at dispatch as `readiness-relevant` or `background`.
 - A readiness-relevant child can change correctness, risk, scope, verification, or the dependent decision. Inspect its actual output before the applicable claim; unresolved material work makes the gate `INCONCLUSIVE`.
 - Background work is nonblocking and cannot authorize or delay the primary path. It may seek an unusual behavior or better alternative without starting from a known defect, but it must stop when no concrete novel angle remains. Launch another wave only when completed evidence exposes a new useful target.
-- Nontrivial readiness requires parent direct inspection, fresh proof after the last relevant edit, and at least three fresh reviewer results after the last fix.
+- Nontrivial readiness requires parent direct inspection, fresh proof after the last relevant edit, the initial review, and the applicable post-fix follow-up below.
 - Honor a feasible explicit numeric request when it is literal/required and the target can be split into distinct safe scopes. Use bounded waves and fan-in/reduction when outputs are numerous; if the count would force duplicate or unsafe work, explain the limit and ask for revised slicing.
 - The parent validates findings for scope, producer/reachability, impact, proof, and behavior preservation, then synthesizes `PASS`, `FAIL`, or `INCONCLUSIVE`. Children never decide approval, edits, or scope.
+
+### Canonical post-fix follow-up sizing
+
+This is the only executable reviewer-count and post-fix sizing policy. `manager-workflow` owns when plan review, implementation review, and verification occur; this skill owns reviewer fanout, packets, and follow-up selection.
+
+After an initial nontrivial readiness review, classify the complete coherent fix group by its effective behavior, proof meaning, and reachable consumers:
+
+- **Tiny mechanical fix:** no observable behavior, contract, reachability, or proof meaning changes. The parent inspects the final effective diff and runs the narrowest focused check; no child reviewer is required. A changed assertion oracle, fixture/input reachability, contract expectation, security/data behavior, public interface, shared abstraction, or production path is never tiny mechanical.
+- **Contained correction:** one localized behavioral, correctness, or proof defect changes, with no public contract, security/data boundary, shared abstraction, cross-owner behavior, or additional reachable consumer affected. Run one fresh independent targeted reviewer or validator. It inspects the final effective diff, checks the validated root cause and changed claim, and confirms that fresh focused proof is sufficient.
+- **Broad or high-risk correction:** cross-cutting behavior, architecture/ownership, public contracts, security/data boundaries, concurrency, compatibility, shared abstractions, several reachable consumers, or materially changed proof strategy. Run a new full review with at least three fresh reviewers and distinct evidence targets.
+
+When classification is ambiguous or tiers overlap, use the broader tier. A test rerun by the author is proof, not the independent targeted follow-up. Final claim-bound verification remains required for every tier.
+
+Continue a review/fix loop only when a new validated in-scope primary finding produces a material correction to the approved behavior or required proof. Stop clean, incidental-only, rejected, repeated/stalled, blocked, or approval-gated.
 
 ## When to Use
 
@@ -98,14 +112,14 @@ Packaged prompt shortcuts are also available for repeatable workflows. Treat the
 - `/quality-gate` — review gate over a plan, diff, answer, PR, issue, or target, ending in a parent `PASS` / `FAIL` / `INCONCLUSIVE` verdict
 - `/quick-adversarial-check` — lightweight attack on an assumption, plan, claim, or recommendation
 - `/adversarial-debate` — competing positions, attacks, optional repair, and parent synthesis by rubric
-- `/review-loop` — parent implementation/fixes, at least three fresh read-only reviewers, and parent verification while evidence-backed in-scope progress continues
+- `/review-loop` — parent implementation/fixes, canonical initial review and proportionate post-fix follow-up, and parent verification while evidence-backed in-scope progress continues
 - `/parallel-research` — combine `researcher` and `scout` for external evidence plus local code context
 - `/research-decision` — external evidence, local context, tradeoff critique, and recommendation
 - `/generate-filter` — diverse option generation, dedupe/filter, and top-choice synthesis
 - `/parallel-context-build` — parallel `context-builder` passes that produce planning handoff context and meta-prompts
 - `/parallel-handoff-plan` — external-reference research plus local `context-builder` passes, followed by a synthesis handoff plan and implementation-ready meta-prompt
 - `/gather-context-and-clarify` — scout/research first, then ask the user clarifying questions with `ask_user`
-- `/parallel-cleanup` — at least three fresh-context reviewers with distinct cleanup angles for an explicitly requested cleanup review
+- `/parallel-cleanup` — canonical initial review fanout with distinct cleanup angles for an explicitly requested cleanup review
 
 ## Applying Prompt Techniques Without Slash Commands
 
@@ -119,7 +133,7 @@ The prompt templates in `prompts/` encode workflows the parent agent can run on 
 
 Adapt to the user's actual phrasing, including typos, shorthand, and repetition. Treat these as workflow intent when the request is nontrivial or asks for multiple independent views:
 
-- “review this”, “check this”, “does this look right?” → enter the read-only `review` skill; for nontrivial review use at least three parallel fresh reviewers with distinct evidence targets.
+- “review this”, “check this”, “does this look right?” → enter the read-only `review` skill and use the canonical initial-review fanout for nontrivial review.
 - “review and fix this”, “apply the review feedback” → use the parent-owned review/fix loop only when the requested fixes stay inside an existing behavioral approval boundary; otherwise present and review the required proposal before mutation.
 - “10 review agents”, “different goals”, “validate what the other agents found” → use a large review matrix with distinct first-pass roles, validators/reducer when needed, and parent synthesis.
 - “before finalizing”, “is this good enough?”, “quality gate this” → use the quality-gate pattern ending with parent `PASS`, `FAIL`, or `INCONCLUSIVE`.
@@ -148,7 +162,7 @@ Answer small or obvious option, idea, test-case, name, comparison, or “stronge
 
 ### Review fanout, packets, and reduction
 
-For nontrivial review, select at least three genuinely distinct primary angles from the approved behavior, actual target/effective change, reachable boundaries, and missing proof. Correctness/regression, verification quality, and simplicity/ownership are common candidates, not a mandatory matrix. Add security/privacy, ops, UX, architecture, data, or other specialists only when the affected path reaches that surface.
+For nontrivial review, use the canonical initial-review fanout and select genuinely distinct primary angles from the approved behavior, actual target/effective change, reachable boundaries, and missing proof. Correctness/regression, verification quality, and simplicity/ownership are common candidates, not a mandatory matrix. Add security/privacy, ops, UX, architecture, data, or other specialists only when the affected path reaches that surface.
 
 Every reviewer packet contains the approved behavior, non-goals, relevant decisions, target/effective change, required proof and available evidence, assigned angle/evidence target, and stop condition. Reviewers never edit or become writers.
 
@@ -175,9 +189,9 @@ The parent must synthesize `PASS` / `FAIL` / `INCONCLUSIVE` before proceeding. L
 
 ### Parallel review technique
 
-Use this for adversarial review of a plan, issue, implementation, or current state. For nontrivial review, launch at least three fresh-context read-only `reviewer` agents with distinct packets generated from the actual target. Common primary angles are correctness/regressions, proof/validation, and simplicity/ownership; adapt to actual risk rather than forcing that matrix. Reviewers inspect the target directly, cite evidence, use relevant semantic groups, and never edit.
+Use this for adversarial review of a plan, issue, implementation, or current state. For nontrivial review, use the canonical initial-review fanout with distinct packets generated from the actual target. Common primary angles are correctness/regressions, proof/validation, and simplicity/ownership; adapt to actual risk rather than forcing that matrix. Reviewers inspect the target directly, cite evidence, use relevant semantic groups, and never edit.
 
-The parent validates and synthesizes the three output partitions before any fix. It automatically applies only validated, mechanically local, non-material fixes inside the approved behavior, then runs at least three fresh reviewers again. New material behavior requires an amendment; another implementation file inside the approved behavior does not.
+The parent validates and synthesizes the three output partitions before any fix. It automatically applies only validated, mechanically local, non-material fixes inside the approved behavior, then uses the canonical post-fix follow-up tier. New material behavior requires an amendment; another implementation file inside the approved behavior does not.
 
 ### Manual skill-specialist technique
 
@@ -190,7 +204,7 @@ Default guardrails:
 - Skip skill-specialist fanout for tiny questions, direct commands, highly private requests, or when the user asks not to delegate.
 - Make cost and concurrency visible by using an ordinary `subagent(...)` call rather than hidden/background automation.
 
-Example shape for a nontrivial specialist review (`selectedSkillPerspectives` contains at least three distinct entries):
+Example shape for a nontrivial specialist review (`selectedSkillPerspectives` satisfies the canonical initial-review fanout):
 
 ```typescript
 subagent({
@@ -207,9 +221,9 @@ subagent({
 
 ### Review-loop technique
 
-Use this when implementation or current-state review should continue until reviewers stop finding validated in-scope fixes worth doing now. Keep the loop in the parent session: the parent implements/fixes, at least three fresh read-only reviewers inspect the actual target, and the parent validates/synthesizes findings against the behavioral contract. Apply only mechanically local, non-material fixes inside the approved behavior; request an amendment for new material behavior, compatibility, dependency, architecture, security/data, or protected action. Use write children only under the parent-owned concurrent-write policy.
+Use this when implementation or current-state review should continue until reviewers stop finding validated in-scope fixes worth doing now. Keep the loop in the parent session: the parent implements/fixes, the canonical initial-review fanout inspects the actual target, and the parent validates/synthesizes findings against the behavioral contract. Apply only mechanically local, non-material fixes inside the approved behavior; request an amendment for new material behavior, compatibility, dependency, architecture, security/data, or protected action. Use write children only under the parent-owned concurrent-write policy.
 
-Continue only while a round yields a validated primary finding and the fix makes material progress. Stop when clean, only incidental/non-actionable feedback remains, findings repeat or progress stalls, a blocker appears, or a material decision is approval-gated. Do not use an arbitrary round cap as completion logic, loop for optional polish, or let children decide the outcome.
+After each fix group, use the canonical post-fix follow-up tier. Continue only while a new validated in-scope primary finding produces a material correction. Stop when clean, only incidental/non-actionable feedback remains, findings repeat or progress stalls, a blocker appears, or a material decision is approval-gated. Do not use an arbitrary round cap as completion logic, loop for optional polish, or let children decide the outcome.
 
 ### Parallel research technique
 
@@ -262,7 +276,7 @@ Use this at the start of nontrivial work. Launch `scout` for local context and `
 
 ### Parallel cleanup technique
 
-Use this only when cleanup/simplification is explicitly requested as a primary review target; ordinary-language “clean this up” is such a request for trivial behavior-preserving cleanup. Launch at least three fresh read-only reviewers with genuinely distinct relevant cleanup angles; deslop and verbosity are candidates, not a mandatory pair. Give each the full reviewer packet. Reviewers report primary in-scope cleanup findings first and keep incidental adjacent risks or polish separate. The parent validates findings, applies only mechanically local, non-material fixes inside the approved behavior—directly or through the narrow quality-worker exception—then runs at least three fresh reviewers again. Ordinary review does not proactively hunt optional cleanup.
+Use this only when cleanup/simplification is explicitly requested as a primary review target; ordinary-language “clean this up” is such a request for trivial behavior-preserving cleanup. Use the canonical initial-review fanout with genuinely distinct relevant cleanup angles; deslop and verbosity are candidates, not a mandatory pair. Give each the full reviewer packet. Reviewers report primary in-scope cleanup findings first and keep incidental adjacent risks or polish separate. The parent validates findings, applies only mechanically local, non-material fixes inside the approved behavior—directly or through the narrow quality-worker exception—then uses the canonical post-fix follow-up tier. Ordinary review does not proactively hunt optional cleanup.
 
 ### Staged fix orchestration technique
 
@@ -913,10 +927,10 @@ Run the work through seven phases:
 
 1. **Understand** — use evidence-sized `scout`/`context-builder` fanout, while the parent personally reads load-bearing sources. Gate: the parent can state previous behavior, the observable contract, canonical owner, non-goals, and verification harness.
 2. **Decide** — separate material user-owned decisions from routine engineering judgment. Ask only unresolved material decisions with previous behavior and recommendation. Gate: no material design decision remains silent.
-3. **Design** — present the complete draft before launching at least three fresh parallel plan reviewers; keep it inspectable, validate/synthesize findings, then present the complete revised plan and every material delta before approval on the behavioral boundary. Gate: one reviewed parent-synthesized plan, assumptions, alternatives, risks, proof/review strategy, and seams.
+3. **Design** — present the complete draft before launching the canonical initial-review fanout for the plan; keep it inspectable, validate/synthesize findings, then present the complete revised plan and every material delta before approval on the behavioral boundary. Gate: one reviewed parent-synthesized plan, assumptions, alternatives, risks, proof/review strategy, and seams.
 4. **Implement** — capture a baseline only when it proves the changed claim, then the parent implements. Use write children only for at least two independent concurrent areas under exclusive ownership with the parent owning one, or use one worker under the narrow quality-worker exception. Gate: applicable focused/static checks are green or explicitly unavailable, and every effective change is intended or fixed.
-5. **Review** — run at least three adversarial fresh-context reviewers/validators outside the implementation path. Validate and disposition every finding partition against the approved behavior, non-goals, and proof contract. Gate: every primary finding is validated, rejected with evidence, or identified as approval-gated.
-6. **Iterate** — when a validated primary finding exposes a defect, the parent names the failure class, searches relevant siblings, applies eligible in-behavior fixes, and re-reviews with at least three fresh reviewers. Continue only while each round makes material progress; stop clean, incidental-only, stalled/repeated, blocked, or approval-gated. For LLM judges, trigger on concrete findings rather than scores and preserve reproducible verdict evidence.
+5. **Review** — run the canonical initial-review fanout outside the implementation path. Validate and disposition every finding partition against the approved behavior, non-goals, and proof contract. Gate: every primary finding is validated, rejected with evidence, or identified as approval-gated.
+6. **Iterate** — when a validated primary finding exposes a defect, the parent names the failure class, searches relevant siblings, applies eligible in-behavior fixes, and uses the canonical post-fix follow-up tier. Continue only while each new validated in-scope primary finding produces a material correction; stop clean, incidental-only, rejected, stalled/repeated, blocked, or approval-gated. For LLM judges, trigger on concrete findings rather than scores and preserve reproducible verdict evidence.
 7. **Verify and ship** — after the last relevant edit and clean review disposition, run safe, bounded, local, non-mutating, non-expensive claim-bound proof automatically, rerun affected gates, assess every relevance-gated completion category, and have the parent inspect the final effective change. Live, external, expensive, effectful, credentialed, destructive, deployment, commit, push, release, or other external mutation remains separately authorized. Gate: reviewers and final post-edit evidence support `PASS`; otherwise return `FAIL` or `INCONCLUSIVE`.
 
 ### Clarify → Plan → Implement → Review (self-orchestrated workflow)
@@ -928,8 +942,8 @@ Keep builtin agent defaults unless the user explicitly asks for a different mode
 When launching a subagent for an approved plan or workflow, generate a proper role-specific prompt. Include the approved plan path or summary, clarified requirements, non-goals, relevant context, role boundaries, files or areas to inspect, acceptance criteria, expected output, and validation expectations. A write-child prompt must also satisfy the complete parent-owned write policy; approval to use subagents does not by itself authorize a write child. Do not pass vague instructions like “implement the plan fully” or “review this” by themselves.
 
 - `/gather-context-and-clarify` maps to: launch `scout` and, when needed, `researcher`; synthesize findings; ask only unresolved material user-owned decisions with previous behavior and recommendation.
-- `/parallel-review` maps to: launch at least three fresh-context read-only reviewers with distinct complete packets; validate and synthesize the three finding partitions before any fix.
-- `/review-loop` maps to: keep the parent in charge of implementation/fixes → at least three fresh read-only reviewers → validated synthesis while primary in-scope progress continues; stop clean/incidental-only/stalled/blocked/approval-gated, not at an arbitrary cap.
+- `/parallel-review` maps to: launch the canonical initial-review fanout with distinct complete packets; validate and synthesize the three finding partitions before any fix.
+- `/review-loop` maps to: keep the parent in charge of implementation/fixes → canonical initial review → validated synthesis → proportionate post-fix follow-up while new validated in-scope primary findings produce material corrections; stop clean/incidental-only/rejected/stalled/blocked/approval-gated, not at an arbitrary cap.
 - `/parallel-research` maps to: combine evidence-sized local and external roles when current docs, ecosystem behavior, or API details matter.
 - `/parallel-context-build` maps to: choose top-level parallel or chain-mode context builders according to dependencies, with distinct slices and optional unique artifacts, then synthesize direct context.
 - `/parallel-handoff-plan` maps to: run external `researcher` plus local/strategy `context-builder` passes, then a synthesis `context-builder` that writes an implementation handoff plan and implementation-ready meta-prompt.
@@ -945,11 +959,11 @@ The validation contract defines acceptance before code is written: expected beha
 
 Use the structured `acceptance` field when the run should carry an explicit acceptance contract. If omitted, subagents infer an effective acceptance policy from role, mode, and risk. Use `level: "checked"` for ordinary writer evidence gates, `level: "verified"` when the runtime should run explicit validation commands, and `level: "reviewed"` only when an independent reviewer result is expected. Do not call a run reviewed just because the worker says it is done; reviewed means a reviewer gate returned a result. Child-reported command success is evidence, not runtime verification.
 
-The parent implements the approved behavior and reads the precise sources it edits. Qualifying write children may edit additional independent areas concurrently under exclusive internal ownership. After writes, at least three fresh-context reviewers inspect the final target and validators check behavior with the best available evidence. The parent validates findings, applies only mechanically local/non-material fixes inside the approved behavior, re-reviews while progress continues, and inspects the final effective change before completing.
+The parent implements the approved behavior and reads the precise sources it edits. Qualifying write children may edit additional independent areas concurrently under exclusive internal ownership. After writes, the canonical initial-review fanout inspects the final target and validators check behavior with the best available evidence. The parent validates findings, applies only mechanically local/non-material fixes inside the approved behavior, uses the canonical post-fix follow-up tier while material progress continues, and inspects the final effective change before completing.
 
-Every nontrivial review starts with at least three distinct primary angles. Increase review/validation fanout for additional concrete risk surfaces rather than trusting the minimum alone. Security/privacy, performance, docs/API, or user-flow specialists are added only when the affected path reaches those surfaces.
+Every nontrivial initial review uses distinct primary angles. Increase review/validation fanout for additional concrete risk surfaces rather than trusting the minimum alone. Security/privacy, performance, docs/API, or user-flow specialists are added only when the affected path reaches those surfaces.
 
-When review has concrete findings across several areas, use staged fix orchestration: parallel read-only planners for issue clusters, parent synthesis/fixes, then at least three fresh validators/reviewers. Use write children only when at least two accepted clusters are independently writable or one fix qualifies for the narrow quality-worker exception. Implement only validated, mechanically local, non-material fixes inside the approved behavior; new material behavior requires an amendment, not another-file bookkeeping.
+When review has concrete findings across several areas, use staged fix orchestration: parallel read-only planners for issue clusters, parent synthesis/fixes, then the canonical post-fix follow-up tier. Use write children only when at least two accepted clusters are independently writable or one fix qualifies for the narrow quality-worker exception. Implement only validated, mechanically local, non-material fixes inside the approved behavior; new material behavior requires an amendment, not another-file bookkeeping.
 
 For very large work, split implementation into serial milestones. The parent implements and fixes each milestone, with a validation contract, fresh-context review/validation, and parent acceptance before the next milestone. Use write children only for qualifying independent areas inside a milestone or the narrow quality-worker exception.
 
@@ -984,13 +998,13 @@ subagent({
 })
 ```
 
-`selectedReviewAngles` contains at least three genuinely distinct entries. The parent validates and applies only mechanically local/non-material fixes inside the approved behavior. Use fix children only under the exceptional exclusive-write policy or the narrow quality-worker exception.
+`selectedReviewAngles` satisfies the canonical initial-review fanout. The parent validates and applies only mechanically local/non-material fixes inside the approved behavior. Use fix children only under the exceptional exclusive-write policy or the narrow quality-worker exception.
 
 ### Review loop
 
-Do not treat review as the final step for implementation work. Run at least three fresh read-only reviewers, validate and partition their findings against the behavioral/proof contract, then have the parent apply only eligible fixes.
+Do not treat review as the final step for implementation work. Run the canonical initial-review fanout, validate and partition findings against the behavioral/proof contract, then have the parent apply only eligible fixes.
 
-Repeat parent fix → at least three fresh reviewers → parent validation/synthesis while a validated primary finding yields material progress. Stop when clean, only incidental/non-actionable findings remain, findings repeat or progress stalls, a blocker appears, or a material decision/protected action is approval-gated. Do not stop merely because of a fixed round count or loop for optional polish. Use write children only for qualifying independent areas or the narrow quality-worker exception.
+After a parent fix, use the canonical post-fix follow-up tier and parent validation/synthesis while a new validated in-scope primary finding produces a material correction. Stop when clean, only incidental/non-actionable findings remain, findings are rejected or repeat, progress stalls, a blocker appears, or a material decision/protected action is approval-gated. Do not stop merely because of a fixed round count or loop for optional polish. Use write children only for qualifying independent areas or the narrow quality-worker exception.
 
 ### Parallel non-conflicting analysis
 

@@ -18,7 +18,7 @@ Protocol:
    Size generator fanout from genuinely distinct assumptions and evidence gaps; do not force a minimum/maximum. One or two are allowed only when no useful third perspective exists and the parent states why. Obvious, simpler/smaller, and materially different alternatives are candidates when credible.
 
 2. Adversarial attacks.
-   For nontrivial debate review, launch at least three skeptical fresh reviewers with distinct evidence targets to attack the strongest proposals, the parent's framing, and hidden requirements. Give them the decision contract, non-goals, relevant decisions, proposal artifacts/evidence, angle, and stop condition. Reviewers never edit and use the three finding partitions.
+   For nontrivial debate review, use the canonical initial-review fanout with skeptical fresh reviewers and distinct evidence targets to attack the strongest proposals, the parent's framing, and hidden requirements. Give them the decision contract, non-goals, relevant decisions, proposal artifacts/evidence, angle, and stop condition. Reviewers never edit and use the three finding partitions.
 
 3. Optional rebuttal/repair.
    If disagreement is sharp and useful, ask a child or the parent to repair the best proposal against the strongest objections.
@@ -57,7 +57,7 @@ subagent({
 });
 ```
 
-Before launch, ensure a nontrivial attack pass has at least three genuinely distinct entries. Before parent synthesis, read every saved artifact, validate reviewer claims for reachability/impact/proof, and preserve the three finding partitions. Parent synthesis rubric:
+Before launch, ensure a nontrivial attack pass satisfies the canonical initial-review fanout with genuinely distinct entries. Before parent synthesis, read every saved artifact, validate reviewer claims for reachability/impact/proof, and preserve the three finding partitions. Parent synthesis rubric:
 
 - Which proposal best satisfies the explicit goal?
 - Which proposal is simplest without losing required behavior?

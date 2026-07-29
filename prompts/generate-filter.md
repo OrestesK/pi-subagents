@@ -39,7 +39,7 @@ Protocol:
    Size parallel `delegate`/`researcher` generators from genuinely distinct assumptions and evidence gaps. One or two are allowed only when no useful third perspective exists and the parent states why. Use at most one bounded `scout` when local constraints matter. Practical, ambitious, and simplifying perspectives are candidates when credible, not mandatory roles.
 
 2. Filter and dedupe.
-   For a nontrivial option review, run at least three fresh parallel reviewer/filter angles over the concrete generated options. Give each the decision contract, non-goals, relevant decisions, rubric/evidence, assigned filter angle, and stop condition. They remove duplicates, reject low-evidence ideas, rank by rubric, identify counterarguments, use the three finding partitions, and never edit. Parent synthesis follows; do not stop after generation.
+   For a nontrivial option review, use the canonical initial-review fanout over the concrete generated options. Give each reviewer/filter the decision contract, non-goals, relevant decisions, rubric/evidence, assigned filter angle, and stop condition. They remove duplicates, reject low-evidence ideas, rank by rubric, identify counterarguments, use the three finding partitions, and never edit. Parent synthesis follows; do not stop after generation.
 
 3. Deepen only when warranted.
    Follow the second-wave rule in `pi-subagents` under **Review fanout, packets, and reduction**: launch another targeted read-only swarm only when the shortlist exposes a named new evidence angle, such as deeper attack, local feasibility, external evidence, or validation design. Do not repeat broad generation.
@@ -47,7 +47,7 @@ Protocol:
 4. Return top choices.
    Return a small set with pros, cons, risks, and next validation step.
 
-After the applicability and entry guards are satisfied, use runtime chain fan-out/fan-in so at least three filter reviewers see the concrete generated options. Generator-only fanout is incomplete. If the nontrivial filter review cannot run, return `INCONCLUSIVE` with the blocking reason.
+After the applicability and entry guards are satisfied, use runtime chain fan-out/fan-in so the canonical initial-review fanout sees the concrete generated options. Generator-only fanout is incomplete. If the nontrivial filter review cannot run, return `INCONCLUSIVE` with the blocking reason.
 
 ```typescript
 subagent({
@@ -82,7 +82,7 @@ Adapt agents to the request:
 - Use `scout` when options depend on local repository structure, tests, or implementation constraints.
 - Use `reviewer` for critique, rubric building, dedupe, and ranking.
 
-For nontrivial work, `selectedFilterAngles` contains at least three genuinely distinct entries. After completion, inspect every chain result/artifact and validate filter claims before parent synthesis. Parent synthesis must include:
+For nontrivial work, `selectedFilterAngles` satisfies the canonical initial-review fanout with genuinely distinct entries. After completion, inspect every chain result/artifact and validate filter claims before parent synthesis. Parent synthesis must include:
 
 - rubric used;
 - the smallest strongest option set that preserves materially different tradeoffs, unless I ask for a specific count;

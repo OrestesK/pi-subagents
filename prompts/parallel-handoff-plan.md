@@ -52,6 +52,6 @@ Final synthesis context-builder:
 - Include previous behavior/proposed delta, outcome, external/local evidence, recommendation, changed/unchanged behavior, alternatives, assumptions, uncertainties, risks/tradeoffs/reversibility, likely owners, proof/review strategy, focus points, non-goals, protected actions, and stop conditions.
 - End with a compact implementation-ready meta-prompt for the parent/planner. Artifacts support rather than replace direct presentation.
 
-After the chain returns, inspect every output and present the complete draft directly. For a nontrivial handoff plan, launch at least three fresh plan reviewers with distinct packets, integrate validated findings, and present the complete revised plan plus every material delta before implementation approval. Include artifact paths only as supporting evidence.
+After the chain returns, inspect every output and present the complete draft directly. For a nontrivial handoff plan, launch the canonical initial-review fanout with distinct packets, integrate validated findings, and present the complete revised plan plus every material delta before implementation approval. Include artifact paths only as supporting evidence.
 
 Do not start implementation from this command unless the reviewed behavioral plan is approved.
