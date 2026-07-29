@@ -261,6 +261,96 @@ Plan the work.
 		assert.equal(agent.source, "package");
 	}));
 
+	it("loads bare relative packages from user Pi settings", () => withTempHome((home) => {
+		const cwd = path.join(home, "workspace");
+		const agentDir = path.join(home, ".pi", "agent");
+		const packageRoot = path.join(agentDir, "packages", "user-workflow");
+		fs.mkdirSync(cwd, { recursive: true });
+		writeJson(path.join(agentDir, "settings.json"), {
+			packages: ["packages/user-workflow"],
+		});
+		writeJson(path.join(packageRoot, "package.json"), {
+			name: "user-settings-workflow",
+			pi: {
+				subagents: {
+					agents: ["./agents"],
+				},
+			},
+		});
+		writeAgent(path.join(packageRoot, "agents", "planner.md"), `---
+name: planner
+package: user-settings-workflow
+description: Plan from a bare user settings package.
+---
+
+Plan the work.
+`);
+
+		const agent = discoverAgents(cwd, "user").agents.find((candidate) => candidate.name === "user-settings-workflow.planner");
+		assert.ok(agent);
+		assert.equal(agent.source, "package");
+		assert.equal(agent.filePath, path.join(packageRoot, "agents", "planner.md"));
+	}));
+
+	it("loads bare relative package objects from project Pi settings", () => withTempHome(() => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-bare-project-package-"));
+		tempDirs.push(dir);
+		const packageRoot = path.join(dir, ".pi", "packages", "project-workflow");
+		writeJson(path.join(dir, ".pi", "settings.json"), {
+			packages: [{ source: "packages/project-workflow" }],
+		});
+		writeJson(path.join(packageRoot, "package.json"), {
+			name: "project-settings-workflow",
+			pi: {
+				subagents: {
+					agents: ["./agents"],
+				},
+			},
+		});
+		writeAgent(path.join(packageRoot, "agents", "reviewer.md"), `---
+name: reviewer
+package: project-settings-workflow
+description: Review from a bare project settings package.
+---
+
+Review the work.
+`);
+
+		const agent = discoverAgents(dir, "project").agents.find((candidate) => candidate.name === "project-settings-workflow.reviewer");
+		assert.ok(agent);
+		assert.equal(agent.source, "package");
+		assert.equal(agent.filePath, path.join(packageRoot, "agents", "reviewer.md"));
+	}));
+
+	it("does not treat explicit remote package URLs as local paths", () => withTempHome(() => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-remote-package-source-"));
+		tempDirs.push(dir);
+		const remoteSource = "https://github.com/example/remote-workflow";
+		const trapRoot = path.resolve(dir, ".pi", remoteSource);
+		writeJson(path.join(dir, ".pi", "settings.json"), {
+			packages: [remoteSource],
+		});
+		writeJson(path.join(trapRoot, "package.json"), {
+			name: "remote-trap-workflow",
+			pi: {
+				subagents: {
+					agents: ["./agents"],
+				},
+			},
+		});
+		writeAgent(path.join(trapRoot, "agents", "reviewer.md"), `---
+name: reviewer
+package: remote-trap-workflow
+description: Must not load from URL text resolved as a local path.
+---
+
+Review the work.
+`);
+
+		const agent = discoverAgents(dir, "project").agents.find((candidate) => candidate.name === "remote-trap-workflow.reviewer");
+		assert.equal(agent, undefined);
+	}));
+
 	it("discovers project package agents when cwd is nested below the project root", () => withTempHome(() => {
 		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-nested-package-discovery-"));
 		tempDirs.push(dir);

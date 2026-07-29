@@ -343,6 +343,18 @@ Avoid carrying over old prompt habits that over-specify every step. Use `must`, 
 
 For exceptional write-child handoffs, use the complete contract from **Parent-owned write policy**. Good prompts say exactly what files and symbols may change, required behavior, non-goals, where the evidence lives, how to validate, prohibited decisions, and when to stop and escalate. They should not ask the child to create another subagent plan or continue the parent conversation.
 
+### MCP capability routing
+
+Generic MCP is an optional per-task capability, not a base-agent guarantee. When configured MCP evidence can materially advance a delegable task, prefer an MCP-enabled child over keeping that work in the parent.
+
+- Use `subagent({ action: "list" })` to verify the `mcp` bundle and select an allowed agent.
+- Pass both `toolExtensions: { add: ["mcp"] }` and `requiresCapabilities: ["mcp"]` on that child.
+- If a base-agent capability check fails, do not conclude that children cannot use MCP. First verify that the same child request includes the configured bundle and capability requirement.
+- Do not create, eject, update, or write a persistent agent solely to work around MCP access for a one-off task. Correct the dynamic bundle request. If no eligible bundle route exists, report the exact configuration gap instead of inventing another route.
+- In the child task, name the target server, the concrete evidence needed, and the allowed effect boundary. For read-only work, include the direct sentence `Do not edit or modify files.` Require cached server and tool metadata inspection before connection. Connect or authenticate only when necessary for the requested evidence and allowed by the external MCP policy. Call only tools whose effects are understood and authorized. Treat generic executors and operations with unclear effects as mutation-capable until verified. Require the child to report the server, tool, evidence, actual effects, authentication state or gaps, and unverified boundaries.
+
+Do not attach the bundle to unrelated work. Catalog visibility or cached metadata does not prove authentication, current behavior, or authorization. Local versus remote transport does not establish that an operation is read-only. Capability routing never grants permission; `AGENTS.md` remains the authorization owner for protected reads and external mutations.
+
 Settings locations:
 - User scope: `~/.pi/agent/settings.json`
 - Project scope: `.pi/settings.json`

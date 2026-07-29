@@ -289,13 +289,13 @@ function resolveSettingsPackageRoot(source: string, baseDir: string): string | u
 		return packageName ? path.join(baseDir, "npm", "node_modules", packageName) : undefined;
 	}
 	const normalized = trimmed.startsWith("file:") ? trimmed.slice(5) : trimmed;
+	if (!normalized || ["github:", "http:", "https:", "ssh:"].some((prefix) => normalized.startsWith(prefix))) {
+		return undefined;
+	}
 	if (normalized === "~") return os.homedir();
 	if (normalized.startsWith("~/")) return path.join(os.homedir(), normalized.slice(2));
 	if (path.isAbsolute(normalized)) return normalized;
-	if (normalized === "." || normalized === ".." || normalized.startsWith("./") || normalized.startsWith("../")) {
-		return path.resolve(baseDir, normalized);
-	}
-	return undefined;
+	return path.resolve(baseDir, normalized);
 }
 
 function getGlobalNpmRoot(): string | null {
