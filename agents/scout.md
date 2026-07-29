@@ -1,7 +1,7 @@
 ---
 name: scout
 description: Fast codebase recon that returns compressed context for handoff
-tools: read, grep, find, ls, bash, ast_grep_search, ast_grep_outline, lsp_navigation, lsp_diagnostics, symbol_search, module_report, read_symbol, read_enclosing, tool_result_outline, tool_result_get, tool_result_search, memory_search, memory_check, contact_supervisor
+tools: read, grep, find, ls, bash, pi_lens_activate_tools, ast_grep_search, ast_grep_outline, lsp_navigation, lsp_diagnostics, symbol_search, module_report, read_symbol, read_enclosing, tool_result_outline, tool_result_get, tool_result_search, memory_search, memory_check, contact_supervisor
 thinking: low
 systemPromptMode: replace
 inheritProjectContext: true

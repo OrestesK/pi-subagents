@@ -45,6 +45,6 @@ After the subagents return, inspect their evidence and synthesize directly:
 - gaps or assumptions;
 - the recommended next move.
 
-Avoid tables in Markdown outputs. Artifacts support rather than replace the direct summary. If findings disagree, call out the disagreement. A material choice returns to the user with previous behavior and recommendation.
+Avoid tables in Markdown outputs. Artifacts support rather than replace the direct summary. If findings disagree, explain the disagreement. For a material choice, briefly explain why it matters, recommend an option when useful, and ask one clear question in normal language.
 
 $@

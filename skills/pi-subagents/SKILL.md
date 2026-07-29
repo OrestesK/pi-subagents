@@ -272,7 +272,7 @@ subagent({
 
 ### Gather-context-and-clarify technique
 
-Use this at the start of nontrivial work. Launch `scout` for local context and `researcher` only when external evidence materially improves understanding. Ask children for concise findings and unresolved material decisions. Then synthesize what is known and ask only remaining material user-owned questions, stating previous behavior, proposed delta, recommendation, and tradeoff.
+Use this at the start of nontrivial work. Launch `scout` for local context and `researcher` only when external evidence improves understanding. Ask children for concise findings and unresolved material decisions. Then synthesize what is known. For each remaining material question, briefly explain why it matters, recommend an option when useful, and ask in normal language.
 
 ### Parallel cleanup technique
 
@@ -367,7 +367,7 @@ Generic MCP is an optional per-task capability, not a base-agent guarantee. When
 - Do not create, eject, update, or write a persistent agent solely to work around MCP access for a one-off task. Correct the dynamic bundle request. If no eligible bundle route exists, report the exact configuration gap instead of inventing another route.
 - In the child task, name the target server, the concrete evidence needed, and the allowed effect boundary. For read-only work, include the direct sentence `Do not edit or modify files.` Require cached server and tool metadata inspection before connection. Connect or authenticate only when necessary for the requested evidence and allowed by the external MCP policy. Call only tools whose effects are understood and authorized. Treat generic executors and operations with unclear effects as mutation-capable until verified. Require the child to report the server, tool, evidence, actual effects, authentication state or gaps, and unverified boundaries.
 
-Do not attach the bundle to unrelated work. Catalog visibility or cached metadata does not prove authentication, current behavior, or authorization. Local versus remote transport does not establish that an operation is read-only. Capability routing never grants permission; `AGENTS.md` remains the authorization owner for protected reads and external mutations.
+Do not attach the bundle to unrelated work. Catalog visibility or cached metadata does not prove authentication or current behavior. Local versus remote transport does not show whether an action mutates state. Capability routing never grants mutation permission; `AGENTS.md` owns the external-action rule.
 
 Settings locations:
 - User scope: `~/.pi/agent/settings.json`
@@ -926,12 +926,12 @@ Fable mode is the default orchestration posture for complex work. It is not a se
 Run the work through seven phases:
 
 1. **Understand** — use evidence-sized `scout`/`context-builder` fanout, while the parent personally reads load-bearing sources. Gate: the parent can state previous behavior, the observable contract, canonical owner, non-goals, and verification harness.
-2. **Decide** — separate material user-owned decisions from routine engineering judgment. Ask only unresolved material decisions with previous behavior and recommendation. Gate: no material design decision remains silent.
+2. **Decide** — separate material user-owned decisions from routine engineering judgment. For each unresolved material decision, briefly explain why it matters, recommend an option when useful, and ask one clear question. Gate: no material design decision remains silent.
 3. **Design** — present the complete draft before launching the canonical initial-review fanout for the plan; keep it inspectable, validate/synthesize findings, then present the complete revised plan and every material delta before approval on the behavioral boundary. Gate: one reviewed parent-synthesized plan, assumptions, alternatives, risks, proof/review strategy, and seams.
 4. **Implement** — capture a baseline only when it proves the changed claim, then the parent implements. Use write children only for at least two independent concurrent areas under exclusive ownership with the parent owning one, or use one worker under the narrow quality-worker exception. Gate: applicable focused/static checks are green or explicitly unavailable, and every effective change is intended or fixed.
 5. **Review** — run the canonical initial-review fanout outside the implementation path. Validate and disposition every finding partition against the approved behavior, non-goals, and proof contract. Gate: every primary finding is validated, rejected with evidence, or identified as approval-gated.
 6. **Iterate** — when a validated primary finding exposes a defect, the parent names the failure class, searches relevant siblings, applies eligible in-behavior fixes, and uses the canonical post-fix follow-up tier. Continue only while each new validated in-scope primary finding produces a material correction; stop clean, incidental-only, rejected, stalled/repeated, blocked, or approval-gated. For LLM judges, trigger on concrete findings rather than scores and preserve reproducible verdict evidence.
-7. **Verify and ship** — after the last relevant edit and clean review disposition, run safe, bounded, local, non-mutating, non-expensive claim-bound proof automatically, rerun affected gates, assess every relevance-gated completion category, and have the parent inspect the final effective change. Live, external, expensive, effectful, credentialed, destructive, deployment, commit, push, release, or other external mutation remains separately authorized. Gate: reviewers and final post-edit evidence support `PASS`; otherwise return `FAIL` or `INCONCLUSIVE`.
+7. **Verify and ship** — after the last relevant edit and clean review disposition, run all relevant read-only proof automatically, rerun affected gates, assess every relevant completion category, and have the parent inspect the final change. Put temporary project files under `.scratch/`. Mutating validation, deployment, commit, push, release, destruction, or other external mutation remains separately authorized. Gate: reviewers and final post-edit evidence support `PASS`; otherwise return `FAIL` or `INCONCLUSIVE`.
 
 ### Clarify → Plan → Implement → Review (self-orchestrated workflow)
 
@@ -941,7 +941,7 @@ Keep builtin agent defaults unless the user explicitly asks for a different mode
 
 When launching a subagent for an approved plan or workflow, generate a proper role-specific prompt. Include the approved plan path or summary, clarified requirements, non-goals, relevant context, role boundaries, files or areas to inspect, acceptance criteria, expected output, and validation expectations. A write-child prompt must also satisfy the complete parent-owned write policy; approval to use subagents does not by itself authorize a write child. Do not pass vague instructions like “implement the plan fully” or “review this” by themselves.
 
-- `/gather-context-and-clarify` maps to: launch `scout` and, when needed, `researcher`; synthesize findings; ask only unresolved material user-owned decisions with previous behavior and recommendation.
+- `/gather-context-and-clarify` maps to: launch `scout` and, when needed, `researcher`; synthesize findings; briefly explain each remaining material choice, recommend when useful, and ask one clear question.
 - `/parallel-review` maps to: launch the canonical initial-review fanout with distinct complete packets; validate and synthesize the three finding partitions before any fix.
 - `/review-loop` maps to: keep the parent in charge of implementation/fixes → canonical initial review → validated synthesis → proportionate post-fix follow-up while new validated in-scope primary findings produce material corrections; stop clean/incidental-only/rejected/stalled/blocked/approval-gated, not at an arbitrary cap.
 - `/parallel-research` maps to: combine evidence-sized local and external roles when current docs, ecosystem behavior, or API details matter.

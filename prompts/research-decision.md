@@ -22,7 +22,7 @@ Runtime policy:
 - If the user says strict `do not write artifacts`, `no files`, or `inline only`, do not launch subagents; research parent-only or ask to relax the constraint.
 - If findings may be large, need persistence, or may be needed across turns and artifacts are allowed, set an explicit output path and `outputMode: "file-only"`.
 - For this top-level `tasks` shape, relative output paths resolve against `cwd`, not a temporary chain artifact directory; use absolute `.scratch/...` paths when the artifact must land in a specific repo.
-- For foreground tool-call chain steps, relative outputs are temp/chain-artifact-local; slash-command background `/chain` relative outputs resolve against cwd or the step cwd.
+- For foreground tool-call chain steps, relative outputs stay under `{chain_dir}`. By default, this is `<project>/.scratch/pi-subagents/chain-runs/{runId}/`; an explicit `chainDir` changes the base. Slash-command background `/chain` relative outputs resolve against cwd or the step cwd.
 - Every child receives the decision contract, non-goals, relevant prior decisions/evidence, distinct evidence target, and stop condition. Include this compact stop contract: continue while evidence could materially change the assigned conclusion; if tools, access, or context prevent completion, report the blocking reason and smallest missing next step, and require reviewer children to return `INCONCLUSIVE`. Never edit, broaden behavior, or self-authorize protected actions.
 - For researcher tasks, include a research depth contract: Do not cap searches or sources to save cost. Pursue primary sources, counterevidence, and follow-up searches while new evidence could materially change the conclusion; stop only when findings are saturated or blocked.
 
@@ -74,4 +74,4 @@ After the completion notification, inspect the child results and read every refe
 - what would change the recommendation;
 - whether the user must decide before implementation.
 
-Do not smooth over disagreements. Validate child claims before synthesis. Present verified previous behavior, recommendation, and tradeoff, then ask the user when the choice is material.
+Do not smooth over disagreements. Validate child claims before synthesis. When the user must make a material choice, briefly explain why it matters, recommend an option when useful, and ask one clear question in normal language.

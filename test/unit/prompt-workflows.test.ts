@@ -65,8 +65,10 @@ model: openai/gpt-5-mini
 Project body $1
 `);
 
-		const workflow = discoverPromptWorkflows(cwd).find((entry) => entry.name === "native-test");
+		const workflows = discoverPromptWorkflows(cwd);
+		const workflow = workflows.find((entry) => entry.name === "native-test");
 
+		assert.deepEqual(workflows.map((entry) => entry.name), ["native-test"]);
 		assert.equal(workflow?.description, "Project version");
 		assert.equal(workflow?.agent, "worker");
 		assert.equal(workflow?.model, "openai/gpt-5-mini");

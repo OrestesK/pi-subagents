@@ -587,7 +587,7 @@ const SubagentParamsSchema = Type.Object({
 	chainDir: Type.Optional(
 		Type.String({
 			description:
-				"Persistent chain artifact directory; defaults to user-scoped temp storage.",
+				"Base directory for chain run files. Defaults to <project>/.scratch/pi-subagents/chain-runs; the run id is appended. An explicit value overrides that base. Internal calls without a base use user-scoped temp storage.",
 		}),
 	),
 	async: Type.Optional(

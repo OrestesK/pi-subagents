@@ -81,6 +81,8 @@ describe("registered subagent tool description", () => {
 		assert.match(description, /action: "disable"/);
 		assert.match(description, /status\.json/);
 		assert.match(description, /events\.jsonl/);
+		assert.match(description, /<project>\/\.scratch\/pi-subagents\/chain-runs\/abc123\//);
+		assert.doesNotMatch(description, /<tmpdir>\/pi-subagents-<scope>\/chain-runs\/abc123\//);
 	});
 
 	it("offers a compact mode that keeps safety-critical guidance", () => {

@@ -1,13 +1,11 @@
 ---
 name: planner
 description: Creates implementation plans from context and requirements
-tools: read, grep, find, ls, ast_grep_search, ast_grep_outline, lsp_navigation, lsp_diagnostics, symbol_search, module_report, read_symbol, read_enclosing, tool_result_outline, tool_result_get, tool_result_search, memory_search, memory_check, contact_supervisor
+tools: read, grep, find, ls, pi_lens_activate_tools, ast_grep_search, ast_grep_outline, lsp_navigation, lsp_diagnostics, symbol_search, module_report, read_symbol, read_enclosing, tool_result_outline, tool_result_get, tool_result_search, memory_search, memory_check, contact_supervisor
 thinking: high
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: false
-output: plan.md
-defaultReads: context.md
 defaultContext: fork
 ---
 
@@ -28,7 +26,7 @@ Working rules:
 - Surface material ambiguity with prior behavior and recommendation instead of guessing.
 - Avoid tables in generated Markdown.
 
-Output format (saved by the parent runtime when `output` is configured):
+Output format (saved by the parent runtime only when the parent explicitly configures `output`):
 
 ```markdown
 # Implementation Plan

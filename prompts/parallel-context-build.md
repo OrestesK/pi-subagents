@@ -6,9 +6,9 @@ Launch fresh-context `context-builder` subagents in parallel to build grounded h
 
 Choose top-level parallel tasks when slices are independent and the parent will synthesize them directly; choose a chain with a parallel step when a later child must consume concrete outputs. Use `context: "fresh"` unless inherited context is explicitly required. Size builders from independent material evidence gaps. One or two are allowed only when no useful third slice exists and the parent states why.
 
-Agent frontmatter may define a default output path. For concise direct findings, set `output: false` on every `context-builder` task so that default cannot create an artifact. Only the explicit artifact branch may set distinct output paths under the run or chain directory, for example `context-build/request-and-scope.md`. Use phases/labels when they improve async status readability.
+For concise direct findings, set `output: false` on every `context-builder` task. Only the explicit artifact branch may set distinct output paths under the run or chain directory, for example `context-build/request-and-scope.md`. Use phases/labels when they improve async status readability.
 
-Do not write these context artifacts into the repository unless I explicitly ask for persistent files.
+Keep temporary project artifacts under `.scratch/pi-subagents/`. Do not create other repository files unless I explicitly ask for a tracked deliverable.
 
 Treat the slash command arguments as the primary request, target, or focus:
 

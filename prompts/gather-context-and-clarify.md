@@ -8,6 +8,6 @@ Use `scout` to inspect the relevant local files, existing patterns, constraints,
 
 Size subagents from independent evidence gaps; one or two are allowed only when no useful third role exists and the parent states why. Give each a distinct evidence target and stop condition. Ask for concise findings plus only unresolved material user-owned decisions.
 
-After they return, inspect and synthesize what is known. Use `ask_user` only for remaining material choices and state verified previous behavior (or none), proposed delta, recommendation, and tradeoff.
+After they return, inspect and synthesize what is known. Use `ask_user` only for remaining material choices. Briefly explain why each choice matters, recommend an option when useful, and ask one clear question in normal language.
 
 $@

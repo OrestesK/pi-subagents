@@ -10,6 +10,10 @@ interface SubagentParamsSchema {
 			enum?: string[];
 			description?: string;
 		};
+		chainDir?: {
+			type?: string;
+			description?: string;
+		};
 		tasks?: {
 			items?: {
 				properties?: {
@@ -203,6 +207,16 @@ describe("SubagentParams schema", {
 		assert.match(description, /fork/);
 		assert.match(description, /each requested agent/);
 		assert.match(description, /overrides every child/);
+	});
+
+	it("documents the project-scoped default chain directory", () => {
+		const chainDirSchema = SubagentParams?.properties?.chainDir;
+		assert.ok(chainDirSchema, "chainDir schema should exist");
+		const description = String(chainDirSchema.description ?? "");
+		assert.match(description, /<project>\/\.scratch\/pi-subagents\/chain-runs/);
+		assert.match(description, /explicit value overrides/i);
+		assert.match(description, /without a base.*user-scoped temp/i);
+		assert.doesNotMatch(description, /defaults to user-scoped temp/i);
 	});
 
 	it("includes count and concurrency on top-level parallel mode", () => {

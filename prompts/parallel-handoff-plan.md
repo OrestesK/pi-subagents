@@ -27,7 +27,7 @@ Use distinct output paths, `label` values, and `as` names under the chain direct
 
 Use phases such as `Research`, `Local context`, and `Synthesis` so async status is readable. Prefer `{outputs.externalReference}`, `{outputs.localContext}`, and `{outputs.implementationStrategy}` in the synthesis task when those specific inputs are available; keep `{previous}` only when the whole parallel fan-in summary is the desired input.
 
-Do not write these artifacts into the repository unless I explicitly ask for persistent files.
+Keep temporary project artifacts under `.scratch/pi-subagents/`. Do not create other repository files unless I explicitly ask for a tracked deliverable.
 
 Role guidance:
 

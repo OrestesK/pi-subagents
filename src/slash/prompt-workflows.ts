@@ -1,6 +1,5 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { parseFrontmatter } from "../agents/frontmatter.ts";
 import type { SubagentParamsLike } from "../runs/foreground/subagent-executor.ts";
@@ -34,13 +33,8 @@ const RESERVED_COMMAND_NAMES = new Set([
 	"subagents-models",
 ]);
 
-function packagePromptsDir(): string {
-	return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "prompts");
-}
-
 function promptDirs(cwd: string): string[] {
 	return [
-		packagePromptsDir(),
 		path.join(getAgentDir(), "prompts"),
 		path.join(getProjectConfigDir(cwd), "prompts"),
 	];
@@ -280,7 +274,7 @@ function findWorkflow(workflows: PromptWorkflow[], name: string): PromptWorkflow
 }
 
 function formatWorkflowList(workflows: PromptWorkflow[]): string {
-	if (workflows.length === 0) return "No prompt workflows found in package, user, or project prompts.";
+	if (workflows.length === 0) return "No prompt workflows found in user or project prompts.";
 	return [
 		"Prompt workflows:",
 		...workflows.map((workflow) => `- ${workflow.name}: ${workflow.description} (${workflow.filePath})`),

@@ -33,7 +33,7 @@ Continue only while a new validated in-scope primary finding produces a material
 - a blocker appears;
 - a new material decision or protected action is approval-gated.
 
-Do not stop merely because of an arbitrary round count. On completion, inspect the final effective change, run safe local verification automatically, and summarize rounds, fixes, finding partitions, evidence, residual risks, and why the loop stopped. Live/external/expensive/effectful validation remains separately authorized.
+Do not stop merely because of an arbitrary round count. On completion, inspect the final change, run all relevant read-only verification automatically, and summarize rounds, fixes, finding partitions, evidence, residual risks, and why the loop stopped. Mutating validation remains separately authorized.
 
 Additional target, implementation request, or primary review focus from the slash command invocation:
 

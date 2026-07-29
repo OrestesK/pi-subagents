@@ -90,4 +90,4 @@ For nontrivial work, `selectedFilterAngles` satisfies the canonical initial-revi
 - strongest counterargument to the recommended option;
 - recommended next validation step.
 
-Do not pick a material winner silently: present previous behavior, recommendation, and tradeoff, then ask the user.
+Do not pick a material winner silently. Briefly explain why the choice matters, recommend an option when useful, and ask one clear question in normal language.

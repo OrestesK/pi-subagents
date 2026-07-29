@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { handleManagementAction } from "../../src/agents/agent-management.ts";
@@ -12,6 +13,8 @@ import { buildPiArgs } from "../../src/runs/shared/pi-args.ts";
 import { THINKING_LEVELS } from "../../src/shared/model-info.ts";
 
 const tempDirs: string[] = [];
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const configRoot = path.resolve(packageRoot, "../..");
 
 function writeJson(filePath: string, value: unknown): void {
 	fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -135,6 +138,31 @@ Do work
 		for (const name of ["planner", "worker", "oracle"]) {
 			const agent = agents.find((candidate) => candidate.name === name);
 			assert.equal(agent?.defaultContext, "fork", `${name} should default to fork context`);
+		}
+	});
+});
+
+describe("packaged role artifact defaults", () => {
+	it("requires callers to opt into role artifacts", () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-role-artifacts-"));
+		tempDirs.push(dir);
+		const builtinAgents = discoverAgentsAll(dir).builtin;
+		const roles = ["context-builder", "planner", "researcher", "reviewer", "worker"];
+
+		for (const name of roles) {
+			const agent = builtinAgents.find((candidate) => candidate.name === name);
+			assert.ok(agent, `${name} should be available`);
+			assert.equal(agent.output, undefined, `${name} should not write a default artifact`);
+			assert.equal(agent.defaultReads, undefined, `${name} should not read default artifacts`);
+			assert.equal(agent.defaultProgress, false, `${name} should not create default progress artifacts`);
+		}
+	});
+
+	it("keeps local role definitions free of implicit artifacts", () => {
+		for (const fileName of ["context-builder.md", "planner.md", "researcher.md"]) {
+			const source = fs.readFileSync(path.join(configRoot, "agents", fileName), "utf8");
+			const frontmatter = source.match(/^---\n(?<value>[\s\S]*?)\n---/)?.groups?.value ?? "";
+			assert.doesNotMatch(frontmatter, /^(?:output|defaultReads|defaultProgress):/m, `${fileName} should require caller-provided artifacts`);
 		}
 	});
 });

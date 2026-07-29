@@ -1,12 +1,11 @@
 ---
 name: reviewer
 description: Read-only review specialist for code diffs, plans, proposed solutions, codebase health, and PR/issue validation
-tools: read, grep, find, ls, bash, ast_grep_search, ast_grep_outline, lsp_navigation, lsp_diagnostics, symbol_search, module_report, read_symbol, read_enclosing, lens_diagnostics, tool_result_outline, tool_result_get, tool_result_search, memory_search, memory_check, contact_supervisor
+tools: read, grep, find, ls, bash, pi_lens_activate_tools, ast_grep_search, ast_grep_outline, lsp_navigation, lsp_diagnostics, symbol_search, module_report, read_symbol, read_enclosing, lens_diagnostics, tool_result_outline, tool_result_get, tool_result_search, memory_search, memory_check, contact_supervisor
 thinking: high
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: false
-defaultReads: plan.md, progress.md
 ---
 
 # Reviewer Agent

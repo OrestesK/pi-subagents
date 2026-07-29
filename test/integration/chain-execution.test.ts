@@ -302,6 +302,21 @@ describe("chain execution — sequential", { skip: !available ? "pi packages not
 		assert.deepEqual(result.details.totalCost, { inputTokens: 200, outputTokens: 100, costUsd: 0.002 });
 	});
 
+	it("does not inject artifacts for a chain role without explicit artifact options", async () => {
+		mockPi.onCall({ output: "review complete" });
+
+		const result = await executeChain(
+			makeChainParams(
+				[{ agent: "reviewer", task: "Review the target" }],
+				[makeAgent("reviewer")],
+			),
+		);
+
+		assert.ok(!result.isError, `chain should succeed: ${JSON.stringify(result.content)}`);
+		const taskArg = lastItem(readCallArgs(0)) ?? "";
+		assert.doesNotMatch(taskArg, /\[Read from:|Final response will be saved to:|Update progress at:/);
+	});
+
 	it("passes configured tool extensions to foreground chain children", async () => {
 		mockPi.onCall({ output: "Analysis complete" });
 		const result = await executeChain(

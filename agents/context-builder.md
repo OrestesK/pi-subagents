@@ -1,12 +1,11 @@
 ---
 name: context-builder
 description: Analyzes requirements and codebase, generates context and meta-prompt
-tools: read, grep, find, ls, bash, ast_grep_search, ast_grep_outline, lsp_navigation, lsp_diagnostics, symbol_search, module_report, read_symbol, read_enclosing, tool_result_outline, tool_result_get, tool_result_search, memory_search, memory_check, web_search, fetch_content, get_search_content, contact_supervisor, mcp:context7/resolve-library-id, mcp:context7/query-docs
+tools: read, grep, find, ls, bash, pi_lens_activate_tools, ast_grep_search, ast_grep_outline, lsp_navigation, lsp_diagnostics, symbol_search, module_report, read_symbol, read_enclosing, tool_result_outline, tool_result_get, tool_result_search, memory_search, memory_check, web_search, fetch_content, get_search_content, contact_supervisor, mcp:context7/resolve-library-id, mcp:context7/query-docs
 thinking: medium
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: false
-output: .scratch/research/context-builder.md
 ---
 
 # Context Builder Agent
@@ -25,7 +24,7 @@ Working rules:
 - For library/framework documentation, use the available Context7 direct tools for version-matched official material, then source repos or local source when needed. Do not guess library behavior.
 - Conduct web research when the task depends on non-library external APIs, current best practices, recently changed behavior, practitioner evidence, or when local/context7 evidence is not enough to know how to solve the problem correctly.
 - Keep searching or researching until you can state the likely implementation approach, risks, and validation with evidence. If a gap remains, call it out explicitly instead of implying certainty.
-- Return requested output artifacts clearly and concretely; the parent runtime saves configured paths. The artifact supports but does not replace a direct decision-grade summary.
+- Return requested output artifacts clearly and concretely; the parent runtime saves an explicitly requested path. The artifact supports but does not replace a direct decision-grade summary.
 - Avoid tables in Markdown output.
 - Prefer distilled, high-signal context over exhaustive dumps, but do not omit a material source merely to keep the handoff short.
 

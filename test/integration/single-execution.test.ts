@@ -419,6 +419,24 @@ describe("single sync execution", { skip: !available ? "pi packages not availabl
 Inspect context`));
 	});
 
+	it("does not inject artifacts for a role without explicit artifact options", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
+		mockPi.onCall({ output: "inline review" });
+		const executor = makeExecutor([makeAgent("reviewer")]);
+
+		const result = await executor.execute(
+			"single-no-implicit-artifacts",
+			{ agent: "reviewer", task: "Review the target" },
+			new AbortController().signal,
+			undefined,
+			makeMinimalCtx(tempDir),
+		);
+
+		assert.equal(result.isError, undefined);
+		const args = readCallArgs();
+		const taskArg = args[args.length - 1] ?? "";
+		assert.doesNotMatch(taskArg, /\[Read from:|Final response will be saved to:|Update progress at:/);
+	});
+
 	it("fails missing explicit reads for single execution before launching the child", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
 		mockPi.onCall({ output: "should not run" });
 		const executor = makeExecutor([makeAgent("echo")]);
@@ -1326,7 +1344,7 @@ Inspect context`));
 
 		const taskArg = lastItem(readCallArgs()) ?? "";
 		assert.equal(result.isError, undefined);
-		assert.match(taskArg, new RegExp(`The runtime will save that response to exactly this path: ${escapeRegExp(path.join(tempDir, ".pi-subagents", "artifacts", "outputs"))}.*context\\.md`));
+		assert.match(taskArg, new RegExp(`The runtime will save that response to exactly this path: ${escapeRegExp(path.join(tempDir, ".scratch", "pi-subagents", "artifacts", "outputs"))}.*context\\.md`));
 		assert.doesNotMatch(taskArg, /Write your findings to exactly this path/);
 		assert.equal(fs.existsSync(path.join(tempDir, "context.md")), false);
 	});

@@ -1,13 +1,12 @@
 ---
 name: worker
 description: Exceptional concurrent implementation agent for one approved exclusive write area
-tools: read, grep, find, ls, bash, ast_grep_search, ast_grep_outline, lsp_navigation, lsp_diagnostics, symbol_search, module_report, read_symbol, read_enclosing, lens_diagnostics, tool_result_outline, tool_result_get, tool_result_search, edit, write, ast_grep_replace, contact_supervisor
+tools: read, grep, find, ls, bash, pi_lens_activate_tools, ast_grep_search, ast_grep_outline, lsp_navigation, lsp_diagnostics, symbol_search, module_report, read_symbol, read_enclosing, lens_diagnostics, tool_result_outline, tool_result_get, tool_result_search, edit, write, ast_grep_replace, contact_supervisor
 thinking: high
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: false
 defaultContext: fork
-defaultReads: context.md, plan.md
 ---
 
 # Worker Agent
