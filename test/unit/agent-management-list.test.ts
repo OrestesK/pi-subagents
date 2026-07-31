@@ -70,12 +70,10 @@ describe("agent management list", () => {
 		assert.match(text, /Agents \(effective; default context: fresh\):/);
 		assert.match(text, /- scout — Use for fast read-only codebase recon/);
 		assert.match(text, /- reviewer — Use for read-only review/);
-		assert.match(text, /- worker \(fork\) — Use for straightforward, bounded, approved implementation/);
 		assert.match(text, /- general-purpose — Use when this custom agent fits: Flexible custom tasks/);
 		assert.doesNotMatch(text, /^- .*\((?:builtin|user|project)(?:, context: [^)]+)?\):/m);
 		assert.equal(countLines(text, /^- reviewer\b/), 1);
 		assert.equal(countLines(text, /^- scout\b/), 1);
-		assert.equal(countLines(text, /^- worker\b/), 1);
 
 		assert.match(text, /Context:/);
 		assert.match(text, /fresh = independent child session, not the parent conversation history/);
@@ -83,7 +81,7 @@ describe("agent management list", () => {
 
 		assert.match(text, /Tool access:/);
 		assert.match(text, /Tools are agent-specific, not inherited from the parent/);
-		assert.match(text, /use worker for writes/);
+		assert.match(text, /use clone as the bounded task owner for writes/);
 		assert.match(text, /configured non-advisory agent when MCP, direct MCP, or custom-extension tools are explicitly required/);
 
 		assert.match(text, /Builtin workflows \(deprecated compatibility; prefer prompt shortcuts or explicit tasks\/chain\):/);
@@ -94,8 +92,9 @@ describe("agent management list", () => {
 		assert.equal(countLines(text, /^- builtin\./), 3);
 
 		assert.match(text, /Route selection:/);
-		assert.match(text, /Recon\/planning: scout or context-builder -> planner/);
-		assert.match(text, /Straightforward approved implementation: worker, then reviewer\/quality-gate/);
+		assert.match(text, /Atomic focused task: launch the matching specialist directly/);
+		assert.match(text, /Bounded multi-step task: clone owns chain\/fanout work and returns a complete result/);
+		assert.match(text, /Independent top-level tasks: run clones and specialists in parallel; parent synthesizes/);
 
 		assert.match(text, /Execution:/);
 		assert.match(text, /SINGLE/);

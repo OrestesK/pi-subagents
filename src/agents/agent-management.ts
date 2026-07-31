@@ -102,14 +102,12 @@ function allAgents(d: { builtin: AgentConfig[]; package: AgentConfig[]; user: Ag
 
 const AGENT_LIST_GUIDANCE: Record<string, string> = {
 	"context-builder": "Use for building focused implementation context and handoff packets.",
-	delegate: "Use for lightweight focused tasks that do not need a specialist contract.",
 	oracle: "Use for high-context consistency checks against inherited session state.",
 	planner: "Use for implementation plans after requirements are clear.",
 	researcher: "Use for external/current evidence research and source-backed decisions.",
 	reviewer: "Use for read-only review, quality gates, and adversarial findings.",
 	"run-monitor": "Use for read-only monitoring of long-running tmux/log/status runs.",
 	scout: "Use for fast read-only codebase recon and evidence gathering.",
-	worker: "Use for straightforward, bounded, approved implementation.",
 };
 
 function listAgentGuidance(agent: AgentConfig): string {
@@ -626,16 +624,16 @@ export function handleList(params: ManagementParams, ctx: ManagementContext): Ag
 		"",
 		"Tool access:",
 		"- Tools are agent-specific, not inherited from the parent.",
-		"- Advisory agents are for read-only inspection and recommendations; use worker for writes.",
+		"- Advisory agents are for read-only inspection and recommendations; use clone as the bounded task owner for writes.",
 		"- Use a configured non-advisory agent when MCP, direct MCP, or custom-extension tools are explicitly required.",
 		"",
 		"Builtin workflows (deprecated compatibility; prefer prompt shortcuts or explicit tasks/chain):",
 		...BUILTIN_WORKFLOW_IDS.map((id) => `- builtin.${id}`),
 		"",
 		"Route selection:",
-		"- Recon/planning: scout or context-builder -> planner.",
-		"- Review/quality gate: reviewer fanout; parent synthesizes the verdict.",
-		"- Straightforward approved implementation: worker, then reviewer/quality-gate.",
+		"- Atomic focused task: launch the matching specialist directly.",
+		"- Bounded multi-step task: clone owns chain/fanout work and returns a complete result.",
+		"- Independent top-level tasks: run clones and specialists in parallel; parent synthesizes.",
 		"",
 		"Execution:",
 		"- SINGLE: { agent, task? }",

@@ -10,6 +10,7 @@ let tempHome = "";
 let tempProject = "";
 const originalHome = process.env.HOME;
 const originalUserProfile = process.env.USERPROFILE;
+const originalPiCodingAgentDir = process.env.PI_CODING_AGENT_DIR;
 
 function writeJson(filePath: string, value: unknown): void {
 	fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -31,6 +32,7 @@ describe("builtin agent disabling", () => {
 		tempProject = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-disabled-project-"));
 		process.env.HOME = tempHome;
 		process.env.USERPROFILE = tempHome;
+		process.env.PI_CODING_AGENT_DIR = path.join(tempHome, ".pi", "agent");
 	});
 
 	afterEach(() => {
@@ -38,6 +40,8 @@ describe("builtin agent disabling", () => {
 		else process.env.HOME = originalHome;
 		if (originalUserProfile === undefined) delete process.env.USERPROFILE;
 		else process.env.USERPROFILE = originalUserProfile;
+		if (originalPiCodingAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = originalPiCodingAgentDir;
 		fs.rmSync(tempHome, { recursive: true, force: true });
 		fs.rmSync(tempProject, { recursive: true, force: true });
 	});

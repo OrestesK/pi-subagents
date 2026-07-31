@@ -72,7 +72,7 @@ describe("registered subagent tool description", () => {
 		assert.match(description, /Do not sleep or poll status just to wait/i);
 		assertAsyncLifecycleGuidance(description);
 		assert.match(description, /ordinary child subagents are not orchestrators/i);
-		assert.match(description, /keep one writer/i);
+		assert.match(description, /assign every clone one bounded task-level area/i);
 		assert.match(description, /view: "fleet"/);
 		assert.match(description, /view: "transcript"/);
 		assert.match(description, /action: "steer"/);
@@ -99,7 +99,7 @@ describe("registered subagent tool description", () => {
 		assert.match(description, /Do not sleep or poll/i);
 		assertAsyncLifecycleGuidance(description);
 		assert.match(description, /ordinary child subagents are not orchestrators/i);
-		assert.match(description, /one writer/i);
+		assert.match(description, /assign every clone one bounded task-level area/i);
 		assert.match(description, /view:"fleet"/);
 		assert.match(description, /view:"transcript"/);
 		assert.match(description, /steer/);

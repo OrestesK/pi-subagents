@@ -11,7 +11,7 @@ export const SUBAGENT_SAFETY_GUIDANCE = `SAFETY-CRITICAL SUBAGENT GUIDANCE:
 • Keep execution and management separate: omit action for SINGLE/PARALLEL/CHAIN execution; use action only for list/get/models/create/update/delete/status/interrupt/resume/append-step/doctor.
 • Async/background runs: launch with async:true only when work can proceed independently. Do not sleep or poll status just to wait. Persistent interactive parents should continue useful work. During waits, they may do independent reflection or permitted internal-state maintenance, but only when this work cannot delay required work. When no useful work, independent reflection, or permitted maintenance remains, yield. Completion notifications resume them without another user prompt. Inspect relevant completed outputs before dependent decisions or final claims. Prefer foreground execution for a known immediate dependency.
 • Child-safety boundary: ordinary child subagents are not orchestrators and must not run subagents. Only explicitly configured fanout children may use the child-safe subagent tool, still bounded by depth/session limits.
-• Writing/review safety: keep one writer for the same cwd/worktree. Use fresh-context read-only reviewers/validators for independent review, then have the parent synthesize and apply fixes as the sole writer unless an isolated worktree was intentionally requested.
+• Writing/review safety: assign every clone one bounded task-level area. Clearly independent clone tasks may write in the same project; a clone stops and asks its parent before touching another active task's file. Use fresh-context read-only reviewers/validators for independent review; the parent synthesizes and integrates results.
 • Artifacts/status essentials: chain outputs live under {chain_dir}; async runs expose asyncId/asyncDir with status.json, events.jsonl, output logs, and status via { action: "status", id }. Include output paths and residual risks when reporting results.`;
 
 export const FULL_SUBAGENT_TOOL_DESCRIPTION = `Delegate to subagents or manage agent definitions.
@@ -87,7 +87,7 @@ ASYNC LIFECYCLE:
 
 SAFETY:
 • Ordinary child subagents are not orchestrators and must not run subagents. Only explicit fanout children may use child-safe subagent, still bounded by depth/session limits.
-• Keep one writer per cwd/worktree. Use fresh read-only review/validation fanout, then synthesize and apply fixes from the parent unless isolated worktrees were intentionally requested.`;
+• Assign every clone one bounded task-level area. Clearly independent clone tasks may write in the same project; a clone stops and asks its parent before touching another active task's file. Use fresh read-only review/validation fanout; the parent synthesizes and integrates results.`;
 
 function isToolDescriptionMode(value: unknown): value is ToolDescriptionMode {
 	return value === "full" || value === "compact" || value === "custom";
