@@ -1129,7 +1129,7 @@ These are the parameters the LLM passes when it calls the `subagent` tool. Most 
 
 ### Management actions
 
-Agent definitions are not loaded into context by default. Management actions let the LLM discover, inspect, create, update, and delete agents and chains at runtime.
+Agent definitions are not loaded into context by default. Management actions let the LLM discover, inspect, create, update, and delete agents and chains at runtime. `action: "list"` reports the effective non-disabled agents and chains, fresh/fork semantics, route shapes, ownership guidance, configured tool-bundle IDs, saved-chain locations, and discovery diagnostics; use `action: "get"` for one definition's full details and provenance.
 
 ```ts
 { action: "list" }
@@ -1217,6 +1217,8 @@ Agent definitions are not loaded into context by default. Management actions let
 | `timeoutMs` / `maxRuntimeMs` | number | none | Optional run-level max runtime in milliseconds for foreground and async/background runs. |
 | `turnBudget` | object | none | Optional assistant-turn budget `{ maxTurns, graceTurns }`. At `maxTurns` the child is warned to wrap up. After the grace window (default 1), termination occurs at the next assistant boundary; a response that starts tool work records `termination-deferred` until a later boundary. Partial output is returned on abort. |
 | `toolBudget` | object | none | Optional child tool-call budget `{ soft?, hard, block? }`. At `soft` the child is nudged to finalize. After `hard`, configured tools are blocked; `block` defaults to `read`, `grep`, `find`, and `ls`, while `"*"` blocks every tool call. Final assistant text is never blocked. |
+| `toolExtensions` | object | none | Per-child additions as `{ add: ["bundle-id"] }`. IDs must exist in `config.json`; raw tool names and paths are not accepted here. Supported on single, parallel, chain, dynamic-fanout, and appended children; effective additions persist when a child is resumed. |
+| `requiresCapabilities` | array | none | Pre-spawn requirements chosen from `mcp`, `direct-mcp`, and `custom-extension`. Attach the requirement to each concrete agent-bearing child that needs it. |
 | `cwd` | string | runtime cwd | Override working directory. |
 | `maxOutput` | object | 200KB, 5000 lines | Final output truncation limits. |
 | `artifacts` | boolean | true | Write debug artifacts. |
@@ -1300,6 +1302,43 @@ After a worktree parallel step completes, per-agent diff stats are appended to t
 ## Configuration
 
 `pi-subagents` reads optional JSON config from `~/.pi/agent/extensions/subagent/config.json`.
+
+### Named tool-extension bundles
+
+A caller can add an approved builtin tool to one child without changing the agent definition. Define a named bundle in `config.json`, restrict it to explicit agents, then request the bundle and its required capability on the child:
+
+```json
+{
+  "toolExtensions": {
+    "mcp": {
+      "description": "Regular MCP gateway access",
+      "builtinTools": ["mcp"],
+      "allowedAgents": ["researcher"]
+    }
+  }
+}
+```
+
+```ts
+{
+  agent: "researcher",
+  task: "Research the API with MCP",
+  toolExtensions: { add: ["mcp"] },
+  requiresCapabilities: ["mcp"]
+}
+```
+
+Bundle IDs are configuration-owned. The current registry accepts the builtin tool `mcp`; it does not accept raw paths or transport configuration. Unknown bundles, malformed registries, disallowed agents, and declared capabilities the effective child cannot satisfy fail before launch. `mcp` requires the effective builtin tool, `direct-mcp` requires configured direct MCP tools, and `custom-extension` requires an explicit agent extension or path-based extension tool. Default extension discovery alone is not capability proof.
+
+The same fields are available on top-level parallel tasks, sequential and parallel chain children, and dynamic-fanout templates. Effective tools are persisted for async append and resume/revival so a continued child retains the bundle it originally received. Use `subagent({ action: "list" })` to discover configured bundle IDs and their allowed agents.
+
+### Run-monitor terminal reports
+
+The `run-monitor` role cannot finish normally with a missing or unknown state, a nonterminal state such as `running`, or `next_parent_action: continue_waiting`. A clean nonterminal report receives a hidden same-session follow-up and keeps monitoring; the detached runner additionally rejects an otherwise clean nonterminal final report if the child exits. Documented terminal states are `completed`, `failed`, `missing`, `stuck`, and `timed_out`. Other agents keep the normal upstream completion behavior.
+
+### Retryable transport failures
+
+Configured `fallbackModels` also advance after provider transport messages such as WebSocket closure or `Connection ended`. Errors reported as a child tool failure remain non-retryable even when their text mentions a network condition, because retrying the whole task with another model cannot repair a failed tool call.
 
 ### `toolDescriptionMode`
 

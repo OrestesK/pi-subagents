@@ -59,6 +59,21 @@ const ReadsOverride = Type.Unsafe({
 	description: "Files to read before running (array of filenames), or false to disable",
 });
 
+const RequiredCapabilitiesOverride = Type.Array(
+	Type.String({ enum: ["mcp", "direct-mcp", "custom-extension"] }),
+	{ minItems: 1, description: "Declared tool capability classes this child must have before launch." },
+);
+
+const ToolExtensionsOverride = Type.Object({
+	add: Type.Array(Type.String({ minLength: 1 }), {
+		minItems: 1,
+		description: "Configured tool-extension bundle IDs to add for this child.",
+	}),
+}, {
+	additionalProperties: false,
+	description: "Add configured tool-extension bundle IDs for this child; do not pass raw tool names or paths.",
+});
+
 const JsonSchemaObject = Type.Unsafe({
 	type: "object",
 	additionalProperties: true,
@@ -103,6 +118,8 @@ const TaskItem = Type.Object({
 	progress: Type.Optional(Type.Boolean({ description: "Enable progress.md tracking for this task" })),
 	model: Type.Optional(Type.String({ description: "Override model for this task (e.g. 'google/gemini-3-pro')" })),
 	skill: Type.Optional(SkillOverride),
+	requiresCapabilities: Type.Optional(RequiredCapabilitiesOverride),
+	toolExtensions: Type.Optional(ToolExtensionsOverride),
 	toolBudget: Type.Optional(ToolBudgetOverride),
 	acceptance: Type.Optional(AcceptanceOverride),
 });
@@ -123,6 +140,8 @@ export const ParallelTaskSchema = Type.Object({
 	progress: Type.Optional(Type.Boolean({ description: "Enable progress.md tracking in {chain_dir}" })),
 	skill: Type.Optional(SkillOverride),
 	model: Type.Optional(Type.String({ description: "Override model for this task" })),
+	requiresCapabilities: Type.Optional(RequiredCapabilitiesOverride),
+	toolExtensions: Type.Optional(ToolExtensionsOverride),
 	toolBudget: Type.Optional(ToolBudgetOverride),
 	acceptance: Type.Optional(AcceptanceOverride),
 });
@@ -151,6 +170,8 @@ export const DynamicParallelTemplateSchema = Type.Object({
 	progress: Type.Optional(Type.Boolean({ description: "Enable progress.md tracking in {chain_dir}" })),
 	skill: Type.Optional(SkillOverride),
 	model: Type.Optional(Type.String({ description: "Override model for this task" })),
+	requiresCapabilities: Type.Optional(RequiredCapabilitiesOverride),
+	toolExtensions: Type.Optional(ToolExtensionsOverride),
 	toolBudget: Type.Optional(ToolBudgetOverride),
 	acceptance: Type.Optional(AcceptanceOverride),
 }, { additionalProperties: false });
@@ -177,6 +198,8 @@ export const ChainItem = Type.Object({
 	progress: Type.Optional(Type.Boolean({ description: "Enable progress.md tracking in {chain_dir}" })),
 	skill: Type.Optional(SkillOverride),
 	model: Type.Optional(Type.String({ description: "Override model for this step" })),
+	requiresCapabilities: Type.Optional(RequiredCapabilitiesOverride),
+	toolExtensions: Type.Optional(ToolExtensionsOverride),
 	toolBudget: Type.Optional(ToolBudgetOverride),
 	acceptance: Type.Optional(AcceptanceOverride),
 	parallel: Type.Optional(Type.Unsafe({
@@ -292,6 +315,8 @@ const SubagentParamsSchema = Type.Object({
 	outputMode: Type.Optional(OutputModeOverride),
 	skill: Type.Optional(SkillOverride),
 	model: Type.Optional(Type.String({ description: "Override model for single agent (e.g. 'anthropic/claude-sonnet-4')" })),
+	requiresCapabilities: Type.Optional(RequiredCapabilitiesOverride),
+	toolExtensions: Type.Optional(ToolExtensionsOverride),
 	acceptance: Type.Optional(AcceptanceOverride),
 });
 

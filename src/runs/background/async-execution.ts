@@ -31,6 +31,7 @@ import {
 	type AcceptanceInput,
 	type ArtifactConfig,
 	type Details,
+	type ExtensionConfig,
 	type MaxOutputConfig,
 	type NestedRouteInfo,
 	type ResolvedControlConfig,
@@ -49,6 +50,7 @@ import {
 import { nestedResultsPath, resolveInheritedNestedRouteFromEnv, resolveNestedParentAddressFromEnv, writeNestedEvent } from "../shared/nested-events.ts";
 import { initialTurnBudgetState } from "../shared/turn-budget.ts";
 import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
+import { resolveToolExtensionAgent } from "../shared/tool-extensions.ts";
 import type { ImportedAsyncRoot } from "./chain-root-attachment.ts";
 import type { SessionLeaseRequest } from "../shared/session-lease.ts";
 
@@ -123,6 +125,7 @@ interface AsyncChainParams {
 	attachRoot?: ImportedAsyncRoot & { agent: string; outputName?: string; label?: string };
 	resultMode?: Exclude<SubagentRunMode, "single">;
 	agents: AgentConfig[];
+	extensionConfig?: ExtensionConfig;
 	ctx: AsyncExecutionContext;
 	availableModels?: AvailableModelInfo[];
 	cwd?: string;
@@ -206,6 +209,7 @@ export interface AsyncRunnerStepBuildParams {
 	attachRoot?: ImportedAsyncRoot & { agent: string; outputName?: string; label?: string };
 	resultMode?: SubagentRunMode;
 	agents: AgentConfig[];
+	extensionConfig?: ExtensionConfig;
 	ctx: AsyncExecutionContext;
 	availableModels?: AvailableModelInfo[];
 	cwd?: string;
@@ -564,7 +568,7 @@ export function buildAsyncRunnerSteps(id: string, params: AsyncRunnerStepBuildPa
 		};
 	};
 	const buildSeqStep = (s: SequentialStep, sessionFile?: string, behaviorCwd?: string, progressPrecreated = false, resolvedBehavior?: ResolvedStepBehavior, flatIndex?: number, parallelOutputNamespace?: { stepIndex: number; taskIndex?: number }) => {
-		const a = agents.find((x) => x.name === s.agent)!;
+		const a = resolveToolExtensionAgent(agents, params.extensionConfig ?? {}, s.agent, s.toolExtensions);
 		const toolBudgetInput = s.toolBudget ?? params.toolBudget ?? a.toolBudget ?? params.configToolBudget;
 		const resolvedToolBudget = validateToolBudgetConfig(toolBudgetInput, s.toolBudget ? "toolBudget" : a.toolBudget ? "agent.toolBudget" : "config.toolBudget");
 		if (resolvedToolBudget.error) throw new AsyncStartValidationError(resolvedToolBudget.error);
@@ -838,6 +842,7 @@ export function executeAsyncChain(
 		attachRoot: params.attachRoot,
 		resultMode,
 		agents,
+		extensionConfig: params.extensionConfig,
 		ctx,
 		availableModels: params.availableModels,
 		cwd,

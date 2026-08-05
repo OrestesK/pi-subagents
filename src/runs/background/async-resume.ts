@@ -37,6 +37,7 @@ export type AsyncResumeTarget = {
 	sessionFile?: string;
 	model?: string;
 	thinking?: string;
+	tools?: string[];
 	recoveryDescriptor?: SteeringRecoveryDescriptor;
 };
 
@@ -52,7 +53,7 @@ interface AsyncResultFile {
 	sessionFile?: string;
 	model?: string;
 	thinking?: string;
-	results?: Array<{ agent?: string; success?: boolean; sessionFile?: string; intercomTarget?: string; model?: string; thinking?: string }>;
+	results?: Array<{ agent?: string; success?: boolean; sessionFile?: string; intercomTarget?: string; model?: string; thinking?: string; tools?: string[] }>;
 }
 
 export interface AsyncRunLocation {
@@ -396,6 +397,7 @@ export function resolveAsyncResumeTarget(params: AsyncResumeParams, deps: AsyncR
 					sessionFile: selectedStep.sessionFile ?? status?.sessionFile ?? result?.sessionFile,
 					model: selectedStep.model,
 					thinking: selectedStep.thinking,
+					tools: selectedStep.tools,
 					...(recoveryDescriptor ? { recoveryDescriptor } : {}),
 				};
 			}
@@ -420,6 +422,7 @@ export function resolveAsyncResumeTarget(params: AsyncResumeParams, deps: AsyncR
 				sessionFile: selected.step.sessionFile ?? status?.sessionFile ?? result?.sessionFile,
 				model: selected.step.model,
 				thinking: selected.step.thinking,
+				tools: selected.step.tools,
 				...(recoveryDescriptor ? { recoveryDescriptor } : {}),
 			};
 		}
@@ -441,6 +444,7 @@ export function resolveAsyncResumeTarget(params: AsyncResumeParams, deps: AsyncR
 	const resolvedSessionFile = sessionFile ? validateResumeSessionFile(runId, sessionFile) : undefined;
 	const stepModel = statusSteps[index]?.model ?? resultSteps[index]?.model ?? (stepCount === 1 ? result?.model : undefined);
 	const stepThinking = statusSteps[index]?.thinking ?? resultSteps[index]?.thinking ?? (stepCount === 1 ? result?.thinking : undefined);
+	const stepTools = statusSteps[index]?.tools ?? resultSteps[index]?.tools;
 
 	return {
 		kind: "revive",
@@ -453,6 +457,7 @@ export function resolveAsyncResumeTarget(params: AsyncResumeParams, deps: AsyncR
 		...(resolvedSessionFile ? { sessionFile: resolvedSessionFile } : {}),
 		...(stepModel ? { model: stepModel } : {}),
 		...(stepThinking ? { thinking: stepThinking } : {}),
+		...(stepTools ? { tools: stepTools } : {}),
 		...(recoveryDescriptor ? { recoveryDescriptor } : {}),
 	};
 }

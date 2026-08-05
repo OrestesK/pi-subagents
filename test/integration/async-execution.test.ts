@@ -2392,6 +2392,71 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		assert.match(statusPayload.steps?.[0]?.error ?? "", /429 quota exceeded/);
 	});
 
+	it("fails a run-monitor that exits with a nonterminal final status", { skip: !isAsyncAvailable() ? "jiti not available" : undefined }, async () => {
+		mockPi.onCall({
+			output: "# Run Monitor Status\n- **Final state:** running\n- **next_parent_action:** continue_waiting",
+		});
+		const id = `async-nonterminal-run-monitor-${Date.now().toString(36)}`;
+		const asyncDir = path.join(ASYNC_DIR, id);
+		executeAsyncSingle(id, {
+			agent: "run-monitor",
+			task: "Monitor deploy-session until it reaches a terminal state",
+			agentConfig: makeAgent("run-monitor", { model: "openai/gpt-5-mini" }),
+			ctx: { pi: { events: { emit() {} } }, cwd: tempDir, currentSessionId: "session-1" },
+			artifactConfig: {
+				enabled: false,
+				includeInput: false,
+				includeOutput: false,
+				includeJsonl: false,
+				includeMetadata: false,
+				cleanupDays: 7,
+			},
+			shareEnabled: false,
+			maxSubagentDepth: 2,
+		});
+
+		const resultPath = await waitForAsyncResultFile(id);
+		const payload = JSON.parse(fs.readFileSync(resultPath, "utf-8")) as AsyncResultPayload;
+		assert.equal(payload.success, false);
+		assert.equal(payload.state, "failed");
+		assert.equal(payload.exitCode, 1);
+		assert.equal(payload.results[0]?.success, false);
+		assert.match(payload.results[0]?.error ?? "", /run-monitor exited with nonterminal state/i);
+		const statusPayload = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf-8")) as AsyncStatusPayload;
+		assert.equal(statusPayload.state, "failed");
+		assert.equal(statusPayload.steps?.[0]?.status, "failed");
+	});
+
+	it("keeps a same-process run-monitor alive until its terminal report", { skip: !isAsyncAvailable() ? "jiti not available" : undefined }, async () => {
+		const running = "- state: running\n- next_parent_action: continue_waiting";
+		const completed = "- state: completed\n- next_parent_action: no_action";
+		mockPi.onCall({
+			steps: [
+				{ jsonl: [events.assistantMessage(running), { type: "turn_start", turnIndex: 1, timestamp: Date.now() }] },
+				{ delay: 1300, jsonl: [events.assistantMessage(completed)] },
+			],
+			keepAliveAfterFinalMessageMs: 10000,
+		});
+		const id = `async-run-monitor-continuation-${Date.now().toString(36)}`;
+		executeAsyncSingle(id, {
+			agent: "run-monitor",
+			task: "Monitor until terminal",
+			agentConfig: makeAgent("run-monitor"),
+			ctx: { pi: { events: { emit() {} } }, cwd: tempDir, currentSessionId: "session-1" },
+			artifactConfig: { enabled: false, includeInput: false, includeOutput: false, includeJsonl: false, includeMetadata: false, cleanupDays: 7 },
+			shareEnabled: false,
+			maxSubagentDepth: 2,
+		});
+
+		const resultPath = await waitForAsyncResultFile(id);
+		const payload = JSON.parse(fs.readFileSync(resultPath, "utf-8")) as AsyncResultPayload;
+		assert.equal(mockPi.callCount(), 1);
+		assert.equal(payload.success, true);
+		assert.equal(payload.exitCode, 0);
+		assert.equal(payload.results[0]?.success, true);
+		assert.equal(payload.results[0]?.output, completed);
+	});
+
 	it("background runs treat recovered child errors as successful", { skip: !isAsyncAvailable() ? "jiti not available" : undefined }, async () => {
 		mockPi.onCall({
 			jsonl: [

@@ -39,6 +39,7 @@ import type { ScheduledRunAction } from "../background/scheduled-runs.ts";
 import { enqueueChainAppendRequest, readPendingChainAppendRequests, runnerStepOutputNames } from "../background/chain-append.ts";
 import { ChainOutputValidationError, validateChainOutputBindingsWithContext } from "../shared/chain-outputs.ts";
 import { validateExecutionAcceptance } from "../shared/acceptance.ts";
+import { validateCapabilityRequirements } from "../shared/capability-requirements.ts";
 import { createForkContextResolver, forkedChildRequiresThinkingOff } from "../../shared/fork-context.ts";
 import { resolveCurrentSessionId } from "../../shared/session-identity.ts";
 import { applyIntercomBridgeToAgent, INTERCOM_BRIDGE_MARKER, resolveIntercomBridge, resolveIntercomSessionTarget, resolveSubagentIntercomTarget, type IntercomBridgeState } from "../../intercom/intercom-bridge.ts";
@@ -46,6 +47,7 @@ import { formatControlIntercomMessage, formatControlNoticeMessage, resolveContro
 import { resolveTurnBudgetConfig } from "../shared/turn-budget.ts";
 import { formatSpawnBudget, getSpawnBudgetSnapshot, grantSpawnBudget, preflightSpawnBudget, preflightSpawnBudgetGrant, reserveSpawnBudget } from "../shared/spawn-budget.ts";
 import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
+import { resolveToolExtensionAgent } from "../shared/tool-extensions.ts";
 import { finalizeSingleOutput, injectSingleOutputInstruction, normalizeSingleOutputOverride, resolveSingleOutputPath, validateFileOnlyOutputMode } from "../shared/single-output.ts";
 import { compactForegroundDetails, getSingleResultOutput, mapConcurrent, readStatus, resolveChildCwd, sumResultsCost, sumResultsUsage } from "../../shared/utils.ts";
 import { DEFAULT_GLOBAL_CONCURRENCY_LIMIT, Semaphore } from "../shared/parallel-utils.ts";
@@ -96,6 +98,8 @@ import {
 	type ResolvedToolBudget,
 	type SingleResult,
 	type ToolBudgetConfig,
+	type ToolExtensionRequest,
+	type RequiredCapability,
 	type TurnBudgetConfig,
 	type SubagentRunMode,
 	type SubagentState,
@@ -128,6 +132,8 @@ interface TaskParam {
 	model?: string;
 	skill?: string | string[] | boolean;
 	acceptance?: AcceptanceInput;
+	requiresCapabilities?: RequiredCapability[];
+	toolExtensions?: ToolExtensionRequest;
 	toolBudget?: ToolBudgetConfig;
 }
 
@@ -144,6 +150,8 @@ export interface SubagentParamsLike {
 	message?: string;
 	chain?: ChainStep[];
 	tasks?: TaskParam[];
+	requiresCapabilities?: RequiredCapability[];
+	toolExtensions?: ToolExtensionRequest;
 	concurrency?: number;
 	worktree?: boolean;
 	context?: "fresh" | "fork";
@@ -817,6 +825,7 @@ function appendStepToAsyncChain(input: {
 		task: input.params.task,
 		resultMode: "chain",
 		agents,
+		extensionConfig: input.deps.config,
 		ctx: asyncCtx,
 		availableModels: input.ctx.modelRegistry.getAvailable().map(toModelInfo),
 		cwd: status.cwd ?? input.requestCwd,
@@ -1194,6 +1203,7 @@ async function resumeAsyncRun(input: {
 				label: `Attached ${target.runId}`,
 			},
 			agents,
+			extensionConfig: input.deps.config,
 			ctx: {
 				pi: input.deps.pi,
 				cwd: input.requestCwd,
@@ -1236,7 +1246,9 @@ async function resumeAsyncRun(input: {
 	}
 
 	const runId = randomUUID().slice(0, 8);
-	const recoveryAgentConfig = recoveryDescriptor ? applySteeringRecoveryAgentConfig(agentConfig, recoveryDescriptor) : agentConfig;
+	const persistedAgentConfig = recoveryDescriptor ? applySteeringRecoveryAgentConfig(agentConfig, recoveryDescriptor) : agentConfig;
+	const resumedTools = "tools" in target ? target.tools : undefined;
+	const recoveryAgentConfig = resumedTools ? { ...persistedAgentConfig, tools: [...resumedTools] } : persistedAgentConfig;
 	const artifactConfig: ArtifactConfig = recoveryDescriptor?.artifactConfig ?? { ...DEFAULT_ARTIFACT_CONFIG, enabled: input.params.artifacts !== false };
 	const artifactsDir = recoveryDescriptor?.artifactsDir ?? getArtifactsDir(parentSessionFile, effectiveCwd);
 	const availableModels = input.ctx.modelRegistry.getAvailable().map(toModelInfo);
@@ -1968,6 +1980,8 @@ function runAsyncPath(data: ExecutionContextData, deps: ExecutorDeps): AgentTool
 			...(task.outputMode !== undefined ? { outputMode: task.outputMode } : {}),
 			...(task.reads !== undefined && task.reads !== true ? { reads: task.reads } : {}),
 			...(task.progress !== undefined ? { progress: task.progress } : {}),
+			...(task.requiresCapabilities !== undefined ? { requiresCapabilities: task.requiresCapabilities } : {}),
+			...(task.toolExtensions !== undefined ? { toolExtensions: task.toolExtensions } : {}),
 			...(task.toolBudget !== undefined ? { toolBudget: task.toolBudget } : {}),
 			...(task.acceptance !== undefined ? { acceptance: task.acceptance } : {}),
 		}));
@@ -1980,6 +1994,7 @@ function runAsyncPath(data: ExecutionContextData, deps: ExecutorDeps): AgentTool
 			resultMode: "parallel",
 			goal: params.tasks[0]?.task ?? "",
 			agents,
+			extensionConfig: deps.config,
 			ctx: asyncCtx,
 			availableModels,
 			cwd: effectiveCwd,
@@ -2018,6 +2033,7 @@ function runAsyncPath(data: ExecutionContextData, deps: ExecutorDeps): AgentTool
 			task: params.task,
 			goal: resolveAsyncEventGoal(params.task, rawChain),
 			agents,
+			extensionConfig: deps.config,
 			ctx: asyncCtx,
 			availableModels,
 			cwd: effectiveCwd,
@@ -2048,7 +2064,12 @@ function runAsyncPath(data: ExecutionContextData, deps: ExecutorDeps): AgentTool
 	}
 
 	if (hasSingle) {
-		const a = agents.find((x) => x.name === params.agent);
+		let a: AgentConfig;
+		try {
+			a = resolveToolExtensionAgent(agents, deps.config, params.agent!, params.toolExtensions);
+		} catch (error) {
+			return toExecutionErrorResult(params, error);
+		}
 		if (!a) {
 			return {
 				content: [{ type: "text", text: `Unknown agent: ${params.agent}` }],
@@ -2134,6 +2155,7 @@ async function runChainPath(data: ExecutionContextData, deps: ExecutorDeps): Pro
 		chain,
 		task: params.task,
 		agents,
+		extensionConfig: deps.config,
 		ctx,
 		modelScope: data.modelScope,
 		intercomEvents: deps.pi.events,
@@ -2564,16 +2586,12 @@ async function runParallelPath(data: ExecutionContextData, deps: ExecutorDeps): 
 		};
 
 	const agentConfigs: AgentConfig[] = [];
-	for (const t of tasks) {
-		const config = agents.find((a) => a.name === t.agent);
-		if (!config) {
-			return {
-				content: [{ type: "text", text: `Unknown agent: ${t.agent}` }],
-				isError: true,
-				details: { mode: "parallel" as const, results: [] },
-			};
+	for (const task of tasks) {
+		try {
+			agentConfigs.push(resolveToolExtensionAgent(agents, deps.config, task.agent, task.toolExtensions));
+		} catch (error) {
+			return buildParallelModeError(error instanceof Error ? error.message : String(error));
 		}
-		agentConfigs.push(config);
 	}
 
 	const currentMaxSubagentDepth = resolveCurrentMaxSubagentDepth(deps.config.maxSubagentDepth);
@@ -2915,7 +2933,12 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 	const childIntercomTarget = data.intercomBridge.active ? resolveSubagentIntercomTarget(runId, params.agent!, 0) : undefined;
 	const allProgress: AgentProgress[] = [];
 	const allArtifactPaths: ArtifactPaths[] = [];
-	const agentConfig = agents.find((a) => a.name === params.agent);
+	let agentConfig: AgentConfig;
+	try {
+		agentConfig = resolveToolExtensionAgent(agents, deps.config, params.agent!, params.toolExtensions);
+	} catch (error) {
+		return toExecutionErrorResult(params, error);
+	}
 	if (!agentConfig) {
 		return {
 			content: [{ type: "text", text: `Unknown agent: ${params.agent}` }],
@@ -3084,7 +3107,7 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 		: undefined;
 
 	const deadlineAt = data.deadlineAt ?? (data.timeoutMs !== undefined ? Date.now() + data.timeoutMs : undefined);
-	const r = await runSync(ctx.cwd, agents, params.agent!, task, {
+	const r = await runSync(ctx.cwd, [agentConfig], params.agent!, task, {
 		parentSessionId: ctx.sessionManager.getSessionId() ?? undefined,
 		cwd: effectiveCwd,
 		signal,
@@ -3621,6 +3644,8 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 		const agents = intercomBridge.active
 			? discoveredAgents.map((agent) => applyIntercomBridgeToAgent(agent, intercomBridge))
 			: discoveredAgents;
+		const capabilityError = validateCapabilityRequirements(effectiveParams, agents, deps.config);
+		if (capabilityError) return buildRequestedModeError(effectiveParams, capabilityError);
 		const runId = randomUUID().slice(0, 8);
 		const inheritedNestedRoute = resolveInheritedNestedRouteFromEnv();
 		const nestedParentAddress = inheritedNestedRoute ? resolveNestedParentAddressFromEnv() : undefined;

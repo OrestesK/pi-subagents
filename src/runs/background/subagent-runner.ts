@@ -67,7 +67,7 @@ import { formatModelAttemptNote, isRetryableModelFailure } from "../shared/model
 import { createSteeringStatus, recordSteeringRequest, steeringStatus, terminalSteeringNoticeState, updateSteeringTarget } from "./steering.ts";
 import { attachPostExitStdioGuard, trySignalChild } from "../../shared/post-exit-stdio-guard.ts";
 import { detectSubagentError, extractTextFromContent, extractToolArgsPreview, getFinalOutput, readStatus } from "../../shared/utils.ts";
-import { evaluateCompletionMutationGuard } from "../shared/completion-guard.ts";
+import { evaluateCompletionMutationGuard, runMonitorCompletionError } from "../shared/completion-guard.ts";
 import {
 	createMutatingFailureState,
 	didMutatingToolFail,
@@ -152,6 +152,7 @@ interface StepResult {
 	agent: string;
 	output: string;
 	error?: string;
+	tools?: string[];
 	protocolError?: ProtocolOutputLimit;
 	success: boolean;
 	exitCode?: number | null;
@@ -489,6 +490,7 @@ function runPiStreaming(
 
 			appendChildEvent(event);
 			transcriptWriter?.writeChildEvent(event);
+			if (event.type === "turn_start") cancelProvisionalFinalDrain();
 			if (event.type === "agent_settled") agentSettledReceived = true;
 			applyChildLifecycle(projectChildLifecycle(event));
 
@@ -573,6 +575,17 @@ function runPiStreaming(
 		let protocolHardKillTimer: NodeJS.Timeout | undefined;
 		let protocolError: ProtocolOutputLimit | undefined;
 		let settled = false;
+		function cancelProvisionalFinalDrain(): void {
+			if (forcedTerminationSignal) return;
+			if (finalDrainTimer) {
+				clearTimeout(finalDrainTimer);
+				finalDrainTimer = undefined;
+			}
+			if (finalHardKillTimer) {
+				clearTimeout(finalHardKillTimer);
+				finalHardKillTimer = undefined;
+			}
+		}
 		applyChildLifecycle = (action: ChildLifecycleAction): void => {
 			if (action === "cancel-drain") {
 				if (finalDrainTimer) {
@@ -1227,7 +1240,18 @@ async function runSingleStep(
 		const completionGuardError = completionGuardTriggered
 			? "Subagent completed without making edits for an implementation task.\nIt appears to have returned planning or scratchpad output instead of applying changes."
 			: undefined;
-		const effectiveExitCode = toolAvailabilityError || completionGuardTriggered || structuredError
+		const monitorCompletionError = run.exitCode === 0
+			&& !run.error
+			&& !run.interrupted
+			&& !run.stopped
+			&& !run.timedOut
+			&& !toolAvailabilityError
+			&& !hiddenError?.hasError
+			&& !emptyOutputError
+			&& !structuredError
+			? runMonitorCompletionError(step.agent, run.finalOutput)
+			: undefined;
+		const effectiveExitCode = toolAvailabilityError || completionGuardTriggered || structuredError || monitorCompletionError
 			? 1
 			: hiddenError?.hasError
 				? (hiddenError.exitCode ?? 1)
@@ -1239,6 +1263,7 @@ async function runSingleStep(
 		const error = toolAvailabilityError
 			?? completionGuardError
 			?? structuredError
+			?? monitorCompletionError
 			?? (hiddenError?.hasError
 				? hiddenError.details
 					? `${hiddenError.errorType} failed (exit ${effectiveExitCode}): ${hiddenError.details}`
@@ -1392,6 +1417,7 @@ async function runSingleStep(
 		wrapUpRequested: finalResult?.wrapUpRequested || turnBudget?.outcome === "wrap-up-requested" || turnBudget?.outcome === "termination-deferred" || turnBudgetExceeded || undefined,
 		toolBudget,
 		toolBudgetBlocked: toolBudgetBlocked || undefined,
+		tools: step.tools,
 		completionGuardTriggered: completionGuardTriggeredFinal,
 		structuredOutput: timedOutAfterAcceptance || stoppedAfterAcceptance || turnBudgetExceeded ? undefined : (finalResult as (RunPiStreamingResult & { structuredOutput?: unknown }) | undefined)?.structuredOutput,
 		structuredOutputPath: timedOutAfterAcceptance || stoppedAfterAcceptance || turnBudgetExceeded ? undefined : effectiveStructuredOutput?.outputPath,
@@ -1621,6 +1647,7 @@ async function runSubagent(
 					...(task.sessionFile ? { sessionFile: task.sessionFile } : {}),
 					...(transcriptPath ? { transcriptPath } : {}),
 					skills: task.skills,
+					tools: task.tools,
 					model: task.model,
 					thinking: task.thinking,
 					attemptedModels: task.modelCandidates && task.modelCandidates.length > 0 ? task.modelCandidates : task.model ? [task.model] : undefined,
@@ -1657,6 +1684,7 @@ async function runSubagent(
 				...(step.sessionFile ? { sessionFile: step.sessionFile } : {}),
 				...(transcriptPath ? { transcriptPath } : {}),
 				skills: step.skills,
+				tools: step.tools,
 				model: step.model,
 				thinking: step.thinking,
 				attemptedModels: step.modelCandidates && step.modelCandidates.length > 0 ? step.modelCandidates : step.model ? [step.model] : undefined,
@@ -2743,6 +2771,7 @@ async function runSubagent(
 					...(task.sessionFile ? { sessionFile: task.sessionFile } : {}),
 					...(transcriptPath ? { transcriptPath } : {}),
 					skills: task.skills,
+					tools: task.tools,
 					model: task.model,
 					thinking: task.thinking,
 					attemptedModels: task.modelCandidates && task.modelCandidates.length > 0 ? task.modelCandidates : task.model ? [task.model] : undefined,
@@ -3677,6 +3706,7 @@ async function runSubagent(
 				toolBudget: r.toolBudget,
 				toolBudgetBlocked: r.toolBudgetBlocked || undefined,
 				sessionFile: r.sessionFile,
+				tools: r.tools,
 				intercomTarget: r.intercomTarget,
 				model: r.model,
 				attemptedModels: r.attemptedModels,

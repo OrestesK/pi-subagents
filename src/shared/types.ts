@@ -899,6 +899,7 @@ export interface AsyncStatus {
 		toolBudgetBlocked?: boolean;
 		tokens?: TokenUsage;
 		skills?: string[];
+		tools?: string[];
 		model?: string;
 		thinking?: string;
 		attemptedModels?: string[];
@@ -1176,12 +1177,27 @@ export interface ScheduledRunsConfig {
 	maxPending?: number;
 }
 
+export type RequiredCapability = "mcp" | "direct-mcp" | "custom-extension";
+
+export interface ToolExtensionBundle {
+	description: string;
+	builtinTools: string[];
+	allowedAgents: string[];
+}
+
+export type ToolExtensionRegistry = Record<string, ToolExtensionBundle>;
+
+export interface ToolExtensionRequest {
+	add: string[];
+}
+
 export interface ExtensionConfig {
 	asyncByDefault?: boolean;
 	/** Show the above-editor async runs widget. Defaults to true. */
 	asyncWidget?: boolean;
 	/** Tool description variant registered for the parent-facing subagent tool. Defaults to full. */
 	toolDescriptionMode?: ToolDescriptionMode;
+	toolExtensions?: ToolExtensionRegistry;
 	forceTopLevelAsync?: boolean;
 	waitTool?: WaitToolConfig;
 	defaultSessionDir?: string;

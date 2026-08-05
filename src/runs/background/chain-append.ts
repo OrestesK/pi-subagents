@@ -138,6 +138,7 @@ function statusStepForTask(task: RunnerSubagentStep): StatusStep {
 		status: "pending",
 		...(task.sessionFile ? { sessionFile: task.sessionFile } : {}),
 		skills: task.skills,
+		tools: task.tools,
 		model: task.model,
 		thinking: task.thinking,
 		attemptedModels: task.modelCandidates && task.modelCandidates.length > 0 ? task.modelCandidates : task.model ? [task.model] : undefined,

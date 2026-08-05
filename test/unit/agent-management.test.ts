@@ -53,8 +53,9 @@ describe("agent management config parsing", () => {
 		);
 
 		assert.equal(result.isError, false);
-		assert.match(readText(result), /- scout \(project\): Project scout override/);
-		assert.doesNotMatch(readText(result), /- scout \(builtin/);
+		const text = readText(result);
+		assert.match(text, /^- scout — Use for fast read-only codebase recon and evidence gathering\.$/m);
+		assert.equal(text.match(/^- scout\b/gm)?.length, 1);
 	});
 
 	it("gets only the effective agent detail and respects explicit scope", () => {

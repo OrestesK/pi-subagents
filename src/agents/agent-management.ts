@@ -103,6 +103,29 @@ function allAgents(d: { builtin: AgentConfig[]; package: AgentConfig[]; user: Ag
 	return [...d.builtin, ...d.package, ...d.user, ...d.project];
 }
 
+const AGENT_LIST_GUIDANCE: Record<string, string> = {
+	"context-builder": "Use for building focused implementation context and handoff packets.",
+	oracle: "Use for high-context consistency checks against inherited session state.",
+	planner: "Use for implementation plans after requirements are clear.",
+	researcher: "Use for external/current evidence research and source-backed decisions.",
+	reviewer: "Use for read-only review, quality gates, and adversarial findings.",
+	"run-monitor": "Use for read-only monitoring of long-running tmux/log/status runs.",
+	scout: "Use for fast read-only codebase recon and evidence gathering.",
+};
+
+function listAgentGuidance(agent: AgentConfig): string {
+	const guidance = AGENT_LIST_GUIDANCE[agent.name];
+	if (guidance) return guidance;
+	return agent.source === "builtin"
+		? `Use when this builtin agent fits: ${agent.description}`
+		: `Use when this custom agent fits: ${agent.description}`;
+}
+
+function formatListAgent(agent: AgentConfig): string {
+	const context = agent.defaultContext === "fork" ? " (fork)" : "";
+	return `- ${agent.name}${context} — ${listAgentGuidance(agent)}`;
+}
+
 function availableNames(cwd: string, kind: "agent" | "chain"): string[] {
 	const d = discoverAgentsAll(cwd);
 	const items = kind === "agent" ? allAgents(d) : d.chains;
@@ -640,10 +663,12 @@ function formatChainDetail(chain: ChainConfig): string {
 export function handleList(params: ManagementParams, ctx: ManagementContext): AgentToolResult<Details> {
 	const scope = normalizeListScope(params.agentScope) ?? "both";
 	const d = discoverAgentsAll(ctx.cwd);
-	const scopedAgents = mergeAgentsForScope(scope, d.user, d.project, d.builtin, d.package)
-		.sort((a, b) => a.name.localeCompare(b.name));
-	const agents = scopedAgents.filter((a) => !a.disabled);
-	const chains = d.chains.filter((c) => scope === "both" || c.source === "package" || c.source === scope).sort((a, b) => a.name.localeCompare(b.name));
+	const agents = mergeAgentsForScope(scope, d.user, d.project, d.builtin, d.package)
+		.filter((agent) => !agent.disabled)
+		.sort((left, right) => left.name.localeCompare(right.name));
+	const chains = d.chains
+		.filter((chain) => scope === "both" || chain.source === "package" || chain.source === scope)
+		.sort((left, right) => left.name.localeCompare(right.name));
 	const diagnostics = d.chainDiagnostics.filter((entry) => scope === "both" || entry.source === scope);
 	const proactiveSuggestions = buildProactiveSkillSubagentRecommendationLines({
 		agents,
@@ -651,16 +676,47 @@ export function handleList(params: ManagementParams, ctx: ManagementContext): Ag
 		config: ctx.config?.proactiveSkillSubagents,
 		discoverAvailableSkills: () => discoverAvailableSkills(ctx.cwd),
 	});
+	const toolExtensions = Object.entries(ctx.config?.toolExtensions ?? {})
+		.sort(([left], [right]) => left.localeCompare(right));
+	const projectChainDir = d.projectChainDir ?? path.join(getProjectConfigDir(ctx.cwd), "chains");
 	const lines = [
-		"Executable agents:",
-		...(agents.length
-			? agents.map((a) => `- ${a.name} (${a.source}${a.defaultContext ? `, context: ${a.defaultContext}` : ""}): ${a.description}`)
-			: ["- (none)"]),
+		"Agents (effective; default context: fresh):",
+		...(agents.length ? agents.map(formatListAgent) : ["- (none)"]),
 		"",
-		"Chains:",
-		...(chains.length ? chains.map((c) => `- ${c.name} (${c.source}): ${c.description}`) : ["- (none)"]),
+		"Context:",
+		"- fresh = independent child session, not the parent conversation history.",
+		"- fork = inherits the parent conversation context from the current session.",
+		"",
+		"Tool access:",
+		"- Tools are agent-specific, not inherited from the parent.",
+		"- Advisory agents are for read-only inspection and recommendations; use clone as the bounded task owner for writes.",
+		"- Use a configured non-advisory agent when MCP, direct MCP, or custom-extension tools are explicitly required.",
+		"",
+		"Route selection:",
+		"- Atomic focused task: launch the matching specialist directly.",
+		"- Bounded multi-step task: clone owns chain/fanout work and returns a complete result.",
+		"- Independent top-level tasks: run clones and specialists in parallel; parent synthesizes.",
+		"",
+		"Execution:",
+		"- SINGLE: { agent, task? }",
+		"- PARALLEL: { tasks: [...] }",
+		"- CHAIN: { chain: [...] }",
+		'- Details/provenance/tools: use { action: "get", agent: "name" }.',
+		"",
+		"Tool extensions:",
+		...(toolExtensions.length
+			? toolExtensions.map(([id, extension]) =>
+				`- ${id} (${extension.allowedAgents.join(", ")}): ${extension.description}`)
+			: ["- none configured"]),
+		"",
+		"Saved chains (.chain.md):",
+		`- user location: ${d.userChainDir}`,
+		`- project location: ${projectChainDir}`,
+		...(chains.length ? chains.map((chain) => `- ${chain.name} (${chain.source}): ${chain.description}`) : ["- (none)"]),
 		...(proactiveSuggestions.length ? ["", ...proactiveSuggestions] : []),
-		...(diagnostics.length ? ["", "Chain diagnostics:", ...diagnostics.map((entry) => `- ${entry.filePath}: ${entry.error}`)] : []),
+		...(diagnostics.length
+			? ["", "Chain diagnostics:", ...diagnostics.map((entry) => `- ${entry.filePath}: ${entry.error}`)]
+			: []),
 	];
 	return result(lines.join("\n"));
 }

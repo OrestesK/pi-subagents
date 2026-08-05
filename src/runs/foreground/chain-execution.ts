@@ -53,6 +53,7 @@ import {
 	type ArtifactPaths,
 	type ControlEvent,
 	type Details,
+	type ExtensionConfig,
 	type IntercomEventBus,
 	type NestedRouteInfo,
 	type ResolvedControlConfig,
@@ -73,6 +74,7 @@ import { collectDynamicResults, DynamicFanoutError, materializeDynamicParallelSt
 import { acceptanceFailureMessage, aggregateAcceptanceReport, evaluateAcceptance, resolveEffectiveAcceptance } from "../shared/acceptance.ts";
 import type { ChainOutputMap } from "../../shared/types.ts";
 import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
+import { resolveToolExtensionAgent } from "../shared/tool-extensions.ts";
 
 interface ChainExecutionDetailsInput {
 	results: SingleResult[];
@@ -96,6 +98,7 @@ interface ParallelChainRunInput {
 	parallelTemplates: string[];
 	parallelBehaviors: ResolvedStepBehavior[];
 	agents: AgentConfig[];
+	extensionConfig: ExtensionConfig;
 	stepIndex: number;
 	availableModels: ModelInfo[];
 	modelScope?: ModelScopeConfig;
@@ -232,7 +235,7 @@ async function runParallelChainTasks(input: ParallelChainRunInput): Promise<Sing
 	const failFast = input.step.failFast ?? false;
 	let aborted = false;
 	const effectiveModels = input.step.parallel.map((task) => {
-		const taskAgentConfig = input.agents.find((agent) => agent.name === task.agent);
+		const taskAgentConfig = resolveToolExtensionAgent(input.agents, input.extensionConfig, task.agent, task.toolExtensions);
 		return resolveEffectiveSubagentModel(
 			task.model,
 			taskAgentConfig?.model,
@@ -264,7 +267,7 @@ async function runParallelChainTasks(input: ParallelChainRunInput): Promise<Sing
 
 			const taskTemplate = input.parallelTemplates[taskIndex] ?? "{previous}";
 			const behavior = suppressProgressForReadOnlyTask(input.parallelBehaviors[taskIndex]!, taskTemplate, input.originalTask);
-			const taskAgentConfig = input.agents.find((agent) => agent.name === task.agent);
+			const taskAgentConfig = resolveToolExtensionAgent(input.agents, input.extensionConfig, task.agent, task.toolExtensions);
 			const templateHasPrevious = taskTemplate.includes("{previous}");
 			const { prefix, suffix } = buildChainInstructions(
 				{ ...behavior, output: false },
@@ -415,7 +418,9 @@ interface ChainExecutionParams {
 	chain: ChainStep[];
 	task?: string;
 	agents: AgentConfig[];
+	extensionConfig: ExtensionConfig;
 	ctx: ExtensionContext;
+	modelScope?: ModelScopeConfig;
 	intercomEvents?: IntercomEventBus;
 	signal?: AbortSignal;
 	runId: string;
@@ -484,6 +489,7 @@ export async function executeChain(params: ChainExecutionParams): Promise<ChainE
 	const {
 		chain: chainSteps,
 		agents,
+		extensionConfig,
 		ctx,
 		signal,
 		runId,
@@ -575,7 +581,7 @@ export async function executeChain(params: ChainExecutionParams): Promise<ChainE
 		const seqSteps = chainSteps as SequentialStep[];
 		const agentConfigs: AgentConfig[] = [];
 		for (const step of seqSteps) {
-			const config = agents.find((a) => a.name === step.agent);
+			const config = resolveToolExtensionAgent(agents, extensionConfig, step.agent, step.toolExtensions);
 			if (!config) {
 				removeChainDir(chainDir);
 				return {
@@ -713,6 +719,7 @@ export async function executeChain(params: ChainExecutionParams): Promise<ChainE
 					parallelTemplates,
 					parallelBehaviors,
 					agents,
+					extensionConfig,
 					stepIndex,
 					availableModels,
 					modelScope,
@@ -934,6 +941,7 @@ export async function executeChain(params: ChainExecutionParams): Promise<ChainE
 				parallelTemplates,
 				parallelBehaviors,
 				agents,
+				extensionConfig,
 				stepIndex,
 				availableModels,
 				modelScope,
@@ -1082,7 +1090,13 @@ export async function executeChain(params: ChainExecutionParams): Promise<ChainE
 			const seqStep = step as SequentialStep;
 			const stepTemplate = stepTemplates as string;
 
-			const agentConfig = agents.find((a) => a.name === seqStep.agent);
+			let agentConfig: AgentConfig;
+			try {
+				agentConfig = resolveToolExtensionAgent(agents, extensionConfig, seqStep.agent, seqStep.toolExtensions);
+			} catch (error) {
+				removeChainDir(chainDir);
+				return buildChainExecutionErrorResult(error instanceof Error ? error.message : String(error), makeDetailsInput({ currentStepIndex: stepIndex, currentFlatIndex: globalTaskIndex }));
+			}
 			if (!agentConfig) {
 				removeChainDir(chainDir);
 				return {

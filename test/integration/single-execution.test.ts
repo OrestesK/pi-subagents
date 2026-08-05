@@ -335,6 +335,29 @@ describe("single sync execution", { skip: !available ? "pi packages not availabl
 		assert.match(result.content[0]?.text ?? "", /single alias finished/);
 	});
 
+	it("passes per-call tool bundle additions to a foreground single child", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
+		mockPi.onCall({ output: "bundle finished" });
+		const executor = makeExecutor([makeAgent("researcher")], {
+			toolExtensions: {
+				mcp: { description: "MCP access", builtinTools: ["mcp"], allowedAgents: ["researcher"] },
+			},
+		});
+
+		const result = await executor.execute(
+			"single-bundle",
+			{ agent: "researcher", task: "Use MCP", toolExtensions: { add: ["mcp"] }, requiresCapabilities: ["mcp"] },
+			new AbortController().signal,
+			undefined,
+			makeMinimalCtx(tempDir),
+		);
+
+		assert.equal(result.isError, undefined);
+		const args = readCallArgs();
+		const toolsIndex = args.indexOf("--tools");
+		assert.notEqual(toolsIndex, -1);
+		assert.match(args[toolsIndex + 1] ?? "", /(?:^|,)mcp(?:,|$)/);
+	});
+
 	it("rejects string \"none\" acceptance before spawning", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
 		const executor = makeExecutor([makeAgent("echo")]);
 
@@ -2162,6 +2185,26 @@ describe("single sync execution", { skip: !available ? "pi packages not availabl
 		assert.equal(result.error, undefined);
 		assert.equal(result.finalOutput, "done-before-drain");
 		assert.ok(!(result.progress?.recentOutput ?? []).some((line) => line.includes("Forcing termination")));
+	});
+
+	it("same-process run-monitor continuation reaches a terminal final report", async () => {
+		const running = "- state: running\n- next_parent_action: continue_waiting";
+		const completed = "- state: completed\n- next_parent_action: no_action";
+		mockPi.onCall({
+			steps: [
+				{ jsonl: [events.assistantMessage(running), { type: "turn_start", turnIndex: 1, timestamp: Date.now() }] },
+				{ delay: 1300, jsonl: [events.assistantMessage(completed)] },
+			],
+			keepAliveAfterFinalMessageMs: 10000,
+		});
+		const agents = makeAgentConfigs(["run-monitor"]);
+
+		const result = await runSync(tempDir, agents, "run-monitor", "Monitor until terminal", {});
+
+		assert.equal(mockPi.callCount(), 1);
+		assert.equal(result.exitCode, 0);
+		assert.equal(result.error, undefined);
+		assert.equal(result.finalOutput, completed);
 	});
 
 	it("treats forced drain after empty terminal assistant output as cleanup success", async () => {

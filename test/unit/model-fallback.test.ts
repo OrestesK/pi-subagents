@@ -72,6 +72,9 @@ describe("model fallback helpers", () => {
 		assert.equal(isRetryableModelFailure("authentication failed"), true);
 		assert.equal(isRetryableModelFailure("Subagent produced no output (possible model cold-start or empty response)."), true);
 		assert.equal(isRetryableModelFailure("model load failed"), true);
+		assert.equal(isRetryableModelFailure("WebSocket closed 1006 Connection ended"), true);
+		assert.equal(isRetryableModelFailure("Connection ended before headers were received"), true);
+		assert.equal(isRetryableModelFailure("Connection closed before response"), true);
 		assert.equal(isRetryableModelFailure("Stream ended without finish_reason"), true);
 		assert.equal(isRetryableModelFailure("Request timed out."), true);
 	});
@@ -87,6 +90,7 @@ describe("model fallback helpers", () => {
 		assert.equal(isRetryableModelFailure("bash failed (exit 1): urllib.error.URLError: request timed out"), false);
 		assert.equal(isRetryableModelFailure("fetch_content failed with exit code 1"), false);
 		assert.equal(isRetryableModelFailure("mcp.server/write failed (exit 1): request timed out"), false);
+		assert.equal(isRetryableModelFailure("mcp.server/write failed (exit 1): WebSocket closed 1006 Connection ended"), false);
 		assert.equal(isRetryableModelFailure("mcp:tools.search failed with exit code 1"), false);
 		assert.equal(isRetryableModelFailure("Provider error: bash failed (exit 1): request timed out"), true);
 		assert.equal(isRetryableModelFailure("bash failed (exit unknown): request timed out"), true);

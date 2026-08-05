@@ -10,6 +10,8 @@ interface SubagentParamsSchema {
 			enum?: string[];
 			description?: string;
 		};
+		requiresCapabilities?: JsonSchemaNode;
+		toolExtensions?: JsonSchemaNode;
 		tasks?: {
 			items?: {
 				properties?: {
@@ -151,6 +153,20 @@ describe("SubagentParams schema", { skip: !schemasAvailable ? "typebox not avail
 		assert.match(description, /fork/);
 		assert.match(description, /each requested agent/);
 		assert.match(description, /overrides every child/);
+	});
+
+	it("restricts capability declarations and tool additions to the approved named bundle contract", () => {
+		const capabilities = SubagentParams?.properties?.requiresCapabilities;
+		assert.deepEqual((capabilities?.items as JsonSchemaNode | undefined)?.enum, ["mcp", "direct-mcp", "custom-extension"]);
+		assert.equal(capabilities?.minItems, 1);
+
+		const additions = SubagentParams?.properties?.toolExtensions;
+		assert.equal(additions?.additionalProperties, false);
+		const add = getPropertySchema(additions, ["add"]);
+		assert.equal(add?.type, "array");
+		assert.equal(add?.minItems, 1);
+		assert.equal((add?.items as JsonSchemaNode | undefined)?.type, "string");
+		assert.equal((add?.items as JsonSchemaNode | undefined)?.minLength, 1);
 	});
 
 	it("includes count and concurrency on top-level parallel mode", () => {

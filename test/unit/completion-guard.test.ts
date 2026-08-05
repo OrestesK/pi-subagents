@@ -7,6 +7,7 @@ import {
 	evaluateCompletionMutationGuard,
 	expectsImplementationMutation,
 	hasMutationToolCall,
+	runMonitorCompletionError,
 } from "../../src/runs/shared/completion-guard.ts";
 
 function assistantToolCall(name: string, args: Record<string, unknown> = {}): Message {
@@ -184,4 +185,22 @@ test("implementation task with mutation attempts does not trigger", () => {
 	});
 
 	assert.equal(result.triggered, false);
+});
+
+test("run-monitor rejects missing, unknown, and nonterminal final states", () => {
+	assert.match(runMonitorCompletionError("run-monitor", "still monitoring") ?? "", /without the required final state/i);
+	assert.match(runMonitorCompletionError("run-monitor", "- state: blocked") ?? "", /nonterminal state 'blocked'/i);
+	assert.match(runMonitorCompletionError("run-monitor", "- **Final state:** running") ?? "", /nonterminal state 'running'/i);
+});
+
+test("run-monitor rejects continue_waiting even with a terminal state", () => {
+	const output = "- state: completed\n- next_parent_action: continue_waiting";
+	assert.match(runMonitorCompletionError("run-monitor", output) ?? "", /nonterminal next_parent_action 'continue_waiting'/i);
+});
+
+test("run-monitor accepts documented terminal states without changing other roles", () => {
+	for (const state of ["completed", "failed", "missing", "stuck", "timed_out"]) {
+		assert.equal(runMonitorCompletionError("run-monitor", `- **Final state:** ${state}\n- next_parent_action: no_action`), undefined, state);
+	}
+	assert.equal(runMonitorCompletionError("worker", "- state: running"), undefined);
 });

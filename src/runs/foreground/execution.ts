@@ -405,6 +405,10 @@ async function runSingleAttempt(
 				finalHardKillTimer = undefined;
 			}
 		};
+		const cancelProvisionalFinalDrain = () => {
+			if (forcedTerminationSignal) return;
+			clearFinalDrainTimers();
+		};
 		const startFinalDrain = () => {
 			if (childWatchdogIsActive(childWatchdogState)) {
 				armWatchdogTail();
@@ -662,6 +666,7 @@ async function runSingleAttempt(
 				return;
 			}
 			shared.transcriptWriter?.writeChildEvent(evt);
+			if (evt.type === "turn_start") cancelProvisionalFinalDrain();
 			if (evt.type === "agent_settled") agentSettledReceived = true;
 			applyChildLifecycle(projectChildLifecycle(evt));
 

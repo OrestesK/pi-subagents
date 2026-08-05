@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+- Added configuration-owned builtin-tool bundles with per-child `toolExtensions.add` requests and pre-spawn `requiresCapabilities` checks for single, parallel, chain, dynamic-fanout, and appended children, with effective tools preserved across resume/revival. The current bundle registry accepts the builtin `mcp` tool and enforces each bundle's allowed agents.
+
+### Changed
+- Expanded `subagent({ action: "list" })` into a routing-oriented view of effective non-disabled agents and chains, fresh/fork behavior, ownership and execution shapes, configured bundle IDs, saved-chain locations, and discovery diagnostics. Full definition details remain under `action: "get"`.
+
+### Fixed
+- Keep `run-monitor` active after a clean nonterminal final report, reject missing, unknown, or `continue_waiting` terminal claims, and preserve normal completion behavior for other roles.
+- Advance configured fallback models after retryable WebSocket closure and `Connection ended` provider failures without retrying child tool failures.
+
 ## [0.35.1] - 2026-07-17
 
 ### Fixed

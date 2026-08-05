@@ -15,7 +15,8 @@ import {
 import { TOOL_BUDGET_ENV, decodeToolBudgetEnv, shouldBlockToolForBudget, toolBudgetBlockedMessage, toolBudgetSoftNudge } from "./tool-budget.ts";
 import type { JsonSchemaObject, ResolvedToolBudget, SubagentState } from "../../shared/types.ts";
 import { resolveCurrentSessionId } from "../../shared/session-identity.ts";
-import { resolveWatchPath } from "../../shared/utils.ts";
+import { extractTextFromContent, resolveWatchPath } from "../../shared/utils.ts";
+import { runMonitorCompletionError } from "./completion-guard.ts";
 import { registerChildWatchdog } from "../../watchdog/register-child.ts";
 import { SUBAGENT_WATCHDOG_WARNING_TYPE } from "../../watchdog/types.ts";
 import { resolveWaitToolConfig } from "../background/wait-config.ts";
@@ -327,8 +328,29 @@ export function registerSteeringInbox(
 	});
 }
 
+function registerRunMonitorContinuation(pi: ExtensionAPI): void {
+	if (process.env[SUBAGENT_CHILD_AGENT_ENV] !== "run-monitor") return;
+
+	pi.on("message_end", (event, ctx) => {
+		const message = event.message;
+		if (message.role !== "assistant" || message.stopReason !== "stop" || message.errorMessage) return;
+		if (message.content.some((part) => part.type === "toolCall")) return;
+		if (ctx.signal?.aborted || ctx.hasPendingMessages()) return;
+
+		const output = extractTextFromContent(message.content);
+		if (!runMonitorCompletionError("run-monitor", output)) return;
+
+		pi.sendMessage({
+			customType: "run-monitor-continuation",
+			content: "The previous response did not establish a documented terminal state. Continue monitoring the same target in this process and session. Do not finish until the target reaches a documented terminal state, the parent explicitly cancels, or the configured deadline is reached.",
+			display: false,
+		}, { deliverAs: "followUp", triggerTurn: true });
+	});
+}
+
 export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 	registerSteeringInbox(pi);
+	registerRunMonitorContinuation(pi);
 	registerToolBudget(pi, decodeToolBudgetEnv(process.env[TOOL_BUDGET_ENV]));
 	registerChildWatchdog(pi);
 	const waitToolEnabled = resolveWaitToolConfig().enabled;

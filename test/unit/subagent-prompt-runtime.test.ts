@@ -333,6 +333,58 @@ describe("subagent prompt runtime", () => {
 		assert.ok((handlersWith.get("agent_end")?.length ?? 0) >= 2, "watchdog and auto-drain both observe agent_end");
 	});
 
+	it("queues a same-process follow-up for a clean nonterminal run-monitor final", () => {
+		process.env[SUBAGENT_CHILD_AGENT_ENV] = "run-monitor";
+		let messageEnd: ((event: unknown, ctx: unknown) => void) | undefined;
+		const sent: Array<{ message: unknown; options: unknown }> = [];
+		registerSubagentPromptRuntime({
+			on(event: string, handler: (event: unknown, ctx: unknown) => void) {
+				if (event === "message_end") messageEnd = handler;
+			},
+			sendMessage(message: unknown, options: unknown) {
+				sent.push({ message, options });
+			},
+		} as never);
+
+		assert.ok(messageEnd, "run-monitor should register a message_end continuation handler");
+		messageEnd({
+			message: {
+				role: "assistant",
+				stopReason: "stop",
+				content: [{ type: "text", text: "- state: running\n- next_parent_action: continue_waiting" }],
+			},
+		}, { signal: undefined, hasPendingMessages: () => false });
+
+		assert.equal(sent.length, 1);
+		assert.deepEqual(sent[0]?.options, { deliverAs: "followUp", triggerTurn: true });
+		assert.match(String((sent[0]?.message as { content?: unknown })?.content), /continue monitoring the same target/i);
+	});
+
+	it("does not queue monitor continuation for terminal output, pending input, or another role", () => {
+		process.env[SUBAGENT_CHILD_AGENT_ENV] = "run-monitor";
+		let messageEnd: ((event: unknown, ctx: unknown) => void) | undefined;
+		const sent: unknown[] = [];
+		registerSubagentPromptRuntime({
+			on(event: string, handler: (event: unknown, ctx: unknown) => void) {
+				if (event === "message_end") messageEnd = handler;
+			},
+			sendMessage(message: unknown) { sent.push(message); },
+		} as never);
+		assert.ok(messageEnd);
+		const assistant = (text: string) => ({ message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text }] } });
+		messageEnd(assistant("- state: completed\n- next_parent_action: no_action"), { signal: undefined, hasPendingMessages: () => false });
+		messageEnd(assistant("- state: running"), { signal: undefined, hasPendingMessages: () => true });
+		for (const stopReason of ["length", "toolUse", "error", "aborted"]) {
+			messageEnd({ message: { role: "assistant", stopReason, content: [{ type: "text", text: "- state: running" }] } }, { signal: undefined, hasPendingMessages: () => false });
+		}
+		assert.deepEqual(sent, []);
+
+		process.env[SUBAGENT_CHILD_AGENT_ENV] = "worker";
+		const workerHandlers = new Map<string, unknown>();
+		registerSubagentPromptRuntime({ on(event: string, handler: unknown) { workerHandlers.set(event, handler); } } as never);
+		assert.equal(workerHandlers.has("message_end"), false);
+	});
+
 	it("registered structured_output tool accepts valid schema output and writes the capture file", async () => {
 		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "subagent-structured-runtime-"));
 		try {
