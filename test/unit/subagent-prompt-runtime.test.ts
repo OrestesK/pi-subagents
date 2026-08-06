@@ -583,6 +583,24 @@ describe("subagent prompt runtime", () => {
 		assert.deepEqual(stripParentOnlySubagentMessages([user, subagentCall, subagentResult, instruction]), [user, subagentCall, subagentResult]);
 	});
 
+	it("omits subagent_wait when waitTool is disabled", () => {
+		const previous = process.env.PI_SUBAGENT_WAIT_TOOL_ENABLED;
+		process.env.PI_SUBAGENT_WAIT_TOOL_ENABLED = "false";
+		try {
+			const registered: string[] = [];
+			registerSubagentPromptRuntime({
+				on() {},
+				registerTool(tool: { name: string }) {
+					registered.push(tool.name);
+				},
+			} as never);
+			assert.equal(registered.includes("subagent_wait"), false);
+		} finally {
+			if (previous === undefined) delete process.env.PI_SUBAGENT_WAIT_TOOL_ENABLED;
+			else process.env.PI_SUBAGENT_WAIT_TOOL_ENABLED = previous;
+		}
+	});
+
 	it("defers native supervisor registration until runtime events and respects installed pi-intercom tools", async () => {
 		setSupervisorEnv();
 		const handlers = new Map<string, (payload?: unknown) => unknown>();

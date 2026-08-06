@@ -450,7 +450,9 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 
 	pi.registerTool(tool);
 
-	registerWaitTool(pi, state, waitToolConfig.enabled);
+	if (waitToolConfig.enabled) {
+		registerWaitTool(pi, state, waitToolConfig.enabled);
+	}
 
 	pi.on("agent_end", async (_event, ctx) => {
 		if (ctx.hasUI) return;

@@ -166,59 +166,57 @@ describe("subagent extension child mode", () => {
 		);
 	});
 
-	it("registers only subagent_wait and honors waitTool disabled config", () => {
-		const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-wait-tool-config-"));
-		try {
-			const configDir = path.join(agentDir, "extensions", "subagent");
-			fs.mkdirSync(configDir, { recursive: true });
-			fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({ waitTool: { enabled: false } }), "utf-8");
+	it("registers subagent_wait only when waitTool is enabled", () => {
+		const script = String.raw`
+			import registerSubagentExtension from "./index.ts";
+			const events = { on() { return () => {}; }, emit() {} };
+			const registeredTools = [];
+			const fakePi = new Proxy({
+				events,
+				registerTool(tool) { registeredTools.push(tool.name); },
+				registerCommand() {},
+				registerShortcut() {},
+				registerMessageRenderer() {},
+				sendMessage() {},
+				getSessionName() { return undefined; },
+			}, {
+				get(target, prop) {
+					if (prop in target) return target[prop];
+					return () => undefined;
+				},
+			});
+			registerSubagentExtension(fakePi);
+			process.stdout.write(JSON.stringify(registeredTools));
+		`;
 
-			const script = String.raw`
-				import registerSubagentExtension from "./index.ts";
-				const events = { on() { return () => {}; }, emit() {} };
-				let subagentWaitTool;
-				let legacyWaitRegistered = false;
-				const fakePi = new Proxy({
-					events,
-					registerTool(tool) {
-						if (tool.name === "subagent_wait") subagentWaitTool = tool;
-						if (tool.name === "wait") legacyWaitRegistered = true;
-					},
-					registerCommand() {},
-					registerShortcut() {},
-					registerMessageRenderer() {},
-					sendMessage() {},
-					getSessionName() { return undefined; },
-				}, {
-					get(target, prop) {
-						if (prop in target) return target[prop];
-						return () => undefined;
-					},
-				});
-				registerSubagentExtension(fakePi);
-				if (!subagentWaitTool) throw new Error("subagent_wait tool not registered");
-				if (legacyWaitRegistered) throw new Error("legacy wait tool must not be registered");
-				const result = await subagentWaitTool.execute("subagent-wait-disabled", {}, new AbortController().signal, undefined, {});
-				process.stdout.write(JSON.stringify(result.content[0].text));
-			`;
+		for (const enabled of [false, true]) {
+			const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-wait-tool-config-"));
+			try {
+				const configDir = path.join(agentDir, "extensions", "subagent");
+				fs.mkdirSync(configDir, { recursive: true });
+				fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({ waitTool: { enabled } }), "utf-8");
 
-			const env = parentToolEnv();
-			env.PI_CODING_AGENT_DIR = agentDir;
-			const output = execFileSync(
-				process.execPath,
-				[
-					"--experimental-transform-types",
-					"--import",
-					"./test/support/register-loader.mjs",
-					"--input-type=module",
-					"--eval",
-					script,
-				],
-				{ cwd: projectRoot, env, encoding: "utf-8" },
-			);
-			assert.match(JSON.parse(output) as string, /disabled/i);
-		} finally {
-			fs.rmSync(agentDir, { recursive: true, force: true });
+				const env = parentToolEnv();
+				env.PI_CODING_AGENT_DIR = agentDir;
+				const output = execFileSync(
+					process.execPath,
+					[
+						"--experimental-transform-types",
+						"--import",
+						"./test/support/register-loader.mjs",
+						"--input-type=module",
+						"--eval",
+						script,
+					],
+					{ cwd: projectRoot, env, encoding: "utf-8" },
+				);
+				const registeredTools = JSON.parse(output) as string[];
+				assert.equal(registeredTools.includes("subagent"), true);
+				assert.equal(registeredTools.includes("subagent_wait"), enabled);
+				assert.equal(registeredTools.includes("wait"), false);
+			} finally {
+				fs.rmSync(agentDir, { recursive: true, force: true });
+			}
 		}
 	});
 

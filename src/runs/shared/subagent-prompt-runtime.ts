@@ -368,7 +368,9 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 		watcherRestartTimer: null,
 		resultFileCoalescer: { schedule: () => false, clear: () => {} },
 	} as unknown as SubagentState;
-	if (typeof pi.registerTool === "function") registerWaitTool(pi, waitState, waitToolEnabled);
+	if (waitToolEnabled && typeof pi.registerTool === "function") {
+		registerWaitTool(pi, waitState, waitToolEnabled);
+	}
 	let nativeSupervisorClientRegistered = false;
 	let nativeSupervisorFallbackRegistered = false;
 	const registerNativeSupervisorClientOnce = (): void => {
