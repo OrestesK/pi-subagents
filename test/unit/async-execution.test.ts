@@ -25,16 +25,18 @@ const ctx = {
 };
 
 describe("async runner execution", () => {
-	it("formats interactive yield and headless auto-drain guidance separately", () => {
+	it("formats interactive wake and headless auto-drain guidance without deciding the parent turn", () => {
 		const interactive = formatAsyncStartedMessage("Async: worker [interactive]", true);
-		assert.match(interactive, /interactive session[\s\S]*return control/i);
-		assert.match(interactive, /do not call subagent_wait\(\) merely to wait/i);
+		assert.match(interactive, /interactive session.*Do not run sleep timers or polling loops.*Pi will wake you on completion/i);
+		assert.match(interactive, /This launch result does not decide whether to end the parent turn; follow the active session instructions/i);
+		assert.doesNotMatch(interactive, /return control|subagent_wait/i);
 		assert.doesNotMatch(interactive, /auto-drains current-session background work/i);
 
 		const headless = formatAsyncStartedMessage("Async: worker [headless]", false);
+		assert.match(headless, /Do not run sleep timers or polling loops/i);
 		assert.match(headless, /non-interactive run.*auto-drains current-session background work at agent_end/i);
-		assert.match(headless, /call subagent_wait\(\).*results before it ends/i);
-		assert.doesNotMatch(headless, /By default, return control to the user/i);
+		assert.match(headless, /This launch result does not decide whether to end the parent turn; follow the active session instructions/i);
+		assert.doesNotMatch(headless, /return control|subagent_wait/i);
 	});
 
 	it("places detached runner stdio logs in the async run directory", () => {

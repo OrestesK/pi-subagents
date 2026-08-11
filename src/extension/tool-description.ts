@@ -93,7 +93,7 @@ MANAGE / CONTROL:
 • Opt-in schedule actions: schedule, schedule-list, schedule-status, schedule-cancel. Schedule only explicit delayed runs the user asked for.
 
 ASYNC / WAIT:
-• async:true detaches background work. Do not sleep or poll just to wait. In an interactive session, normally return control to the user and let Pi wake you on completion; do not call subagent_wait merely to wait. Override that default with subagent_wait only for run-to-completion requests (the user asked for results back this turn, or a skill must finish in one turn). Non-interactive runs (pi -p) auto-drain current-session work at agent_end; call subagent_wait when this turn must receive results before it ends. Otherwise continue useful work or respond.
+• async:true detaches background work. Do not sleep or poll just to wait. In an interactive session, Pi wakes you on completion. Non-interactive runs (pi -p) auto-drain current-session work at agent_end. An async launch does not decide whether the parent ends the current turn; follow the active session instructions.
 • Status and artifacts live under asyncId/asyncDir with status.json, events.jsonl, output logs, session files, and { action:"status", id:"..." }.
 
 SAFETY:

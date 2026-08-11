@@ -1018,8 +1018,9 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		});
 		assert.match(singleResult.content[0]?.text ?? "", /Async: worker \[/);
 		assert.match(singleResult.content[0]?.text ?? "", /Do not run sleep timers or polling loops/);
-		assert.match(singleResult.content[0]?.text ?? "", /call subagent_wait\(\)/i);
+		assert.match(singleResult.content[0]?.text ?? "", /This launch result does not decide whether to end the parent turn; follow the active session instructions/);
 		assert.match(singleResult.content[0]?.text ?? "", /non-interactive run: Pi auto-drains current-session background work at agent_end/);
+		assert.doesNotMatch(singleResult.content[0]?.text ?? "", /return control|subagent_wait/i);
 		assert.equal(startedEvent(singleId).task, wrappedTask.slice(0, 50));
 		assert.equal(startedEvent(singleId).goal, rawGoal.slice(0, 120));
 		await waitForAsyncResultFile(singleId, 30_000);
@@ -1034,8 +1035,9 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 			ctx: { ...commonParams.ctx, interactive: true },
 		});
 		assert.match(interactiveResult.content[0]?.text ?? "", /interactive session/);
-		assert.match(interactiveResult.content[0]?.text ?? "", /return control to the user/);
-		assert.match(interactiveResult.content[0]?.text ?? "", /Do NOT call subagent_wait\(\) merely to wait/);
+		assert.match(interactiveResult.content[0]?.text ?? "", /Pi will wake you on completion/);
+		assert.match(interactiveResult.content[0]?.text ?? "", /This launch result does not decide whether to end the parent turn; follow the active session instructions/);
+		assert.doesNotMatch(interactiveResult.content[0]?.text ?? "", /return control|subagent_wait/i);
 		assert.doesNotMatch(interactiveResult.content[0]?.text ?? "", /auto-drain/);
 		await waitForAsyncResultFile(interactiveId, 30_000);
 
@@ -1050,7 +1052,8 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		});
 		assert.match(parallelResult.content[0]?.text ?? "", /Async parallel:/);
 		assert.match(parallelResult.content[0]?.text ?? "", /Do not run sleep timers or polling loops/);
-		assert.match(parallelResult.content[0]?.text ?? "", /call subagent_wait\(\)/i);
+		assert.match(parallelResult.content[0]?.text ?? "", /This launch result does not decide whether to end the parent turn; follow the active session instructions/);
+		assert.doesNotMatch(parallelResult.content[0]?.text ?? "", /return control|subagent_wait/i);
 		assert.equal(startedEvent(parallelId).goal, "Do one");
 		const parallelResultPath = await waitForAsyncResultFile(parallelId, 10_000);
 		const parallelPayload = JSON.parse(fs.readFileSync(parallelResultPath, "utf-8")) as { agent?: string; mode?: string };
@@ -1069,6 +1072,8 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		});
 		assert.match(chainResult.content[0]?.text ?? "", /Async chain:/);
 		assert.match(chainResult.content[0]?.text ?? "", /Do not run sleep timers or polling loops/);
+		assert.match(chainResult.content[0]?.text ?? "", /This launch result does not decide whether to end the parent turn; follow the active session instructions/);
+		assert.doesNotMatch(chainResult.content[0]?.text ?? "", /return control|subagent_wait/i);
 		const chainEvent = startedEvent(chainId);
 		assert.equal(chainEvent.task, chainChildTask.slice(0, 50));
 		assert.equal(chainEvent.goal, chainGoal.slice(0, 120));

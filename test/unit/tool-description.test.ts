@@ -90,10 +90,10 @@ describe("registered subagent tool description", () => {
 		assert.match(description, /PARALLEL/);
 		assert.match(description, /CHAIN/);
 		assert.match(description, /action without execution fields/i);
-		assert.match(description, /subagent_wait/i);
-		assert.match(description, /interactive session.*normally return control/i);
+		assert.match(description, /interactive session.*Pi wakes you on completion/i);
 		assert.match(description, /Non-interactive runs.*auto-drain current-session work at agent_end/i);
-		assert.doesNotMatch(description, /MUST call subagent_wait/i);
+		assert.match(description, /async launch does not decide whether the parent ends the current turn; follow the active session instructions/i);
+		assert.doesNotMatch(description, /return control|subagent_wait/i);
 		assert.match(description, /Do not sleep or poll/i);
 		assert.match(description, /ordinary child subagents are not orchestrators/i);
 		assert.match(description, /one writer/i);
