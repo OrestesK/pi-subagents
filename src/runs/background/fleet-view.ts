@@ -10,6 +10,9 @@ import {
 	type AsyncJobStep,
 	type AsyncStatus,
 	type Details,
+	type ForegroundResumeRun,
+	type ManagementDetails,
+	type ManagementRunSummary,
 	type NestedRunSummary,
 	type SubagentRunMode,
 	type SubagentState,
@@ -226,6 +229,114 @@ function formatActivityFacts(input: {
 	return activity || facts.length ? [activity, ...facts].filter(Boolean).join(" | ") : undefined;
 }
 
+interface ManagementStepSource {
+	agent: string;
+	label?: string;
+	status?: string;
+	activityState?: ActivityState;
+	lastActivityAt?: number;
+	currentTool?: string;
+	currentToolStartedAt?: number;
+	currentPath?: string;
+	turnCount?: number;
+	toolCount?: number;
+	tokens?: { total: number };
+}
+
+function managementChildren(steps: ManagementStepSource[]): ManagementRunSummary["children"] {
+	return steps.map((step, index) => {
+		const activity = formatActivityFacts(step);
+		return {
+			index,
+			agent: step.agent,
+			...(step.label ? { label: step.label } : {}),
+			...(step.status ? { state: step.status } : {}),
+			...(activity ? { activity } : {}),
+		};
+	});
+}
+
+export function managementDetails(
+	view: ManagementDetails["view"],
+	runs: ManagementRunSummary[],
+): ManagementDetails {
+	return { view, totalRuns: runs.length, runs };
+}
+
+export function managementRunFromAsyncStatus(status: AsyncStatus): ManagementRunSummary {
+	return {
+		id: status.runId,
+		mode: status.mode,
+		state: status.state,
+		children: managementChildren(status.steps ?? []),
+	};
+}
+
+export function managementRunFromNestedRun(run: NestedRunSummary): ManagementRunSummary {
+	const steps = run.steps ?? (run.agent ? [{
+		agent: run.agent,
+		status: run.state,
+		activityState: run.activityState,
+		lastActivityAt: run.lastActivityAt,
+		currentTool: run.currentTool,
+		currentToolStartedAt: run.currentToolStartedAt,
+		currentPath: run.currentPath,
+		turnCount: run.turnCount,
+		toolCount: run.toolCount,
+	}] : []);
+	return {
+		id: run.id,
+		...(run.mode ? { mode: run.mode } : {}),
+		state: run.state,
+		children: managementChildren(steps),
+	};
+}
+
+export function managementRunFromForegroundRun(run: ForegroundResumeRun): ManagementRunSummary {
+	return {
+		id: run.runId,
+		mode: run.mode,
+		children: run.children.map((child) => ({
+			index: child.index,
+			agent: child.agent,
+			state: child.status,
+		})),
+	};
+}
+
+function managementRunFromForegroundControl(control: ForegroundControl): ManagementRunSummary {
+	const activity = formatActivityFacts({
+		activityState: control.currentActivityState,
+		lastActivityAt: control.lastActivityAt,
+		currentTool: control.currentTool,
+		currentToolStartedAt: control.currentToolStartedAt,
+		currentPath: control.currentPath,
+		turnCount: control.turnCount,
+		toolCount: control.toolCount,
+		tokens: control.tokens !== undefined ? { total: control.tokens } : undefined,
+	});
+	return {
+		id: control.runId,
+		mode: control.mode,
+		state: "running",
+		children: control.currentAgent ? [{
+			index: control.currentIndex ?? 0,
+			agent: control.currentAgent,
+			state: "running",
+			...(activity ? { activity } : {}),
+		}] : [],
+	};
+}
+
+export function managementRunFromAsyncSummary(run: AsyncRunSummary): ManagementRunSummary {
+	return {
+		id: run.id,
+		mode: run.mode,
+		state: run.state,
+		children: managementChildren(run.steps),
+	};
+}
+
 function foregroundModeName(control: ForegroundControl): string {
 	if (control.mode === "single" && control.currentAgent) return control.currentAgent;
 	return control.mode;
@@ -339,7 +450,11 @@ export function inspectSubagentFleet(_params: FleetViewParams, deps: FleetViewDe
 	if (total === 0) {
 		return {
 			content: [{ type: "text", text: "No active subagent fleet. Background runs that already finished are available through completion notifications or subagent({ action: \"status\", id: \"...\" })." }],
-			details: { mode: "management", results: [] },
+			details: {
+				mode: "management",
+				results: [],
+				management: managementDetails("fleet", []),
+			},
 		};
 	}
 
@@ -355,7 +470,19 @@ export function inspectSubagentFleet(_params: FleetViewParams, deps: FleetViewDe
 	lines.push("  Tail run transcript: subagent({ action: \"status\", id: \"<run-id>\", view: \"transcript\" })");
 	lines.push("  Tail child transcript: subagent({ action: \"status\", id: \"<run-id>\", index: 0, view: \"transcript\" })");
 
-	return { content: [{ type: "text", text: lines.join("\n").trimEnd() }], details: { mode: "management", results: [] } };
+	const managementRuns = [
+		...foregroundControls.map(managementRunFromForegroundControl),
+		...detachedForegroundRuns.map(managementRunFromForegroundRun),
+		...asyncRuns.map(managementRunFromAsyncSummary),
+	];
+	return {
+		content: [{ type: "text", text: lines.join("\n").trimEnd() }],
+		details: {
+			mode: "management",
+			results: [],
+			management: managementDetails("fleet", managementRuns),
+		},
+	};
 }
 
 function validateTranscriptIndex(index: number | undefined, steps: AsyncJobStep[]): number | undefined {

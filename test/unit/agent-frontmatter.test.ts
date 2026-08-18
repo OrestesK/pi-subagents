@@ -558,6 +558,54 @@ Plan the work.
 		assert.equal(agent.source, "package");
 	}));
 
+	it("loads safe bare relative packages from configured user settings and rejects traversal segments", () => withTempHome((home) => {
+		const agentDir = path.join(home, "custom-agent-dir");
+		const cwd = path.join(home, "workspace");
+		const packageRoot = path.join(agentDir, "packages", "pi-tool-result-virtualizer");
+		const outsideRoot = path.join(agentDir, "outside");
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		fs.mkdirSync(cwd, { recursive: true });
+		writeJson(path.join(agentDir, "settings.json"), {
+			packages: ["packages/pi-tool-result-virtualizer", "packages/../outside"],
+		});
+		writeJson(path.join(packageRoot, "package.json"), {
+			name: "bare-settings-workflow",
+			pi: {
+				subagents: {
+					agents: ["./agents"],
+				},
+			},
+		});
+		writeAgent(path.join(packageRoot, "agents", "planner.md"), `---
+name: planner
+package: bare-settings-workflow
+description: Plan from a bare settings package path.
+---
+
+Plan the work.
+`);
+		writeJson(path.join(outsideRoot, "package.json"), {
+			name: "outside-workflow",
+			pi: {
+				subagents: {
+					agents: ["./agents"],
+				},
+			},
+		});
+		writeAgent(path.join(outsideRoot, "agents", "planner.md"), `---
+name: planner
+package: outside-workflow
+description: Must not load through a traversal path.
+---
+
+Plan the work.
+`);
+
+		const agents = discoverAgents(cwd, "both").agents;
+		assert.equal(agents.find((candidate) => candidate.name === "bare-settings-workflow.planner")?.source, "package");
+		assert.equal(agents.some((candidate) => candidate.name === "outside-workflow.planner"), false);
+	}));
+
 	it("discovers project package agents when cwd is nested below the project root", () => withTempHome(() => {
 		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-nested-package-discovery-"));
 		tempDirs.push(dir);

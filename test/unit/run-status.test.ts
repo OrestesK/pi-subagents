@@ -150,6 +150,16 @@ describe("async run status inspection", () => {
 			assert.match(text, /second line/);
 			assert.match(text, /third line/);
 			assert.match(text, new RegExp(`Output: ${outputPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+			assert.deepEqual(result.details?.management, {
+				view: "transcript",
+				totalRuns: 1,
+				runs: [{
+					id: "run-transcript",
+					mode: "single",
+					state: "running",
+					children: [{ index: 0, agent: "worker", state: "running" }],
+				}],
+			});
 		} finally {
 			fs.rmSync(root, { recursive: true, force: true });
 		}
@@ -315,6 +325,38 @@ describe("async run status inspection", () => {
 			assert.match(text, /run-fleet \| running .*\| parallel \| 1 agent running · 0\/2 done/);
 			assert.match(text, /transcript: subagent\(\{ action: "status", id: "run-fleet", view: "transcript" \}\)/);
 			assert.match(text, /transcript: subagent\(\{ action: "status", id: "run-fleet", index: 0, view: "transcript" \}\)/);
+			assert.equal(result.details?.management?.view, "fleet");
+			assert.equal(result.details?.management?.totalRuns, 2);
+			const asyncRun = result.details?.management?.runs.find((run) => run.id === "run-fleet");
+			assert.deepEqual(asyncRun, {
+				id: "run-fleet",
+				mode: "parallel",
+				state: "running",
+				children: [
+					{ index: 0, agent: "worker", state: "running" },
+					{ index: 1, agent: "reviewer", state: "pending" },
+				],
+			});
+		} finally {
+			fs.rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("returns an empty structured fleet when no runs are active", () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-run-status-empty-fleet-"));
+		try {
+			const asyncRoot = path.join(root, "runs");
+			fs.mkdirSync(asyncRoot, { recursive: true });
+			const result = inspectSubagentStatus({ view: "fleet" }, {
+				asyncDirRoot: asyncRoot,
+				resultsDir: path.join(root, "results"),
+			});
+
+			assert.deepEqual(result.details?.management, {
+				view: "fleet",
+				totalRuns: 0,
+				runs: [],
+			});
 		} finally {
 			fs.rmSync(root, { recursive: true, force: true });
 		}
@@ -660,6 +702,47 @@ describe("async run status inspection", () => {
 		}
 	});
 
+	it("returns structured status for a remembered foreground run", () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-run-status-remembered-foreground-"));
+		try {
+			const runId = "remembered-foreground";
+			const state = {
+				foregroundRuns: new Map([[runId, {
+					runId,
+					mode: "parallel",
+					cwd: root,
+					updatedAt: 200,
+					children: [
+						{ agent: "scout", index: 0, status: "completed", updatedAt: 180 },
+						{ agent: "reviewer", index: 1, status: "failed", updatedAt: 190 },
+					],
+				}]]),
+				foregroundControls: new Map(),
+			} as unknown as SubagentState;
+
+			const result = inspectSubagentStatus({ id: runId }, {
+				asyncDirRoot: path.join(root, "runs"),
+				resultsDir: path.join(root, "results"),
+				state,
+			});
+
+			assert.deepEqual(result.details?.management, {
+				view: "status",
+				totalRuns: 1,
+				runs: [{
+					id: runId,
+					mode: "parallel",
+					children: [
+						{ index: 0, agent: "scout", state: "completed" },
+						{ index: 1, agent: "reviewer", state: "failed" },
+					],
+				}],
+			});
+		} finally {
+			fs.rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	it("resolves exact nested run ids from the nested registry", () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-run-status-nested-exact-"));
 		const route = createNestedRoute("run-nested-exact-root");
@@ -697,6 +780,21 @@ describe("async run status inspection", () => {
 			assert.match(text, /Root status: subagent\(\{ action: "status", id: "run-nested-exact-root" \}\)/);
 			assert.match(text, /Interrupt: subagent\(\{ action: "interrupt", id: "nested-exact-child" \}\)/);
 			assert.match(text, /Resume: subagent\(\{ action: "resume", id: "nested-exact-child", message: "\.\.\." \}\)/);
+			assert.deepEqual(result.details?.management, {
+				view: "status",
+				totalRuns: 1,
+				runs: [{
+					id: "nested-exact-child",
+					mode: "single",
+					state: "running",
+					children: [{
+						index: 0,
+						agent: "leaf",
+						state: "running",
+						activity: "tool grep",
+					}],
+				}],
+			});
 		} finally {
 			fs.rmSync(root, { recursive: true, force: true });
 			fs.rmSync(path.dirname(route.eventSink), { recursive: true, force: true });
@@ -832,6 +930,16 @@ describe("async run status inspection", () => {
 			const text = textContent(result);
 			assert.match(text, /Step 1: scout running/);
 			assert.match(text, /Intercom target: subagent-scout-run-live-1 \(if registered\)/);
+			assert.deepEqual(result.details?.management, {
+				view: "status",
+				totalRuns: 1,
+				runs: [{
+					id: "run-live",
+					mode: "single",
+					state: "running",
+					children: [{ index: 0, agent: "scout", state: "running" }],
+				}],
+			});
 		} finally {
 			fs.rmSync(root, { recursive: true, force: true });
 		}
@@ -1023,6 +1131,15 @@ describe("async run status inspection", () => {
 			assert.match(text, /Result: /);
 			assert.match(text, /Revive: subagent\(\{ action: "resume", id: "run-result-only", message: "\.\.\." \}\)/);
 			assert.match(text, /result survived missing status/);
+			assert.deepEqual(result.details?.management, {
+				view: "status",
+				totalRuns: 1,
+				runs: [{
+					id: "run-result-only",
+					state: "failed",
+					children: [{ index: 0, agent: "worker", state: "failed" }],
+				}],
+			});
 		} finally {
 			fs.rmSync(root, { recursive: true, force: true });
 		}

@@ -309,7 +309,7 @@ function resolveSettingsPackageRoot(source: string, baseDir: string): string | u
 	if (normalized === "." || normalized === ".." || normalized.startsWith("./") || normalized.startsWith("../")) {
 		return path.resolve(baseDir, normalized);
 	}
-	return undefined;
+	return isSafePackagePath(normalized) ? path.resolve(baseDir, normalized) : undefined;
 }
 
 function getGlobalNpmRoot(): string | null {

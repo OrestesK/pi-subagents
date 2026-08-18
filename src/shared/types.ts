@@ -645,6 +645,27 @@ export interface SpawnBudgetSnapshot {
 	grantHistory: SpawnBudgetGrant[];
 }
 
+export interface ManagementChildSummary {
+	index: number;
+	agent: string;
+	label?: string;
+	state?: string;
+	activity?: string;
+}
+
+export interface ManagementRunSummary {
+	id: string;
+	mode?: string;
+	state?: string;
+	children: ManagementChildSummary[];
+}
+
+export interface ManagementDetails {
+	view: "fleet" | "status" | "transcript";
+	totalRuns: number;
+	runs: ManagementRunSummary[];
+}
+
 export interface Details {
 	mode: SubagentRunMode | "management";
 	runId?: string;
@@ -683,6 +704,7 @@ export interface Details {
 	// Aggregated cost across all agents in the run
 	totalCost?: CostSummary;
 	spawnBudget?: SpawnBudgetSnapshot;
+	management?: ManagementDetails;
 }
 
 // ============================================================================

@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
 	SUBAGENT_CHILD_AGENT_ENV,
@@ -24,8 +25,19 @@ const DEFAULT_ASK_TIMEOUT_MS = 10 * 60 * 1000;
 const CHANNEL_POLL_MS = Math.min(POLL_INTERVAL_MS, 500);
 const STALE_EMPTY_CHANNEL_AGE_MS = 60 * 1000;
 const STALE_EMPTY_CHANNEL_CLEANUP_INTERVAL_MS = 60 * 1000;
+const supervisorRequestRendererInstalled = new WeakSet<ExtensionAPI>();
 
 type SupervisorReason = "need_decision" | "interview_request" | "progress_update";
+
+interface SupervisorRequestMessageDetails {
+	id: string;
+	reason: SupervisorReason;
+	expectsReply: boolean;
+	runId: string;
+	agent: string;
+	childIndex: number;
+	summary?: string;
+}
 
 interface SupervisorRequest {
 	type: "subagent.supervisor.request";
@@ -513,6 +525,55 @@ function requestVisibleText(request: PendingSupervisorRequest): string {
 	return lines.join("\n");
 }
 
+function supervisorRequestSummary(message: string): string | undefined {
+	const lines = message.split("\n");
+	const separator = lines.findIndex((line) => line.trim().length === 0);
+	const body = separator >= 0 ? lines.slice(separator + 1) : lines;
+	return body.find((line) => line.trim().length > 0)?.trim();
+}
+
+function compactSupervisorReason(reason: SupervisorReason): string {
+	switch (reason) {
+		case "need_decision":
+			return "Needs decision";
+		case "interview_request":
+			return "Interview requested";
+		case "progress_update":
+			return "Progress update";
+	}
+}
+
+function registerSupervisorRequestRenderer(pi: ExtensionAPI): void {
+	if (supervisorRequestRendererInstalled.has(pi)) return;
+	const registerMessageRenderer = (pi as Partial<ExtensionAPI>).registerMessageRenderer;
+	if (!registerMessageRenderer) return;
+	registerMessageRenderer.call(pi, "subagent_supervisor_request", (message, options, theme) => {
+		const details = message.details as SupervisorRequestMessageDetails | undefined;
+		const content = typeof message.content === "string"
+			? message.content
+			: message.content
+				.filter((entry) => entry.type === "text")
+				.map((entry) => entry.text)
+				.join("\n");
+		if (!details) return new Text(content, 0, 0);
+
+		const separator = theme.fg("dim", " · ");
+		let text = [
+			theme.fg("accent", "Supervisor request"),
+			details.agent,
+			`child #${details.childIndex + 1}`,
+		].join(separator);
+		const reason = compactSupervisorReason(details.reason);
+		text += `\n  ${theme.fg("dim", "└ ")}${reason}${details.summary ? `${separator}${details.summary}` : ""}`;
+		if (options.expanded) {
+			text += `\n  ${theme.fg("muted", `request ${details.id} · run ${details.runId} · ${details.expectsReply ? "reply required" : "no reply required"}`)}`;
+			if (content.trim()) text += `\n\n${content}`;
+		}
+		return new Text(text, 0, 0);
+	});
+	supervisorRequestRendererInstalled.add(pi);
+}
+
 function writeReply(request: PendingSupervisorRequest, message: string): void {
 	if (!message.trim()) throw new Error("message is required for supervisor replies.");
 	const reply: SupervisorReply = {
@@ -591,6 +652,7 @@ function buildParentIntercomTool(pending: Map<string, PendingSupervisorRequest>,
 }
 
 export function createNativeSupervisorChannel(pi: ExtensionAPI, state: SubagentState): { start: () => void; dispose: () => void; pending: Map<string, PendingSupervisorRequest> } {
+	registerSupervisorRequestRenderer(pi);
 	const pending = new Map<string, PendingSupervisorRequest>();
 	const seenFiles = new Set<string>();
 	let poller: ReturnType<typeof setInterval> | undefined;
@@ -644,6 +706,7 @@ export function createNativeSupervisorChannel(pi: ExtensionAPI, state: SubagentS
 					runId: request.runId,
 					agent: request.agent,
 					childIndex: request.childIndex,
+					summary: supervisorRequestSummary(request.message),
 				},
 			}, { deliverAs: "steer", triggerTurn: true });
 			if (request.expectsReply) {

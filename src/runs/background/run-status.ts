@@ -2,11 +2,21 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { formatAsyncRunList, formatAsyncRunOutputPath, formatAsyncRunProgressLabel, listAsyncRuns } from "./async-status.ts";
-import { formatAsyncResultTranscript, formatAsyncRunTranscript, formatNestedRunTranscript, inspectSubagentFleet } from "./fleet-view.ts";
+import {
+	formatAsyncResultTranscript,
+	formatAsyncRunTranscript,
+	formatNestedRunTranscript,
+	inspectSubagentFleet,
+	managementDetails,
+	managementRunFromAsyncStatus,
+	managementRunFromAsyncSummary,
+	managementRunFromForegroundRun,
+	managementRunFromNestedRun,
+} from "./fleet-view.ts";
 import { formatNestedRunStatusLines } from "../shared/nested-render.ts";
 import { formatModelThinking } from "../../shared/formatters.ts";
 import { formatActivityLabel } from "../../shared/status-format.ts";
-import { ASYNC_DIR, RESULTS_DIR, type AsyncStatus, type Details, type ForegroundResumeRun, type NestedRunSummary, type SteeringStatus, type SubagentState } from "../../shared/types.ts";
+import { ASYNC_DIR, RESULTS_DIR, type AsyncStatus, type Details, type ForegroundResumeRun, type ManagementRunSummary, type NestedRunSummary, type SteeringStatus, type SubagentState } from "../../shared/types.ts";
 import { resolveSubagentIntercomTarget } from "../../intercom/intercom-bridge.ts";
 import { resolveAsyncRunLocation } from "./async-resume.ts";
 import { resolveSubagentRunId } from "./run-id-resolver.ts";
@@ -32,6 +42,53 @@ interface RunStatusDeps {
 	state?: SubagentState;
 	nested?: NestedRunResolutionScope;
 	sessionRoots?: string[];
+}
+
+interface AsyncResultStatusData {
+	id?: string;
+	runId?: string;
+	agent?: string;
+	success?: boolean;
+	summary?: string;
+	output?: string;
+	exitCode?: number;
+	state?: string;
+	sessionFile?: string;
+	results?: Array<{
+		agent?: string;
+		output?: string;
+		summary?: string;
+		sessionFile?: string;
+		state?: string;
+		success?: boolean;
+		exitCode?: number | null;
+	}>;
+}
+
+function managementRunFromAsyncResult(
+	data: AsyncResultStatusData,
+	runId: string,
+	state: string,
+): ManagementRunSummary {
+	const candidates = Array.isArray(data.results)
+		? data.results
+		: data.agent
+			? [{ agent: data.agent, state: data.state, success: data.success }]
+			: [];
+	const children = candidates.flatMap((child, index) => {
+		if (!child.agent) return [];
+		const childState = child.state ?? (child.success === true
+			? "complete"
+			: child.success === false
+				? "failed"
+				: undefined);
+		return [{
+			index,
+			agent: child.agent,
+			...(childState ? { state: childState } : {}),
+		}];
+	});
+	return { id: runId, state, children };
 }
 
 function hasExistingSessionFile(value: unknown): value is string {
@@ -228,7 +285,14 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 			}
 			return {
 				content: [{ type: "text", text: formatAsyncRunList(runs) }],
-				details: { mode: "single", results: [] },
+				details: {
+					mode: "single",
+					results: [],
+					management: managementDetails(
+						"status",
+						runs.map(managementRunFromAsyncSummary),
+					),
+				},
 			};
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
@@ -251,7 +315,14 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 					try {
 						return {
 							content: [{ type: "text", text: params.view === "transcript" ? formatRememberedForegroundTranscript(run, { index: params.index, lines: params.lines }) : formatRememberedForegroundStatus(run) }],
-							details: { mode: "single", results: [] },
+							details: {
+								mode: "single",
+								results: [],
+								management: managementDetails(
+									params.view === "transcript" ? "transcript" : "status",
+									[managementRunFromForegroundRun(run)],
+								),
+							},
 						};
 					} catch (error) {
 						const message = error instanceof Error ? error.message : String(error);
@@ -265,13 +336,27 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 				const nested = refreshed?.kind === "nested" ? refreshed : resolved;
 				if (params.view === "transcript") {
 					try {
-						return { content: [{ type: "text", text: formatNestedRunTranscript(nested.match.run, { index: params.index, lines: params.lines, sessionRoots: deps.sessionRoots }) }], details: { mode: "single", results: [] } };
+						return {
+							content: [{ type: "text", text: formatNestedRunTranscript(nested.match.run, { index: params.index, lines: params.lines, sessionRoots: deps.sessionRoots }) }],
+							details: {
+								mode: "single",
+								results: [],
+								management: managementDetails("transcript", [managementRunFromNestedRun(nested.match.run)]),
+							},
+						};
 					} catch (error) {
 						const message = error instanceof Error ? error.message : String(error);
 						return { content: [{ type: "text", text: message }], isError: true, details: { mode: "single", results: [] } };
 					}
 				}
-				return { content: [{ type: "text", text: formatNestedExactStatus(nested.match.rootRunId, nested.match.run) }], details: { mode: "single", results: [] } };
+				return {
+					content: [{ type: "text", text: formatNestedExactStatus(nested.match.rootRunId, nested.match.run) }],
+					details: {
+						mode: "single",
+						results: [],
+						management: managementDetails("status", [managementRunFromNestedRun(nested.match.run)]),
+					},
+				};
 			}
 			if (resolved?.kind === "async") location = resolved.location;
 			else location = { asyncDir: null, resultPath: null, resolvedId: requestedId };
@@ -322,7 +407,14 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 					};
 				}
 				try {
-					return { content: [{ type: "text", text: formatAsyncRunTranscript(status, asyncDir, { index: params.index, lines: params.lines, sessionRoots: deps.sessionRoots }) }], details: { mode: "single", results: [] } };
+					return {
+						content: [{ type: "text", text: formatAsyncRunTranscript(status, asyncDir, { index: params.index, lines: params.lines, sessionRoots: deps.sessionRoots }) }],
+						details: {
+							mode: "single",
+							results: [],
+							management: managementDetails("transcript", [managementRunFromAsyncStatus(status)]),
+						},
+					};
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
 					return { content: [{ type: "text", text: message }], isError: true, details: { mode: "single", results: [] } };
@@ -401,29 +493,51 @@ export function inspectSubagentStatus(params: RunStatusParams, deps: RunStatusDe
 			if (fs.existsSync(logPath)) lines.push(`Log: ${logPath}`);
 			if (fs.existsSync(eventsPath)) lines.push(`Events: ${eventsPath}`);
 
-			return { content: [{ type: "text", text: lines.join("\n") }], details: { mode: "single", results: [] } };
+			return {
+				content: [{ type: "text", text: lines.join("\n") }],
+				details: {
+					mode: "single",
+					results: [],
+					management: managementDetails("status", [managementRunFromAsyncStatus(status)]),
+				},
+			};
 		}
 	}
 
 	if (resultPath) {
 		try {
 			const raw = fs.readFileSync(resultPath, "utf-8");
-			const data = JSON.parse(raw) as { id?: string; runId?: string; agent?: string; success?: boolean; summary?: string; output?: string; exitCode?: number; state?: string; sessionFile?: string; results?: Array<{ agent?: string; output?: string; summary?: string; sessionFile?: string; state?: string; success?: boolean; exitCode?: number | null }> };
+			const data = JSON.parse(raw) as AsyncResultStatusData;
+			const status = data.state === "stopped" ? "stopped" : data.success ? "complete" : data.state === "paused" || data.exitCode === 0 ? "paused" : "failed";
+			const runId = data.runId ?? data.id ?? resolvedId ?? "unknown";
+			const managementRun = managementRunFromAsyncResult(data, runId, status);
 			if (params.view === "transcript") {
 				try {
-					return { content: [{ type: "text", text: formatAsyncResultTranscript(data, resultPath, { index: params.index, lines: params.lines }) }], details: { mode: "single", results: [] } };
+					return {
+						content: [{ type: "text", text: formatAsyncResultTranscript(data, resultPath, { index: params.index, lines: params.lines }) }],
+						details: {
+							mode: "single",
+							results: [],
+							management: managementDetails("transcript", [managementRun]),
+						},
+					};
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
 					return { content: [{ type: "text", text: message }], isError: true, details: { mode: "single", results: [] } };
 				}
 			}
-			const status = data.state === "stopped" ? "stopped" : data.success ? "complete" : data.state === "paused" || data.exitCode === 0 ? "paused" : "failed";
-			const runId = data.runId ?? data.id ?? resolvedId;
 			const lines = [`Run: ${runId}`, `State: ${status}`, `Result: ${resultPath}`];
 			const children = Array.isArray(data.results) ? data.results : data.agent ? [{ agent: data.agent, sessionFile: data.sessionFile }] : [];
 			lines.push(formatResumeGuidance(runId, children, data.sessionFile, { stopped: status === "stopped" }));
 			if (data.summary) lines.push("", data.summary);
-			return { content: [{ type: "text", text: lines.join("\n") }], details: { mode: "single", results: [] } };
+			return {
+				content: [{ type: "text", text: lines.join("\n") }],
+				details: {
+					mode: "single",
+					results: [],
+					management: managementDetails("status", [managementRun]),
+				},
+			};
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			return {

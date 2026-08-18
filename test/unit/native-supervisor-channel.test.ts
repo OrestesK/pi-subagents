@@ -113,8 +113,9 @@ describe("native supervisor channel", () => {
 		const otherSessionId = `session-${randomUUID()}`;
 		const matchingId = writeRequest({ sessionId: currentSessionId, runId: `run-${randomUUID()}` });
 		const otherId = writeRequest({ sessionId: otherSessionId, runId: `run-${randomUUID()}` });
-		const sent: Array<{ content?: string; details?: { id?: string } }> = [];
+		const sent: Array<{ content?: string; details?: { id?: string; reason?: string; expectsReply?: boolean; runId?: string; agent?: string; childIndex?: number; summary?: string } }> = [];
 		const registeredTools: string[] = [];
+		let requestRenderer: ((message: unknown, options: { expanded: boolean }, theme: { fg: (color: string, text: string) => string }) => { render: (width: number) => string[] }) | undefined;
 		const ctx = {
 			cwd: process.cwd(),
 			hasUI: false,
@@ -127,7 +128,10 @@ describe("native supervisor channel", () => {
 		const pi = {
 			getAllTools: () => [],
 			registerTool: (tool: { name: string }) => { registeredTools.push(tool.name); },
-			sendMessage: (message: { content?: string; details?: { id?: string } }) => { sent.push(message); },
+			registerMessageRenderer: (type: string, renderer: typeof requestRenderer) => {
+				if (type === "subagent_supervisor_request") requestRenderer = renderer;
+			},
+			sendMessage: (message: { content?: string; details?: { id?: string; reason?: string; expectsReply?: boolean; runId?: string; agent?: string; childIndex?: number; summary?: string } }) => { sent.push(message); },
 			getSessionName: () => "shared-name",
 		};
 		const channel = createNativeSupervisorChannel(pi as never, makeState(currentSessionId, ctx));
@@ -138,6 +142,16 @@ describe("native supervisor channel", () => {
 
 		assert.deepEqual(registeredTools, [NATIVE_SUPERVISOR_TOOL_NAME, "intercom"]);
 		assert.deepEqual(sent.map((message) => message.details?.id), [matchingId]);
+		assert.ok(requestRenderer);
+		const theme = { fg: (_color: string, text: string) => text };
+		const collapsed = requestRenderer(sent[0], { expanded: false }, theme).render(120).join("\n");
+		assert.match(collapsed, /Supervisor request · worker · child #1/);
+		assert.match(collapsed, /Needs decision · Need a decision/);
+		assert.doesNotMatch(collapsed, /Reply with:/);
+		const expanded = requestRenderer(sent[0], { expanded: true }, theme).render(120).join("\n");
+		assert.match(expanded, new RegExp(`request ${matchingId} · run `));
+		assert.match(expanded, /reply required/);
+		assert.match(expanded, /Reply with: subagent_supervisor/);
 		assert.equal(channel.pending.has(matchingId), false, "disposed channel clears pending requests");
 		assert.equal(sent.some((message) => message.details?.id === otherId), false);
 	});
