@@ -64,7 +64,8 @@ import { usageBudgetExceededMessage, usageBudgetState, validateUsageBudgetConfig
 import { intersectSubagentCapabilityCeilings, resolveCurrentSubagentCapabilityCeiling, type ResolvedSubagentCapabilityCeiling } from "../shared/capability-ceiling.ts";
 import { isAgentContractV1 } from "../shared/agent-contract.ts";
 import { normalizeExtensionBindings, type ExtensionBindings } from "../shared/extension-bindings.ts";
-import { finalizeSingleOutput, injectSingleOutputInstruction, normalizeSingleOutputOverride, outputPathMappingFromTask, resolveSingleOutputPath, validateFileOnlyOutputMode } from "../shared/single-output.ts";
+import { finalizeSingleOutput, injectSingleOutputInstruction, normalizeSingleOutputOverride, outputPathMappingFromTask, resolveDirectSingleOutputPath, resolveSingleOutputPath, validateFileOnlyOutputMode } from "../shared/single-output.ts";
+import { resolveToolExtensionAgent } from "../shared/tool-extensions.ts";
 import { assertJsonSchemaObject, cleanupStructuredOutputRuntime, createStructuredOutputRuntime } from "../shared/structured-output.ts";
 import { compactForegroundDetails, getSingleResultOutput, readStatus, resolveChildCwd, sumResultsCost, sumResultsUsage, toAgentToolUsage } from "../../shared/utils.ts";
 import { createTaskMutationArbiter } from "../shared/llm-intent-arbiter.ts";
@@ -161,6 +162,7 @@ import {
 	type NestedRouteInfo,
 	type NestedRunSummary,
 	type OutputMode,
+	type RequiredCapability,
 	type ResolvedControlConfig,
 	type ResolvedToolBudget,
 	type RunFanoutBudgetDescriptor,
@@ -168,6 +170,7 @@ import {
 	type SingleResult,
 	type SubagentChildStatusEvent,
 	type ToolBudgetConfig,
+	type ToolExtensionRequest,
 	type Usage,
 	type UsageBudgetConfig,
 	type WorkflowResourceProvenanceV1,
@@ -311,6 +314,8 @@ export interface SubagentParamsLike {
 	task?: string;
 	capabilities?: boolean;
 	extensionBindings?: ExtensionBindings;
+	toolExtensions?: ToolExtensionRequest;
+	requiresCapabilities?: RequiredCapability[];
 	/** Retained async child run id. Valid only on workflow runs.run items. */
 	resume?: string;
 	message?: string;
@@ -3184,13 +3189,19 @@ async function runAsyncPath(data: ExecutionContextData, deps: ExecutorDeps): Pro
 
 
 	if (hasSingle) {
-		const a = agents.find((x) => x.name === params.agent);
-		if (!a) {
+		const baseAgent = agents.find((x) => x.name === params.agent);
+		if (!baseAgent) {
 			return {
 				content: [{ type: "text", text: formatUnknownAgentError(params.agent!, unknownAgentDiagnosticContext) }],
 				isError: true,
 				details: { mode: "single" as const, results: [] },
 			};
+		}
+		let a: AgentConfig;
+		try {
+			a = resolveToolExtensionAgent(agents, deps.config, params.agent!, params.toolExtensions);
+		} catch (error) {
+			return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true, details: { mode: "single" as const, results: [] } };
 		}
 		const rawOutput = params.output !== undefined ? params.output : a.output;
 		const effectiveOutput = normalizeSingleOutputOverride(rawOutput, a.output);
@@ -3223,7 +3234,7 @@ async function runAsyncPath(data: ExecutionContextData, deps: ExecutorDeps): Pro
 			task: shouldForkAgent(contextPolicy, params.agent!) ? wrapForkTask(params.task ?? "") : (params.task ?? ""),
 			goal: params.task ?? "",
 			agentConfig: a,
-			recoveryAgentConfig: data.recoveryAgents.find((agent) => agent.name === params.agent),
+			recoveryAgentConfig: a,
 			ctx: asyncCtx,
 			availableModels,
 			cwd: effectiveCwd,
@@ -3271,6 +3282,7 @@ async function runAsyncPath(data: ExecutionContextData, deps: ExecutorDeps): Pro
 			toolTimeoutMs: data.params?.toolTimeoutMs,
 			configToolTimeoutMs: data.configToolTimeoutMs,
 			capabilityCeiling: data.capabilityCeiling,
+			requiresCapabilities: params.requiresCapabilities,
 			runFanoutBudget: data.runFanoutBudget,
 			parentWorkflowRunId: params.workflowParentRunId,
 			workflowKey: params.workflowKey,
@@ -3422,7 +3434,7 @@ function resolveWorkflowChildOutputPath(input: {
 			? rawOutput
 			: input.aggregateOutputPath
 				? workflowChildDefaultOutput(input.aggregateOutputPath, input.artifactsDir, input.workflowRunId, input.key)
-				: agentOutput;
+				: agentOutput ?? workflowChildDefaultOutput(undefined, input.artifactsDir, input.workflowRunId, input.key);
 	return {
 		path: resolveSingleOutputPath(output, input.ctxCwd, childCwd, input.configuredOutputBaseDir ?? path.join(input.artifactsDir, "outputs", sanitizeRunPathSegment(input.workflowRunId))),
 		inherited: !hasExplicitOutput && !input.aggregateOutputPath && agentOutput !== undefined,
@@ -3499,12 +3511,17 @@ function prepareWorkflowChildLaunchParams(input: {
 	options?: { missionDetached?: boolean; suppressRoutineResultIntercom?: boolean; awaitDetachedChild?: boolean; runFanoutBudget?: RunFanoutBudgetDescriptor; parentDeadlineAt?: number; capabilityCeiling?: ResolvedSubagentCapabilityCeiling };
 }): SubagentParamsLike {
 	let childParams = input.childParams;
-	const usesDefaultOutput = input.childParams.output === undefined && input.childParams.resume === undefined;
+	const usesDefaultOutput = input.childParams.output === undefined
+		&& input.workflowDefaults.output === undefined
+		&& input.childParams.resume === undefined;
 	if (usesDefaultOutput && input.outputOverride !== undefined) {
 		childParams = { ...input.childParams, output: input.outputOverride };
 	} else if (usesDefaultOutput && input.aggregateOutputPath !== undefined) {
 		childParams = { ...input.childParams, output: workflowChildDefaultOutput(input.aggregateOutputPath, input.artifactsDir, input.parentWorkflowRunId, input.workflowKey) };
-	} else if (input.childParams.resume === undefined) {
+	} else if (
+		input.childParams.resume === undefined
+		&& (usesDefaultOutput || input.childParams.output !== undefined)
+	) {
 		const resolvedOutput = resolveWorkflowChildOutputPath({ ctxCwd: input.ctxCwd, workflowCwd: input.workflowCwd, artifactsDir: input.artifactsDir, workflowRunId: input.parentWorkflowRunId, aggregateOutputPath: input.aggregateOutputPath, configuredOutputBaseDir: input.configuredOutputBaseDir, discoverAgents: input.discoverAgents, agents: input.agents, workflowAgentScope: input.workflowAgentScope, key: input.workflowKey, params: input.childParams });
 		if (resolvedOutput.path) childParams = { ...input.childParams, output: resolvedOutput.path };
 	}
@@ -3609,14 +3626,21 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 	const childIntercomTarget = childBridgeActive ? resolveSubagentIntercomTarget(runId, params.agent!, 0) : undefined;
 	const allProgress: AgentProgress[] = [];
 	const allArtifactPaths: ArtifactPaths[] = [];
-	const agentConfig = agents.find((a) => a.name === params.agent);
-	if (!agentConfig) {
+	const baseAgentConfig = agents.find((a) => a.name === params.agent);
+	if (!baseAgentConfig) {
 		return {
 			content: [{ type: "text", text: formatUnknownAgentError(params.agent!, data.unknownAgentDiagnosticContext) }],
 			isError: true,
 			details: { mode: "single", results: [] },
 		};
 	}
+	let agentConfig: AgentConfig;
+	try {
+		agentConfig = resolveToolExtensionAgent(agents, deps.config, params.agent!, params.toolExtensions);
+	} catch (error) {
+		return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true, details: { mode: "single", results: [] } };
+	}
+	const effectiveAgents = agentConfig === baseAgentConfig ? agents : agents.map((agent) => agent.name === agentConfig.name ? agentConfig : agent);
 	const effectiveToolBudget = resolveEffectiveToolBudget(omitUndefinedProperties({ runBudget: data.toolBudget, agentBudget: agentConfig.toolBudget, configBudget: data.configToolBudget }));
 	if (effectiveToolBudget.error) return toExecutionErrorResult(params, new Error(effectiveToolBudget.error), data.contextPolicy.contextSummary);
 
@@ -3684,7 +3708,7 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 		task = wrapForkTask(task);
 	}
 	const cleanTask = task;
-	const outputPath = resolveSingleOutputPath(effectiveOutput, ctx.cwd, singleCwd, resolveSingleRunOutputBaseDir(deps, artifactsDir, runId));
+	const outputPath = resolveDirectSingleOutputPath(effectiveOutput, ctx.cwd, singleCwd, resolveSingleRunOutputBaseDir(deps, artifactsDir, runId));
 	const validationError = validateFileOnlyOutputMode(effectiveOutputMode, outputPath, `Single run (${params.agent})`);
 	if (validationError) {
 		if (worktreeSetup) cleanupWorktrees(worktreeSetup);
@@ -3748,7 +3772,7 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 		? new Promise<Awaited<ReturnType<typeof runSync>>>((resolve) => { resolveDetachedWorkflowChild = resolve; })
 		: undefined;
 	try {
-		const launched = await runSync(ctx.cwd, agents, params.agent!, task, compactOptional<Parameters<typeof runSync>[4]>({
+		const launched = await runSync(ctx.cwd, effectiveAgents, params.agent!, task, compactOptional<Parameters<typeof runSync>[4]>({
 			permissions: deps.config.permissions,
 			runtimeSnapshotHost: deps.pi,
 			parentSessionId: ctx.sessionManager.getSessionId() ?? undefined,
@@ -3848,6 +3872,7 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 			configToolTimeoutMs: data.configToolTimeoutMs,
 			toolBudget: effectiveToolBudget.toolBudget,
 			capabilityCeiling: data.capabilityCeiling,
+			requiresCapabilities: params.requiresCapabilities,
 			allowZeroToolBudget: data.allowZeroToolBudget && effectiveToolBudget.toolBudget === data.toolBudget,
 		}));
 		r = launched.detached && detachedWorkflowChild ? await detachedWorkflowChild : launched;
@@ -4393,6 +4418,9 @@ export function prepareWorkflowLaunchParams(
 		if (childParams.extensionBindings !== undefined || workflowDefaults.extensionBindings !== undefined) {
 			throw new Error("extensionBindings is not supported with retained resume; resume uses the original retained child binding.");
 		}
+		if (childParams.toolExtensions !== undefined || workflowDefaults.toolExtensions !== undefined || childParams.requiresCapabilities !== undefined || workflowDefaults.requiresCapabilities !== undefined) {
+			throw new Error("toolExtensions and requiresCapabilities are not supported with retained resume; resume uses the original retained child capabilities.");
+		}
 		if (childParams.gate !== undefined || workflowDefaults.gate !== undefined) {
 			throw new Error("gate is not supported with retained resume; resume uses the retained child contract.");
 		}
@@ -4720,6 +4748,9 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 			workflowResource = { permit: workflowResourcePermit, ...consumed };
 		}
 		if (requestParams.workflowScript !== undefined && normalizedAction === undefined) {
+			if (requestParams.toolExtensions !== undefined || requestParams.requiresCapabilities !== undefined) {
+				return buildRequestedModeError(requestParams, "toolExtensions and requiresCapabilities are supported on direct launches and individual workflow children, not the outer workflow request.");
+			}
 			if (delegatedWorkflowPermit) {
 				const permitError = validateWorkflowChildPermitRoot(delegatedWorkflowPermit, _id);
 				if (permitError) return buildRequestedModeError(requestParams, permitError);

@@ -87,6 +87,16 @@ export function resolveSingleOutputPath(
 	return path.resolve(baseCwd, output);
 }
 
+export function resolveDirectSingleOutputPath(
+	output: string | boolean | undefined,
+	runtimeCwd: string,
+	requestedCwd?: string,
+	relativeBaseDir?: string,
+): string | undefined {
+	if (output === false) return undefined;
+	return resolveSingleOutputPath(output ?? "output.md", runtimeCwd, requestedCwd, relativeBaseDir);
+}
+
 interface OutputInstructionCapabilities {
 	tools?: string[];
 	mcpDirectTools?: string[];

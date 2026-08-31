@@ -95,6 +95,15 @@ const AcceptanceOverride = Type.Unsafe({
 	description: `Optional acceptance policy. Prefer an inline JSON object. JSON-encoded object strings are tolerated only during input normalization; invalid strings fail closed. Reviewer/read-only calls, omit acceptance. { level: "checked", evidence: ["commands-run", "changed-files"] }. Supported evidence kinds: ${AcceptanceEvidenceKinds.join(",")}. acceptance.review.required.`,
 });
 
+const ToolExtensionsOverride = Type.Object({
+	add: Type.Array(Type.String({ enum: ["mcp"] }), { minItems: 1, maxItems: 1, description: "Add the configured MCP gateway bundle for this child." }),
+}, { additionalProperties: false, description: "Caller-selected MCP gateway bundle. Agent eligibility is resolved before launch." });
+
+const RequiredCapabilitiesOverride = Type.Array(
+	Type.String({ enum: ["mcp"] }),
+	{ minItems: 1, maxItems: 1, description: "Require the MCP gateway after launch restrictions are applied." },
+);
+
 const AgentContractOverride = Type.Object({
 	version: Type.Integer({ minimum: 1, maximum: 1, description: "Enable compatibility behavior for this run/child." }),
 }, { additionalProperties: false, description: "Compatibility behavior. Omit for the default behavior." });
@@ -281,6 +290,8 @@ const SubagentParamProperties = {
 	agent: Type.Optional(Type.String({ description: "Agent for one-child execution, or target for agent management actions." })),
 	task: Type.Optional(Type.String({ description: "Optional one-child task. Requires agent; cannot combine with action, workflowScript, or workflowScriptPath." })),
 	extensionBindings: Type.Optional(Type.Unsafe({ type: "object", maxProperties: 16, additionalProperties: true, description: "Namespaced, bounded plain-JSON metadata delivered only to the child runtime. Namespace keys use package.name/1 syntax." })),
+	toolExtensions: Type.Optional(ToolExtensionsOverride),
+	requiresCapabilities: Type.Optional(RequiredCapabilitiesOverride),
 	// Management action (when present, tool operates in management mode)
 	action: Type.Optional(Type.String({ minLength: 1,
 		description: "Optional management/control action. Use action='validate' with workflowScript or workflowScriptPath for offline checks. Omit this field for structured single-child or workflow execution; otherwise, use it only for management/control actions."

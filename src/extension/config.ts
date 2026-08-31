@@ -8,6 +8,7 @@ import { validateAuthorityPolicy } from "../policy/authority.ts";
 import { getAgentDir } from "../shared/utils.ts";
 import { DEFAULT_MODEL_EXCLUSION_TTL_MS, MAX_MODEL_EXCLUSION_TTL_MS, setDefaultTTL } from "../runs/shared/model-exclusions.ts";
 import { validatePermissionConfig } from "../runs/shared/permissions.ts";
+import { validateToolExtensionRegistry } from "../runs/shared/tool-extensions.ts";
 import { MAX_ABANDONED_SLOT_RELEASE_AFTER_MS, MIN_ABANDONED_SLOT_RELEASE_AFTER_MS } from "../runs/background/active-async-capacity.ts";
 
 const ARTIFACT_DIR_PREFERENCES = new Set<ArtifactDirPreference>(["project", "session", "temp"]);
@@ -161,6 +162,7 @@ function validateConfig(config: Record<string, unknown>): void {
 	validateMissionStoreConfig(config.missions);
 	validateAuthorityPolicy(config.authorityPolicy);
 	validatePermissionConfig(config.permissions);
+	if (config.toolExtensions !== undefined) validateToolExtensionRegistry(config.toolExtensions);
 	validateScheduledRunsConfig(config.scheduledRuns);
 	validateFleetKeybindingsConfig(config.fleetKeybindings);
 	validateArtifactConfig(config.artifactConfig);

@@ -470,6 +470,7 @@ async function runSingleAttempt(
 		model: modelArg,
 		modelCandidates: shared.modelCandidates,
 		capabilityCeiling: options.capabilityCeiling,
+		requiresCapabilities: options.requiresCapabilities,
 		inheritedCapabilityCeiling: decodeSubagentCapabilityCeiling(process.env[SUBAGENT_CAPABILITY_CEILING_ENV]),
 		agentName: agent.name,
 		permissionRules,

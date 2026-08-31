@@ -29,6 +29,7 @@ import {
 	TEMP_ROOT_DIR,
 	type JsonSchemaObject,
 	type LaunchResolvedChildExtensionsV1,
+	type RequiredCapability,
 	type ResolvedToolBudget,
 	type RunFanoutBudgetDescriptor,
 } from "../../shared/types.ts";
@@ -71,6 +72,7 @@ import {
 	type ResolvedSubagentCapabilityCeiling,
 	type SubagentCapabilityAudit,
 } from "./capability-ceiling.ts";
+import { validateRequiredCapabilities } from "./tool-extensions.ts";
 
 const TASK_ARG_LIMIT = 8000;
 
@@ -318,6 +320,7 @@ export interface ResolvePiLaunchToolPlanInput {
 	model?: string;
 	modelCandidates?: readonly string[];
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
+	requiresCapabilities?: RequiredCapability[];
 	inheritedCapabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	agentName?: string;
 	permissionRules?: PermissionRules;
@@ -601,6 +604,10 @@ export function resolvePiLaunchToolPlan(
 				...(input.extensions ?? []),
 				...(input.subagentOnlyExtensions ?? []),
 			];
+	validateRequiredCapabilities({
+		required: input.requiresCapabilities,
+		effectiveTools: effectiveToolAllowlist,
+	});
 	const extensionArgs = disableAmbientExtensions
 		? [...new Set([...runtimeExtensions, ...configuredExtensions])]
 		: [

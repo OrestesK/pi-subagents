@@ -2347,6 +2347,8 @@ export interface RunSyncOptions {
 	/** Effective parent default wait window propagated to the child runtime. */
 	waitToolDefaultTimeoutMs?: number;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
+	/** Caller-declared launch capabilities validated after all tool and extension restrictions. */
+	requiresCapabilities?: RequiredCapability[];
 	runFanoutBudget?: RunFanoutBudgetDescriptor;
 	nestedRoute?: NestedRouteInfo;
 	/** Override the agent's default model (format: "provider/id" or just "id") */
@@ -2483,6 +2485,22 @@ export interface ActiveAsyncCapacityConfig {
 	abandonedSlotReleaseAfterMs?: number | false;
 }
 
+export type RequiredCapability = "mcp";
+
+export interface ToolExtensionBundle {
+	description: string;
+	builtinTools: ["mcp"];
+	allowedAgents: string[];
+}
+
+export interface ToolExtensionRegistry {
+	mcp?: ToolExtensionBundle;
+}
+
+export interface ToolExtensionRequest {
+	add: ["mcp"];
+}
+
 export interface ExtensionConfig {
 	asyncByDefault?: boolean;
 	/** Set the context for launches that omit an explicit context. */
@@ -2512,6 +2530,7 @@ export interface ExtensionConfig {
 	forceTopLevelAsync?: boolean;
 	waitTool?: WaitToolConfig;
 	defaultSessionDir?: string;
+	toolExtensions?: ToolExtensionRegistry;
 	singleRunOutputBaseDir?: string;
 	maxSubagentDepth?: number;
 	/** Optional cumulative session cap. Unset or 0 means unlimited. */
