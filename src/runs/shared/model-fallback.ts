@@ -1,8 +1,7 @@
 import { splitKnownThinkingSuffix as splitThinkingSuffix, type ModelInfo as AvailableModelInfo } from "../../shared/model-info.ts";
 import type { Usage } from "../../shared/types.ts";
-import { filterFallbackCandidates, findModelExclusion, parseModelKey, recordModelFailure } from "./model-exclusions.ts";
+import { parseModelKey, recordModelFailure } from "./model-exclusions.ts";
 import { checkModelScope, type ModelScopeCheckRule, type ModelScopeViolation, type ModelSource } from "./model-scope.ts";
-import { redactSecretValues } from "./permissions.ts";
 
 export type { AvailableModelInfo };
 
@@ -290,56 +289,6 @@ function enforceModelScopes(
 	for (const violation of violations) (onWarn ?? defaultScopeWarn)(violation);
 }
 
-const MODEL_EXCLUSION_DIAGNOSTIC_MAX_LENGTH = 240;
-const MODEL_EXCLUSION_DIAGNOSTIC_MAX_ENTRIES = 20;
-
-function sanitizeModelExclusionDiagnostic(value: string | undefined, fallback: string): string {
-	const normalized = typeof value === "string"
-		? value.replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, " ").trim()
-		: "";
-	return redactSecretValues(normalized || fallback).slice(0, MODEL_EXCLUSION_DIAGNOSTIC_MAX_LENGTH);
-}
-
-function formatModelExclusionExpiry(expiresAt: number): string {
-	if (!Number.isFinite(expiresAt)) return "unknown";
-	const date = new Date(expiresAt);
-	return Number.isNaN(date.getTime()) ? "unknown" : date.toISOString();
-}
-
-function formatExcludedCandidateEvidence(candidate: string, exclusion: NonNullable<ReturnType<typeof findModelExclusion>>): string {
-	const { provider, modelId } = parseModelKey(candidate);
-	const displayCandidate = sanitizeModelExclusionDiagnostic(candidate, "unknown");
-	const displayModel = sanitizeModelExclusionDiagnostic(modelId, "unknown");
-	const displayProvider = sanitizeModelExclusionDiagnostic(provider ?? exclusion.provider, "unspecified");
-	const reason = sanitizeModelExclusionDiagnostic(exclusion.reason, "runtime-failure");
-	return `${displayCandidate} — model: ${displayModel}; provider: ${displayProvider}; reason: ${reason}; expires: ${formatModelExclusionExpiry(exclusion.expiresAt)}`;
-}
-
-const MODEL_UNAVAILABLE_EXCLUSION_PATTERNS = [
-	/model.*not found/i,
-	/unknown model/i,
-	/model.*unavailable/i,
-	/model.*disabled/i,
-];
-
-function isCurrentRegistryModel(candidate: string, availableModels: AvailableModelInfo[] | undefined): boolean {
-	if (!availableModels || availableModels.length === 0) return false;
-	const { baseModel } = splitThinkingSuffix(candidate);
-	return availableModels.some((entry) => entry.fullId === baseModel);
-}
-
-function ignoreStaleModelUnavailableExclusion(candidate: string, exclusion: NonNullable<ReturnType<typeof findModelExclusion>>, availableModels: AvailableModelInfo[] | undefined): boolean {
-	const reason = exclusion.reason ?? "";
-	return MODEL_UNAVAILABLE_EXCLUSION_PATTERNS.some((pattern) => pattern.test(reason)) && isCurrentRegistryModel(candidate, availableModels);
-}
-
-function throwForExplicitModelExclusion(model: string): void {
-	const exclusion = findModelExclusion(model);
-	if (!exclusion) return;
-	const reason = redactSecretValues((exclusion.reason ?? "runtime-failure").replace(/[\u0000-\u001f\u007f]+/g, " ")).slice(0, 240);
-	const expiry = Number.isFinite(exclusion.expiresAt) ? `; expires: ${new Date(exclusion.expiresAt).toISOString()}` : "";
-	throw new Error(`Requested subagent model '${model}' is excluded and cannot be replaced by a fallback (reason: ${reason}${expiry}).`);
-}
 
 /**
  * Resolve the `--model` override passed to a spawned subagent.
@@ -377,7 +326,6 @@ export function resolveSubagentModelOverride(
 		const candidate = resolveSubagentModelCandidate(explicit, availableModels, preferredProvider);
 		if (options?.source === "explicit") {
 			resolved = candidate ?? resolveRequiredSubagentModelCandidate(explicit, availableModels, preferredProvider);
-			throwForExplicitModelExclusion(resolved);
 			resolvedFromRegistry = true;
 		} else if (candidate) {
 			resolved = candidate;
@@ -431,9 +379,6 @@ export interface BuildModelCandidatesOptions {
 	origin?: ModelOrigin;
 }
 
-const ZERO_USABLE_MODEL_CANDIDATES_ERROR =
-	"No usable subagent models remain after registry, scope, and cached-exclusion filtering.";
-
 export function resolveModelOrigin(input: {
 	explicitModel?: string | boolean;
 	agentModel?: string | boolean;
@@ -468,19 +413,8 @@ export function buildModelCandidates(
 	if (!primaryModel) throwForUnresolvedEnforcedInheritScope(options?.scope, true);
 	const origin = options?.origin ?? (options?.primaryModelFromParent ? "inherited" : "configured");
 	const scopes = configuredScopes(options?.scope);
-	type ExcludedCandidate = { candidate: string; exclusion: NonNullable<ReturnType<typeof findModelExclusion>> };
-	const excludedCandidates: ExcludedCandidate[] = [];
-	let excludedCandidateCount = 0;
-	const warnCachedExclusion = (candidate: string, exclusion: NonNullable<ReturnType<typeof findModelExclusion>>) => {
-		excludedCandidateCount++;
-		if (excludedCandidates.length < MODEL_EXCLUSION_DIAGNOSTIC_MAX_ENTRIES) excludedCandidates.push({ candidate, exclusion });
-		const displayCandidate = sanitizeModelExclusionDiagnostic(candidate, "unknown");
-		const reason = sanitizeModelExclusionDiagnostic(exclusion.reason, "runtime-failure");
-		console.warn(`[pi-subagents] Skipping model '${displayCandidate}' due to a cached exclusion (reason: ${reason}; expires: ${formatModelExclusionExpiry(exclusion.expiresAt)}).`);
-	};
 	if (origin === "explicit" && primaryModel) {
 		const normalized = resolveRequiredSubagentModelCandidate(primaryModel.trim(), availableModels, preferredProvider);
-		throwForExplicitModelExclusion(normalized);
 		enforceModelScopes(normalized, scopes, "explicit", options?.onWarn);
 		primaryModel = normalized;
 	}
@@ -511,21 +445,10 @@ export function buildModelCandidates(
 		seen.add(normalized);
 		candidates.push(normalized);
 	}
-	const resolved = filterFallbackCandidates(candidates, {
-		onExcluded: warnCachedExclusion,
-		ignoreExclusion: (candidate, exclusion) => ignoreStaleModelUnavailableExclusion(candidate, exclusion, availableModels),
-	});
+	const resolved = candidates;
 	if (resolved.length === 0) {
 		if (skippedPrimary) resolveRequiredSubagentModelCandidate(skippedPrimary, availableModels, preferredProvider);
-		if (candidates.length === 0 && skippedFallback) resolveRequiredSubagentModelCandidate(skippedFallback, availableModels, preferredProvider);
-		if (candidates.length > 0) {
-			const shownExclusions = excludedCandidates;
-			const omittedExclusions = excludedCandidateCount - shownExclusions.length;
-			const evidence = shownExclusions.length > 0
-				? ` (excluded: ${shownExclusions.map(({ candidate, exclusion }) => formatExcludedCandidateEvidence(candidate, exclusion)).join("; ")}${omittedExclusions > 0 ? `; ... and ${omittedExclusions} more` : ""})`
-				: "";
-			throw new Error(`${ZERO_USABLE_MODEL_CANDIDATES_ERROR}${evidence}`);
-		}
+		if (skippedFallback) resolveRequiredSubagentModelCandidate(skippedFallback, availableModels, preferredProvider);
 		return resolved;
 	}
 	if (skippedPrimary) {

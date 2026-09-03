@@ -7,7 +7,6 @@ import {
 	clearExclusions,
 	DEFAULT_MODEL_EXCLUSION_TTL_MS,
 	findModelExclusion,
-	filterFallbackCandidates,
 	flushPersist,
 	getExcludedCount,
 	getExclusionsFilePath,
@@ -162,39 +161,6 @@ describe("model exclusions — parseModelKey", () => {
 	});
 });
 
-describe("model exclusions — filtering fallback candidates", () => {
-	it("removes excluded candidates from a candidate list", () => {
-		const candidates = ["anthropic/claude-3", "openai/gpt-4", "openai/gpt-4o"];
-		recordModelFailure({ provider: "openai" });
-		const filtered = filterFallbackCandidates(candidates);
-		assert.deepEqual(filtered, ["anthropic/claude-3"]);
-	});
-
-	it("removes a candidate recorded with a thinking suffix", () => {
-		const candidates = ["anthropic/claude-3", "openai/gpt-5:high"];
-		recordModelFailure({ modelId: "gpt-5", provider: "openai" });
-		const filtered = filterFallbackCandidates(candidates);
-		assert.deepEqual(filtered, ["anthropic/claude-3"]);
-	});
-
-	it("keeps unexcluded candidates and de-duplicates", () => {
-		const candidates = ["anthropic/claude-3", "anthropic/claude-3", "openai/gpt-4"];
-		const filtered = filterFallbackCandidates(candidates);
-		assert.deepEqual(filtered, ["anthropic/claude-3", "openai/gpt-4"]);
-	});
-
-	it("reports the cached reason and expiry for skipped candidates", () => {
-		const skipped: Array<{ candidate: string; exclusion: Readonly<ModelExclusion> }> = [];
-		recordModelFailure({ modelId: "gpt-4", provider: "openai", reason: "503 unavailable" });
-		const filtered = filterFallbackCandidates(["openai/gpt-4", "anthropic/claude-3"], {
-			onExcluded: (candidate, exclusion) => skipped.push({ candidate, exclusion }),
-		});
-		assert.deepEqual(filtered, ["anthropic/claude-3"]);
-		assert.equal(skipped[0]?.candidate, "openai/gpt-4");
-		assert.equal(skipped[0]?.exclusion.reason, "503 unavailable");
-		assert.ok((skipped[0]?.exclusion.expiresAt ?? 0) > Date.now());
-	});
-});
 
 describe("model exclusions — persistence", () => {
 	it("keeps an auth exclusion after reload when auth.json is unchanged", () => {

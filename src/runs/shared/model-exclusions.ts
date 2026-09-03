@@ -202,8 +202,7 @@ function deduplicate(items: ModelExclusion[]): ModelExclusion[] {
 /**
  * Record a model failure as a temporary exclusion. While the exclusion is
  * active, {@link isExcluded} returns true for the model (or for every model of
- * the provider when modelId is omitted), and {@link filterFallbackCandidates}
- * removes matching candidates from fallback lists.
+ * the provider when modelId is omitted).
  */
 export function recordModelFailure(options: RecordModelFailureOptions): void {
 	ensureLoaded();
@@ -273,9 +272,6 @@ export function isExcluded(modelId: string, provider: string): boolean {
 
 /**
  * Return the active exclusion matching a full model id, if any.
- *
- * The caller uses this for hard-fail diagnostics; fallback filtering should
- * continue to use {@link filterFallbackCandidates}.
  */
 export function findModelExclusion(fullId: string, now = Date.now()): Readonly<ModelExclusion> | undefined {
 	ensureLoaded();
@@ -301,7 +297,7 @@ export function getExcludedCount(): number {
  * (e.g. `openrouter/google/gemini-flash`). The first `/`-segment is the
  * provider; everything after is the modelId. This MUST stay in lock-step with
  * the matching inside {@link isExcluded} so that a failure recorded via
- * {@link recordModelFailure} is later recognised by the candidate filter.
+ * {@link recordModelFailure} is later recognised by exclusion queries.
  */
 export function parseModelKey(fullId: string): { provider?: string; modelId: string } {
 	const base = splitKnownThinkingSuffix(fullId).baseModel;
@@ -310,33 +306,6 @@ export function parseModelKey(fullId: string): { provider?: string; modelId: str
 	return { provider: base.slice(0, slash), modelId: base.slice(slash + 1) };
 }
 
-/**
- * Filter a list of candidate fullIds, removing excluded models/providers and
- * duplicates while preserving order.
- */
-export function filterFallbackCandidates(candidates: string[], opts?: {
-	now?: number;
-	onExcluded?: (candidate: string, exclusion: Readonly<ModelExclusion>) => void;
-	ignoreExclusion?: (candidate: string, exclusion: Readonly<ModelExclusion>) => boolean;
-}): string[] {
-	ensureLoaded();
-	invalidateAuthExclusions();
-	const timestamp = opts?.now ?? Date.now();
-	const seen = new Set<string>();
-	const filtered: string[] = [];
-	for (const raw of candidates) {
-		if (!raw || seen.has(raw)) continue;
-		const { provider: candidateProvider, modelId: candidateModelId } = parseModelKey(raw);
-		const exclusion = exclusions.find((entry) => entryMatches(entry, candidateModelId, candidateProvider, timestamp) && opts?.ignoreExclusion?.(raw, entry) !== true);
-		if (exclusion) {
-			opts?.onExcluded?.(raw, exclusion);
-			continue;
-		}
-		seen.add(raw);
-		filtered.push(raw);
-	}
-	return filtered;
-}
 
 /**
  * Reload exclusions from disk (for tests and config hot-reload).

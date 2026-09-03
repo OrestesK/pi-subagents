@@ -183,22 +183,16 @@ describe("model fallback helpers", () => {
 		);
 	});
 
-	it("excludes a candidate after a retryable model failure is recorded", () => {
-		const warnings: string[] = [];
-		const originalWarn = console.warn;
-		console.warn = (message: unknown) => warnings.push(String(message));
-		try {
-			recordRetryableModelFailure("openai/gpt-5-mini", "rate limit exceeded for Bearer secret-token-value");
+	it("keeps cached-excluded primary and fallback candidates ordered and eligible for every origin", () => {
+		recordModelFailure({ modelId: "gpt-5-mini", provider: "openai", reason: "rate limit exceeded" });
+		recordModelFailure({ modelId: "claude-sonnet-4", provider: "anthropic", reason: "rate limit exceeded" });
+
+		for (const origin of ["configured", "inherited", "explicit"] as const) {
 			assert.deepEqual(
-				buildModelCandidates("gpt-5-mini", ["anthropic/claude-sonnet-4"], availableModels),
-				["anthropic/claude-sonnet-4"],
+				buildModelCandidates("openai/gpt-5-mini", ["anthropic/claude-sonnet-4"], availableModels, undefined, { origin }),
+				["openai/gpt-5-mini", "anthropic/claude-sonnet-4"],
 			);
-		} finally {
-			console.warn = originalWarn;
 		}
-		assert.equal(warnings.length, 1);
-		assert.match(warnings[0]!, /Skipping model 'openai\/gpt-5-mini'.*reason: rate limit exceeded for \[redacted\]; expires: \d{4}-\d{2}-\d{2}T/);
-		assert.doesNotMatch(warnings[0]!, /secret-token-value/);
 	});
 
 	it("does not exclude a candidate after a task or tool failure", () => {
@@ -357,126 +351,6 @@ describe("model fallback helpers", () => {
 		);
 	});
 
-	it("ignores stale model-not-found exclusions when the model is back in the registry", () => {
-		recordModelFailure({
-			modelId: "gpt-5-mini",
-			provider: "openai",
-			reason: 'Model "openai/gpt-5-mini" not found. Use --list-models to see available models.',
-		});
-		assert.deepEqual(buildModelCandidates("openai/gpt-5-mini", undefined, availableModels), ["openai/gpt-5-mini"]);
-	});
-
-	it("keeps provider-wide exclusions when ignoring a stale model-not-found entry", () => {
-		recordModelFailure({ provider: "openai", reason: "quota exceeded" });
-		recordModelFailure({
-			modelId: "gpt-5-mini",
-			provider: "openai",
-			reason: 'Model "openai/gpt-5-mini" not found. Use --list-models to see available models.',
-		});
-		assert.throws(
-			() => buildModelCandidates("openai/gpt-5-mini", undefined, availableModels),
-			/No usable subagent models remain after registry, scope, and cached-exclusion filtering/,
-		);
-	});
-
-	it("keeps explicit stale model-not-found exclusions strict", () => {
-		recordModelFailure({
-			modelId: "gpt-5-mini",
-			provider: "openai",
-			reason: 'Model "openai/gpt-5-mini" not found. Use --list-models to see available models.',
-		});
-		assert.throws(
-			() => buildModelCandidates("openai/gpt-5-mini", ["anthropic/claude-sonnet-4"], availableModels, undefined, { origin: "explicit" }),
-			/Requested subagent model 'openai\/gpt-5-mini' is excluded and cannot be replaced by a fallback/,
-		);
-	});
-
-	it("keeps an explicit cached-excluded primary strict even when fallbacks exist", () => {
-		recordModelFailure({ modelId: "gpt-5-mini", provider: "openai", reason: "sk-secret-token-xyz" });
-		assert.throws(
-			() => buildModelCandidates("openai/gpt-5-mini", ["anthropic/claude-sonnet-4"], availableModels, undefined, { origin: "explicit" }),
-			/Requested subagent model 'openai\/gpt-5-mini' is excluded and cannot be replaced by a fallback/,
-		);
-	});
-
-	it("rejects an explicit non-strict out-of-scope primary before fallbacks", () => {
-		assert.throws(
-			() => buildModelCandidates("anthropic/claude-sonnet-4", ["openai/gpt-5-mini"], availableModels, undefined, {
-				origin: "explicit",
-				scope: { enforce: true, allow: ["openai/*"] },
-			}),
-			/outside the configured subagent model scope/,
-		);
-	});
-
-	it("fails closed with a sanitized error when cached exclusions leave zero candidates", () => {
-		recordModelFailure({ modelId: "gpt-5-mini", provider: "openai", reason: "sk-secret-token-xyz" });
-		recordModelFailure({ modelId: "claude-sonnet-4", provider: "anthropic", reason: "sk-secret-token-xyz" });
-		assert.throws(
-			() => buildModelCandidates("openai/gpt-5-mini", ["anthropic/claude-sonnet-4"], availableModels),
-			(error: unknown) => {
-				const message = String(error);
-				return /No usable subagent models remain after registry, scope, and cached-exclusion filtering/.test(message)
-					&& /excluded: openai\/gpt-5-mini — model: gpt-5-mini; provider: openai; reason: \[redacted\]; expires: \d{4}-\d{2}-\d{2}T/.test(message)
-					&& /excluded: .*anthropic\/claude-sonnet-4/.test(message)
-					&& !message.includes("sk-secret-token-xyz");
-			},
-		);
-	});
-
-	it("keeps cached-exclusion diagnostics when an unrelated fallback is unavailable", () => {
-		recordModelFailure({ modelId: "gpt-5-mini", provider: "openai", reason: "sk-secret-token-xyz" });
-		const originalWarn = console.warn;
-		console.warn = () => {};
-		try {
-			assert.throws(
-				() => buildModelCandidates("openai/gpt-5-mini", ["does-not-exist"], availableModels),
-				/No usable subagent models remain after registry, scope, and cached-exclusion filtering/,
-			);
-		} finally {
-			console.warn = originalWarn;
-		}
-	});
-
-	it("bounds and sanitizes excluded-candidate evidence", () => {
-		const warnings: string[] = [];
-		const originalWarn = console.warn;
-		console.warn = (message: unknown) => warnings.push(String(message));
-		const candidates = Array.from({ length: 21 }, (_, index) => ({
-			provider: index === 0 ? "sk-provider-secret" : "diagnostic-provider",
-			id: index === 0 ? "sk-model-secret" : `diagnostic-model-${index}`,
-			fullId: index === 0 ? "sk-provider-secret/sk-model-secret" : `diagnostic-provider/diagnostic-model-${index}`,
-		}));
-		for (const [index, candidate] of candidates.entries()) {
-			recordModelFailure({
-				modelId: candidate.id,
-				provider: candidate.provider,
-				reason: index === 0 ? "Bearer sk-secret-token-xyz\n" + "long-reason-".repeat(100) : `failure-${index}`,
-			});
-		}
-
-		try {
-			assert.throws(
-				() => buildModelCandidates(candidates[0]!.fullId, candidates.slice(1).map((candidate) => candidate.fullId), candidates),
-				(error: unknown) => {
-					const message = String(error);
-					assert.match(message, /excluded: \[redacted\]\/\[redacted\] — model: \[redacted\]; provider: \[redacted\]/);
-					assert.match(message, /reason: \[redacted\] long-reason-/);
-					assert.doesNotMatch(message, /sk-provider-secret|sk-model-secret|sk-secret-token-xyz/);
-					assert.doesNotMatch(message, /[\r\n]/);
-					assert.match(message, /diagnostic-model-19/);
-					assert.doesNotMatch(message, /diagnostic-model-20/);
-					assert.match(message, /\.\.\. and 1 more/);
-					assert.equal((message.match(/reason: /g) ?? []).length, 20);
-					return true;
-				},
-			);
-		} finally {
-			console.warn = originalWarn;
-		}
-		assert.equal(warnings.length, 21);
-		assert.doesNotMatch(warnings.join("\n"), /sk-provider-secret|sk-model-secret|sk-secret-token-xyz/);
-	});
 
 	it("trusts an inherited parent model outside the registry", () => {
 		assert.deepEqual(
@@ -590,14 +464,11 @@ describe("resolveSubagentModelOverride (cross-session inherit, issue #266)", () 
 		);
 	});
 
-	it("fails visibly when an explicit model is excluded instead of falling back", () => {
+	it("keeps an explicit cached-excluded model eligible", () => {
 		recordModelFailure({ modelId: "gpt-5-mini", provider: "openai", reason: "rate limit" });
-		assert.throws(
-			() => resolveEffectiveSubagentModel("openai/gpt-5-mini", undefined, parentModel, availableModels),
-			(error: unknown) => {
-				const message = String(error);
-				return message.includes("openai/gpt-5-mini") && message.includes("rate limit") && message.includes("expires:");
-			},
+		assert.equal(
+			resolveEffectiveSubagentModel("openai/gpt-5-mini", undefined, parentModel, availableModels),
+			"openai/gpt-5-mini",
 		);
 	});
 
