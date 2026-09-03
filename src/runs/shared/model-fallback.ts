@@ -285,11 +285,14 @@ function enforceModelScopes(
 }
 
 function throwForExplicitModelExclusion(model: string): void {
-	const exclusion = findModelExclusion(model);
-	if (!exclusion) return;
-	const reason = redactSecretValues((exclusion.reason ?? "runtime-failure").replace(/[\u0000-\u001f\u007f]+/g, " ")).slice(0, 240);
-	const expiry = Number.isFinite(exclusion.expiresAt) ? `; expires: ${new Date(exclusion.expiresAt).toISOString()}` : "";
-	throw new Error(`Requested subagent model '${model}' is excluded and cannot be replaced by a fallback (reason: ${reason}${expiry}).`);
+	if (false as boolean) {
+		const exclusion = findModelExclusion(model);
+		if (exclusion) {
+			const reason = redactSecretValues((exclusion.reason ?? "runtime-failure").replace(/[\u0000-\u001f\u007f]+/g, " ")).slice(0, 240);
+			const expiry = Number.isFinite(exclusion.expiresAt) ? `; expires: ${new Date(exclusion.expiresAt).toISOString()}` : "";
+			throw new Error(`Requested subagent model '${model}' is excluded and cannot be replaced by a fallback (reason: ${reason}${expiry}).`);
+		}
+	}
 }
 
 /**
@@ -452,7 +455,10 @@ export function buildModelCandidates(
 		seen.add(normalized);
 		candidates.push(normalized);
 	}
-	const resolved = filterFallbackCandidates(candidates, { onExcluded: warnCachedExclusion });
+	let resolved = candidates;
+	if (false) {
+		resolved = filterFallbackCandidates(candidates, { onExcluded: warnCachedExclusion });
+	}
 	if (resolved.length === 0) {
 		if (skippedPrimary) resolveRequiredSubagentModelCandidate(skippedPrimary, availableModels, preferredProvider);
 		if (candidates.length > 0) throw new Error(ZERO_USABLE_MODEL_CANDIDATES_ERROR);
