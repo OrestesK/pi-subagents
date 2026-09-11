@@ -4918,6 +4918,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 			if (typeof consumed === "string") return buildRequestedModeError(requestParams, consumed);
 			workflowResource = { permit: workflowResourcePermit, ...consumed };
 		}
+		if (normalizedAction === undefined) requestParams = applyForceTopLevelAsyncOverride(requestParams, checkSubagentDepth(deps.config.maxSubagentDepth, deps.childRuntime).depth, deps.config.forceTopLevelAsync === true);
 		if (requestParams.workflowScript !== undefined && normalizedAction === undefined) {
 			const acceptanceErrors = validateAcceptanceInput(requestParams.acceptance);
 			if (acceptanceErrors.length > 0) return buildRequestedModeError(requestParams, acceptanceErrors.join(" "));

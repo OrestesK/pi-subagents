@@ -55,6 +55,7 @@ export function prepareMissionLaunch(input: {
 	config?: MissionStoreConfig;
 	ownerSessionId?: string;
 }): MissionLaunchBinding | undefined {
+	if (input.config?.enabled === false) return undefined;
 	const hasMissionId = input.params.missionId !== undefined;
 	if (hasMissionId && input.params.mission !== undefined) throw new Error("Use missionId or mission, not both");
 	if (input.params.mission === false) return undefined;
