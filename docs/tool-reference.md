@@ -309,11 +309,13 @@ The manifest stores one of these fail-closed eligibility states: `active` (an ow
 
 ## Status and control actions
 
-### Failed lane recovery and execution-mode boundaries
+### Inspecting and resuming failed runs
 
-A failure in the subagent workflow, child launch, prompt runtime, extension loading, or child tooling setup is a lane infrastructure blocker, not permission to silently change execution mode. Stop and report the exact failure, run/status, and repo/cwd/worktree/branch/ref state. Before a same-protocol retry or asking the owner, verify the worktree is clean or capture the partial diff. Retry or fix the `subagent` path only through a clear same-protocol action.
+Use `{ action: "status", id: "<run-id>" }` to inspect run state, `view: "transcript"` to inspect its transcript, and `{ action: "debug.run", id: "<run-id>" }` for lifecycle diagnostics.
 
-For backlog lanes and other subagent-governed workflows, external/foreground/CLI fallback requires explicit owner approval. Do not silently switch to `interactive_shell`, `pi -ne`, Codex/Claude/Cursor CLI, a foreground agent, or another external mode. `interactive_shell` remains valid when the user explicitly requests visible foreground/CLI work or the task is outside the governed subagent protocol. Pi core may print a generic `pi -ne` extension-load hint; that out-of-repo hint is not protocol-approved fallback. A verified compaction abort may continue the retained child once on its already resolved model; it never selects another model.
+`{ action: "children.list" }` lists recent workflow children and their resumability. `{ action: "resume", id: "<run-id>", message: "..." }` continues a resumable child with its stored agent/model/tool contract. A new single-child or workflow execution starts a new run.
+
+Failure handling and execution-mode authorization belong to the applicable operator and project instructions. A verified compaction abort may continue the retained child once on its already resolved model; any model change requires a new explicit launch. An external CLI command printed in an extension-load error is a separate invocation, not a subagent resume.
 
 ```ts
 subagent({ action: "status" })

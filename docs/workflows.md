@@ -19,13 +19,13 @@ Child-safety boundaries are enforced at runtime:
 - By default, children do not register the `subagent` tool and receive boundary instructions that they are not the parent orchestrator and must not propose or run subagents.
 - The explicit exception is an agent whose resolved builtin `tools` includes `subagent`; that child gets a child-safe `subagent` tool for the fanout work the parent assigned, still bounded by `maxSubagentDepth`.
 
-### Failed lane recovery and execution-mode boundaries
+### Inspecting and resuming failed runs
 
-A failure in the subagent workflow, child launch, prompt runtime, extension loading, or child tooling setup is a lane infrastructure blocker. It is not permission to silently retry through `interactive_shell`, `pi -ne`, Codex/Claude/Cursor CLI, a foreground agent, or another external execution mode.
+Use `{ action: "status", id: "<run-id>" }` to inspect run state, `view: "transcript"` to inspect its transcript, and `{ action: "debug.run", id: "<run-id>" }` for lifecycle diagnostics.
 
-Stop and report the exact failure, run/status, and repository/cwd/worktree/branch/ref state. Before a same-protocol retry or asking the owner, verify the worktree is clean or capture the partial diff. Retry or fix the `subagent` path only through a clear same-protocol action. For backlog lanes and other subagent-governed workflows, external/foreground/CLI fallback requires explicit owner approval. `interactive_shell` remains valid when the user explicitly requests visible foreground/CLI work or the task is outside the governed subagent protocol.
+`{ action: "children.list" }` lists recent workflow children and their resumability. `{ action: "resume", id: "<run-id>", message: "..." }` continues a resumable child with its stored agent/model/tool contract. A new single-child or workflow execution starts a new run.
 
-Pi core may print a generic `pi -ne` extension-load hint; that out-of-repo hint is not protocol-approved fallback. A verified compaction abort may continue the retained child once on its already resolved model; it does not authorize an execution-mode or model switch.
+Failure handling and execution-mode authorization belong to the applicable operator and project instructions. A verified compaction abort may continue the retained child once on its already resolved model; any model change requires a new explicit launch. An external CLI command printed in an extension-load error is a separate invocation, not a subagent resume.
 
 ## Prompt shortcuts
 
@@ -440,7 +440,7 @@ return { api: api.artifactPaths, ui: ui.artifactPaths };
 
 Each child uses the existing worktree lifecycle: it branches from clean HEAD, journals ownership before launch, captures a patch and handoff manifest, then removes cleanly captured temporary worktrees and branches. The handoff manifest path remains available in the child's `artifactPaths`; return or emit it when the orchestrator needs to apply or inspect the patches. `runs.ref` stays concise and intentionally omits full paths.
 
-A top-level `{ workflowScript, worktree: true }` makes isolation the default for every workflow child. An individual child can override that default with `worktree: false`. Keep one writer when parallel writes are not intentionally isolated.
+A top-level `{ workflowScript, worktree: true }` makes isolation the default for every workflow child. An individual child can override that default with `worktree: false`. Shared-checkout writer allocation and isolation requirements come from the applicable operator and project instructions.
 
 Before a materialized `runs.run` or `runs.all` group dispatches fresh children, isolated sources must be Git repositories with clean working trees (excluding `.pi/subagents/` runtime state). A rejected group dispatches no children and spends no fan-out slots or child output claims; key-level failure traces can remain. Checks are shared only within that group, are cancellable, and run again at allocation because sources can change. Retained resumes keep their stored contracts. Select the correct cwd or arrange an operator-approved commit/stash; isolation is never dropped automatically.
 
